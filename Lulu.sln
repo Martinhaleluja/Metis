@@ -1,0 +1,51 @@
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Lulu.Core", "src\Lulu.Core\Lulu.Core.csproj", "{A726F790-7380-40EE-BA9C-77CE9600B2A1}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Lulu.AI", "src\Lulu.AI\Lulu.AI.csproj", "{693058AB-4328-4384-9506-E93A9B847F5F}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Lulu.Data", "src\Lulu.Data\Lulu.Data.csproj", "{1EE6A7A5-B123-4E35-A659-74C54901D642}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Lulu.Windows", "src\Lulu.Windows\Lulu.Windows.csproj", "{9B32287F-C931-4554-85BC-DC08AF43A74D}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Lulu.App", "src\Lulu.App\Lulu.App.csproj", "{01479109-0202-488B-8753-B24F9EF1437C}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Lulu.Tests", "tests\Lulu.Tests\Lulu.Tests.csproj", "{8BD5CCBD-610E-4EB5-8C22-3846C70BFB14}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{A726F790-7380-40EE-BA9C-77CE9600B2A1}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{A726F790-7380-40EE-BA9C-77CE9600B2A1}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{A726F790-7380-40EE-BA9C-77CE9600B2A1}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{A726F790-7380-40EE-BA9C-77CE9600B2A1}.Release|Any CPU.Build.0 = Release|Any CPU
+		{693058AB-4328-4384-9506-E93A9B847F5F}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{693058AB-4328-4384-9506-E93A9B847F5F}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{693058AB-4328-4384-9506-E93A9B847F5F}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{693058AB-4328-4384-9506-E93A9B847F5F}.Release|Any CPU.Build.0 = Release|Any CPU
+		{1EE6A7A5-B123-4E35-A659-74C54901D642}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{1EE6A7A5-B123-4E35-A659-74C54901D642}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{1EE6A7A5-B123-4E35-A659-74C54901D642}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{1EE6A7A5-B123-4E35-A659-74C54901D642}.Release|Any CPU.Build.0 = Release|Any CPU
+		{9B32287F-C931-4554-85BC-DC08AF43A74D}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{9B32287F-C931-4554-85BC-DC08AF43A74D}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{9B32287F-C931-4554-85BC-DC08AF43A74D}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{9B32287F-C931-4554-85BC-DC08AF43A74D}.Release|Any CPU.Build.0 = Release|Any CPU
+		{01479109-0202-488B-8753-B24F9EF1437C}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{01479109-0202-488B-8753-B24F9EF1437C}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{01479109-0202-488B-8753-B24F9EF1437C}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{01479109-0202-488B-8753-B24F9EF1437C}.Release|Any CPU.Build.0 = Release|Any CPU
+		{8BD5CCBD-610E-4EB5-8C22-3846C70BFB14}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{8BD5CCBD-610E-4EB5-8C22-3846C70BFB14}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{8BD5CCBD-610E-4EB5-8C22-3846C70BFB14}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{8BD5CCBD-610E-4EB5-8C22-3846C70BFB14}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+EndGlobal

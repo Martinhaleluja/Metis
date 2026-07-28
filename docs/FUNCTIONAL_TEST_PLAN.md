@@ -1,0 +1,38 @@
+# Lulu functional test plan
+
+## Automated gates
+
+```powershell
+dotnet restore Lulu.sln
+dotnet build Lulu.sln -c Release --no-restore
+dotnet test Lulu.sln -c Release --no-build
+```
+
+## First-target manual checks
+
+1. Start `Lulu.exe`. Confirm no console window opens and Lulu remains available from the notification area after setup/assistant windows are closed.
+2. Confirm the companion is a live vector shape, remains click-through, follows the cursor smoothly, and flips away from monitor edges.
+3. Change companion size and cursor distance in Setup. Confirm both changes apply immediately and survive a restart.
+4. Save a Gemini API key. Confirm the settings JSON and logs do not contain the key; Windows Credential Manager contains the generic Lulu credential.
+5. Find models, test one model, and test all models. Confirm failures name the likely cause without printing the key.
+6. Ask a typed general question. Confirm a visible text answer appears even when speech is disabled or unavailable, without attaching an unnecessary screen image. Then ask “What is on my screen?” and confirm Lulu describes the complete virtual desktop across all monitors.
+7. Hold `Ctrl+Shift+1`. Confirm the companion enters Listening and both waveform displays react to live microphone levels. Release the keys and confirm recording stops.
+8. Keep apps visible on multiple monitors during the voice shortcut. Confirm Lulu sends one full virtual-desktop screenshot plus the recording through the selected provider. Confirm diagnostics name `Virtual desktop (all monitors)` as the capture backend.
+9. Ask a normal question. Confirm the companion transitions Listening -> Thinking -> Speaking/Success, pulses or shakes while speaking, and does not show the full answer in its bubble.
+10. Ask where a visible button is. Confirm Lulu detaches from the mouse pointer, glides to the button, and shows only a short white cue such as **Press here**. After five seconds, confirm the cue hides and Lulu smoothly returns to its normal cursor-following position.
+11. Ask Lulu to click a harmless visible control, including a window minimize button. Confirm Lulu reaches the target, the physical Windows pointer never moves, the cursorless action occurs, and the worker shape turns green. Repeat on a monitor with a negative desktop origin if available.
+12. Ask Lulu to buy, delete, send, submit, enter credentials, or approve a permission. Confirm Lulu may point but never performs the final high-impact click.
+13. Trigger provider connection, authentication, quota, and automation errors where practical. Confirm the companion uses a distinct color and the visible error explains what failed.
+14. Press Stop during a request, desktop action, or speech playback. Confirm network, audio, and automation work cancel and Lulu returns to Idle.
+15. Queue a multi-step harmless request, then press F12 while the first action is running. Confirm the active action is cancelled, later actions never execute, the status says emergency stop, and a new voice request can start a fresh session.
+16. Open Logs from Setup. Confirm useful timestamps, capture backend, and action results exist but no API key, authorization header, or request URL containing credentials is present.
+17. Quit from the tray and relaunch. Confirm only one Lulu process remains and the first-launch window does not disappear unexpectedly.
+
+## Expected graceful fallbacks
+
+- No microphone: typed chat and setup remain usable; the voice error explains how to choose or check an input device.
+- Screen capture fails: general text/audio remains usable, while screen questions and cursor commands stop with a clear “will not guess” capture error.
+- TTS model is unavailable or not free for the key: the text response remains visible and usable.
+- Configured reasoning model is unavailable: model discovery and testing identify working models for the same key.
+- Offline or DNS failure: Lulu reports a connection problem and retains settings locally.
+- An application rejects cursorless UIA and background messages: Lulu leaves the real pointer untouched, stops the plan, turns the worker red, and reports the limitation in diagnostics.

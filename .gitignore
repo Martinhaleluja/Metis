@@ -1,0 +1,13 @@
+bin/
+obj/
+.vs/
+.idea/
+TestResults/
+artifacts/
+models/
+tools/
+*.user
+*.suo
+*.nupkg
+*.snupkg
+*.log

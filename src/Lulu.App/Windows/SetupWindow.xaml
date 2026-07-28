@@ -1,0 +1,718 @@
+<Window x:Class="Lulu.App.Windows.SetupWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Lulu setup"
+        Width="900"
+        Height="760"
+        MinWidth="780"
+        MinHeight="620"
+        WindowStyle="None"
+        ResizeMode="CanResizeWithGrip"
+        Background="Transparent"
+        AllowsTransparency="True"
+        ShowInTaskbar="True"
+        WindowStartupLocation="CenterScreen">
+    <Border Background="{StaticResource InkBrush}"
+            BorderBrush="#354654"
+            BorderThickness="1"
+            CornerRadius="0">
+        <Grid>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="56" />
+                <RowDefinition Height="*" />
+                <RowDefinition Height="52" />
+            </Grid.RowDefinitions>
+
+            <Border Grid.Row="0" Background="#0D131A" BorderBrush="#263642" BorderThickness="0,0,0,1"
+                    MouseLeftButtonDown="Header_OnMouseLeftButtonDown">
+                <Grid Margin="18,0,10,0">
+                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                        <Viewbox Width="27" Height="27" Margin="0,0,10,0">
+                            <Path Fill="{StaticResource BabyBlueBrush}"
+                                  Data="M34,8 C42,-1 56,-1 64,7 C72,15 72,27 66,35 C72,43 72,55 64,63 C56,71 44,71 35,65 C27,71 15,71 7,63 C-1,55 -1,43 5,35 C-1,27 -1,15 7,7 C15,-1 27,-1 34,8 Z" />
+                        </Viewbox>
+                        <StackPanel>
+                            <TextBlock Text="lulu" FontSize="23" FontWeight="Black" Foreground="{StaticResource BabyBlueBrush}" />
+                            <TextBlock Text="SETUP" FontSize="9" Foreground="{StaticResource MutedBrush}" />
+                        </StackPanel>
+                    </StackPanel>
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                        <Button Content="⚙" Style="{StaticResource ChromeButton}" ToolTip="Settings" />
+                        <Button Content="×" Style="{StaticResource ChromeButton}" ToolTip="Hide setup" Click="Close_OnClick" />
+                    </StackPanel>
+                </Grid>
+            </Border>
+
+            <Grid Grid.Row="1">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="238" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+
+                <Border Grid.Column="0" Background="{StaticResource PanelBrush}"
+                        BorderBrush="{StaticResource BorderStrongBrush}" BorderThickness="0,0,1,0">
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="104" />
+                            <RowDefinition Height="*" />
+                            <RowDefinition Height="72" />
+                        </Grid.RowDefinitions>
+                        <StackPanel Margin="20,20,16,0">
+                            <TextBlock Text="Lulu" FontSize="20" FontWeight="SemiBold" />
+                            <TextBlock Margin="0,3,0,0" Text="DESKTOP COMPANION" Style="{StaticResource MonoLabelText}" />
+                        </StackPanel>
+                        <StackPanel Grid.Row="1" Margin="0,4">
+                            <Button x:Name="ReasoningNavButton" Content="◉   Reasoning"
+                                    Style="{StaticResource ActiveNavButton}" Click="SetupNav_OnClick" />
+                            <Button x:Name="CompanionNavButton" Content="◆   Companion"
+                                    Style="{StaticResource NavButton}" Click="SetupNav_OnClick" />
+                            <Button x:Name="VoiceNavButton" Content="♩   Voice"
+                                    Style="{StaticResource NavButton}" Click="SetupNav_OnClick" />
+                            <Button x:Name="ScreenNavButton" Content="▣   Screen"
+                                    Style="{StaticResource NavButton}" Click="SetupNav_OnClick" />
+                            <Button x:Name="DiagnosticsNavButton" Content="▥   Diagnostics"
+                                    Style="{StaticResource NavButton}" Click="SetupNav_OnClick" />
+                        </StackPanel>
+                        <StackPanel Grid.Row="2" Margin="20,0,16,16" VerticalAlignment="Bottom">
+                            <StackPanel Orientation="Horizontal">
+                                <Viewbox Width="28" Height="28" Margin="0,0,10,0">
+                                    <Path Fill="{StaticResource BabyBlueBrush}"
+                                          Data="M34,8 C42,-1 56,-1 64,7 C72,15 72,27 66,35 C72,43 72,55 64,63 C56,71 44,71 35,65 C27,71 15,71 7,63 C-1,55 -1,43 5,35 C-1,27 -1,15 7,7 C15,-1 27,-1 34,8 Z" />
+                                </Viewbox>
+                                <StackPanel>
+                                    <TextBlock Text="Lulu" FontWeight="SemiBold" Foreground="{StaticResource BabyBlueBrush}" />
+                                    <TextBlock Text="Active" FontSize="11" Foreground="{StaticResource MintBrush}" />
+                                </StackPanel>
+                            </StackPanel>
+                        </StackPanel>
+                    </Grid>
+                </Border>
+
+                <ScrollViewer x:Name="SetupScrollViewer" Grid.Column="1" VerticalScrollBarVisibility="Auto">
+                <StackPanel Margin="40,32,40,32">
+                    <TextBlock x:Name="ReasoningSection" Text="Reasoning" Style="{StaticResource PageTitleText}" />
+                    <TextBlock Margin="0,5,0,14" TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}"
+                               Text="Choose Lulu's reasoning engine independently from speech recognition and voice output. Cloud keys stay in Windows Credential Manager; local providers stay on this PC." />
+
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="170" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock VerticalAlignment="Center" Text="Reasoning provider" FontWeight="SemiBold" />
+                        <ComboBox x:Name="ProviderBox" Grid.Column="1" SelectionChanged="ProviderBox_OnSelectionChanged">
+                            <ComboBoxItem Content="Gemini" />
+                            <ComboBoxItem Content="OpenAI" />
+                            <ComboBoxItem Content="Claude" />
+                            <ComboBoxItem Content="OpenClaw" />
+                            <ComboBoxItem Content="Ollama" />
+                            <ComboBoxItem Content="Automatic" />
+                        </ComboBox>
+                    </Grid>
+                    <TextBlock Margin="170,5,0,0" FontSize="11" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap"
+                               Text="Automatic uses Gemini first, then OpenAI. OpenClaw and Ollama are local; Gemini, OpenAI, and Claude use cloud services." />
+
+                    <Border x:Name="AutomaticCard" Margin="0,18,0,0" Padding="16" BorderBrush="#354654" BorderThickness="1" CornerRadius="4"
+                            Background="#0D131A" Visibility="Collapsed">
+                        <StackPanel>
+                            <DockPanel>
+                                <TextBlock Text="Automatic fallback" FontSize="17" FontWeight="Bold" Foreground="{StaticResource BabyBlueBrush}" />
+                                <Border DockPanel.Dock="Right" Padding="8,3" Background="#183A4B">
+                                    <TextBlock Text="CLOUD" FontSize="10" FontWeight="Bold" Foreground="{StaticResource BabyBlueBrush}" />
+                                </Border>
+                            </DockPanel>
+                            <TextBlock Margin="0,7,0,0" FontSize="11" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap"
+                                       Text="Lulu starts with Gemini and moves to OpenAI when Gemini is unavailable. Configure both provider cards before using this mode." />
+                        </StackPanel>
+                    </Border>
+
+                    <Border x:Name="GeminiCard" Margin="0,18,0,0" Padding="16" BorderBrush="#354654" BorderThickness="1" CornerRadius="4" Background="#0D131A">
+                        <StackPanel>
+                            <DockPanel>
+                                <TextBlock Text="Google Gemini" FontSize="17" FontWeight="Bold" Foreground="{StaticResource BabyBlueBrush}" />
+                                <Border DockPanel.Dock="Right" Padding="8,3" Background="#183A4B">
+                                    <TextBlock Text="CLOUD / FREE TIER" FontSize="10" FontWeight="Bold" Foreground="{StaticResource BabyBlueBrush}" />
+                                </Border>
+                            </DockPanel>
+                            <TextBlock Margin="0,4,0,12" FontSize="11" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap"
+                                       Text="Lulu keeps Gemini available as the free-first provider." />
+                            <TextBlock Text="Gemini API key" FontWeight="SemiBold" />
+                            <PasswordBox x:Name="GeminiApiKeyBox" Margin="0,7,0,4" />
+                            <TextBlock x:Name="GeminiKeyStatusText" Foreground="{StaticResource MutedBrush}" FontSize="11" />
+                            <TextBlock Margin="0,14,0,0" Text="Reasoning model" FontWeight="SemiBold" />
+                            <Grid Margin="0,7,0,0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <ComboBox x:Name="ReasoningModelBox" IsEditable="True" MinHeight="38" />
+                                <Button Grid.Column="1" Margin="8,0,0,0" Content="Find" Click="GeminiFindModels_OnClick" />
+                                <Button Grid.Column="2" Margin="8,0,0,0" Content="Test" Click="GeminiTestModel_OnClick" />
+                                <Button Grid.Column="3" Margin="8,0,0,0" Content="Test all" Click="GeminiTestAllModels_OnClick" />
+                            </Grid>
+                        </StackPanel>
+                    </Border>
+
+                    <Border x:Name="OpenAiCard" Margin="0,14,0,0" Padding="16" BorderBrush="#354654" BorderThickness="1" CornerRadius="4"
+                            Background="#0D131A" Visibility="Collapsed">
+                        <StackPanel>
+                            <DockPanel>
+                                <TextBlock Text="OpenAI API" FontSize="17" FontWeight="Bold" Foreground="{StaticResource BabyBlueBrush}" />
+                                <Border DockPanel.Dock="Right" Padding="8,3" Background="#183A4B">
+                                    <TextBlock Text="CLOUD / PAID API" FontSize="10" FontWeight="Bold" Foreground="{StaticResource BabyBlueBrush}" />
+                                </Border>
+                            </DockPanel>
+                            <TextBlock Margin="0,4,0,12" FontSize="11" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap"
+                                       Text="OpenAI API usage is billed separately from ChatGPT Plus. Lulu only sends requests when OpenAI is selected or Automatic fallback needs it." />
+                            <TextBlock Text="OpenAI Platform API key" FontWeight="SemiBold" />
+                            <PasswordBox x:Name="OpenAiApiKeyBox" Margin="0,7,0,4" />
+                            <TextBlock x:Name="OpenAiKeyStatusText" Foreground="{StaticResource MutedBrush}" FontSize="11" />
+                            <TextBlock Margin="0,14,0,0" Text="Reasoning and screen model" FontWeight="SemiBold" />
+                            <Grid Margin="0,7,0,0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <ComboBox x:Name="OpenAiReasoningModelBox" IsEditable="True" MinHeight="38" />
+                                <Button Grid.Column="1" Margin="8,0,0,0" Content="Find" Click="OpenAiFindModels_OnClick" />
+                                <Button Grid.Column="2" Margin="8,0,0,0" Content="Test" Click="OpenAiTestModel_OnClick" />
+                            </Grid>
+                        </StackPanel>
+                    </Border>
+
+                    <Border x:Name="ClaudeCard" Margin="0,14,0,0" Padding="16" BorderBrush="#354654" BorderThickness="1" CornerRadius="4"
+                            Background="#0D131A" Visibility="Collapsed">
+                        <StackPanel>
+                            <DockPanel>
+                                <TextBlock Text="Anthropic Claude" FontSize="17" FontWeight="Bold" Foreground="{StaticResource BabyBlueBrush}" />
+                                <Border DockPanel.Dock="Right" Padding="8,3" Background="#3B2835">
+                                    <TextBlock Text="CLOUD / API BILLING" FontSize="10" FontWeight="Bold" Foreground="#FFB9D5" />
+                                </Border>
+                            </DockPanel>
+                            <TextBlock Margin="0,6,0,12" FontSize="11" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap"
+                                       Text="Claude supports reasoning and screen understanding. Voice input and output use the separate speech providers below." />
+                            <TextBlock Text="Anthropic API key" FontWeight="SemiBold" />
+                            <PasswordBox x:Name="ClaudeApiKeyBox" Margin="0,7,0,4" />
+                            <TextBlock x:Name="ClaudeKeyStatusText" Foreground="{StaticResource MutedBrush}" FontSize="11"
+                                       Text="Enter a key to add or replace the credential stored by Windows." />
+                            <TextBlock Margin="0,14,0,0" Text="Reasoning and screen model" FontWeight="SemiBold" />
+                            <Grid Margin="0,7,0,0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <TextBox x:Name="ClaudeReasoningModelBox" />
+                                <Button Grid.Column="1" Margin="8,0,0,0" Content="Test" Tag="Claude" Click="ValidateReasoningProvider_OnClick" />
+                            </Grid>
+                        </StackPanel>
+                    </Border>
+
+                    <Border x:Name="OpenClawCard" Margin="0,14,0,0" Padding="16" BorderBrush="#354654" BorderThickness="1" CornerRadius="4"
+                            Background="#0D131A" Visibility="Collapsed">
+                        <StackPanel>
+                            <DockPanel>
+                                <TextBlock Text="OpenClaw" FontSize="17" FontWeight="Bold" Foreground="{StaticResource BabyBlueBrush}" />
+                                <Border DockPanel.Dock="Right" Padding="8,3" Background="#173D32">
+                                    <TextBlock Text="LOCAL BRIDGE" FontSize="10" FontWeight="Bold" Foreground="#75E7B9" />
+                                </Border>
+                            </DockPanel>
+                            <TextBlock Margin="0,6,0,12" FontSize="11" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap"
+                                       Text="Connect Lulu to an OpenClaw service running on this computer or your private network. Add a gateway token only when your OpenClaw server requires one." />
+                            <Grid Margin="0,0,0,10">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="140" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock VerticalAlignment="Center" Text="Gateway token" />
+                                <PasswordBox x:Name="OpenClawTokenBox" Grid.Column="1" />
+                            </Grid>
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="140" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock VerticalAlignment="Center" Text="Service address" />
+                                <TextBox x:Name="OpenClawEndpointBox" Grid.Column="1" />
+                            </Grid>
+                            <Grid Margin="0,10,0,0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="140" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock VerticalAlignment="Center" Text="Model / agent" />
+                                <TextBox x:Name="OpenClawModelBox" Grid.Column="1" />
+                                <Button Grid.Column="2" Margin="8,0,0,0" Content="Test" Tag="OpenClaw" Click="ValidateReasoningProvider_OnClick" />
+                            </Grid>
+                            <TextBlock x:Name="OpenClawStatusText" Margin="0,8,0,0" FontSize="11" Foreground="{StaticResource MutedBrush}" />
+                        </StackPanel>
+                    </Border>
+
+                    <Border x:Name="OllamaCard" Margin="0,14,0,0" Padding="16" BorderBrush="#354654" BorderThickness="1" CornerRadius="4"
+                            Background="#0D131A" Visibility="Collapsed">
+                        <StackPanel>
+                            <DockPanel>
+                                <TextBlock Text="Ollama" FontSize="17" FontWeight="Bold" Foreground="{StaticResource BabyBlueBrush}" />
+                                <Border DockPanel.Dock="Right" Padding="8,3" Background="#173D32">
+                                    <TextBlock Text="LOCAL / PRIVATE" FontSize="10" FontWeight="Bold" Foreground="#75E7B9" />
+                                </Border>
+                            </DockPanel>
+                            <TextBlock Margin="0,6,0,12" FontSize="11" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap"
+                                       Text="Fully local vision and reasoning. On 8 GB PCs use qwen3-vl:2b-instruct-q4_K_M with a 2K context and compact full-desktop JPEGs." />
+                            <Button Margin="0,0,0,12" HorizontalAlignment="Left" Content="Use fully local preset"
+                                    Click="UseFullyLocalPreset_OnClick" />
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="140" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock VerticalAlignment="Center" Text="Ollama address" />
+                                <TextBox x:Name="OllamaEndpointBox" Grid.Column="1" />
+                            </Grid>
+                            <Grid Margin="0,10,0,0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="140" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock VerticalAlignment="Center" Text="Installed model" />
+                                <TextBox x:Name="OllamaModelBox" Grid.Column="1" />
+                                <Button Grid.Column="2" Margin="8,0,0,0" Content="Test" Tag="Ollama" Click="ValidateReasoningProvider_OnClick" />
+                            </Grid>
+                            <Grid Margin="0,10,0,0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="140" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock VerticalAlignment="Center" Text="Context tokens" />
+                                <TextBox x:Name="LocalContextTokensBox" Grid.Column="1" />
+                            </Grid>
+                            <TextBlock x:Name="OllamaStatusText" Margin="0,8,0,0" FontSize="11" Foreground="{StaticResource MutedBrush}" />
+                        </StackPanel>
+                    </Border>
+
+                    <Border Margin="0,22,0,20" Height="1" Background="#283945" />
+                    <TextBlock x:Name="CompanionSection" Text="Companion Settings" Style="{StaticResource PageTitleText}" />
+                    <TextBlock Margin="0,5,0,0" TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}"
+                               Text="Adjust visual presence and interaction behavior for the Lulu overlay." />
+                    <Grid Margin="0,13,0,0">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="150" />
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="48" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock VerticalAlignment="Center" Text="Size" />
+                        <Slider x:Name="CompanionSizeSlider" Grid.Column="1" Minimum="32" Maximum="112" TickFrequency="4"
+                                ValueChanged="CompanionSlider_OnValueChanged" />
+                        <TextBlock x:Name="CompanionSizeValue" Grid.Column="2" HorizontalAlignment="Right" VerticalAlignment="Center" />
+                    </Grid>
+                    <Grid Margin="0,13,0,0">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="150" />
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="48" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock VerticalAlignment="Center" Text="Cursor distance" />
+                        <Slider x:Name="CursorDistanceSlider" Grid.Column="1" Minimum="0" Maximum="120" TickFrequency="4"
+                                ValueChanged="CompanionSlider_OnValueChanged" />
+                        <TextBlock x:Name="CursorDistanceValue" Grid.Column="2" HorizontalAlignment="Right" VerticalAlignment="Center" />
+                    </Grid>
+                    <CheckBox x:Name="FullControlCheck" Margin="0,16,0,0"
+                              Content="Full desktop control (taskbar and apps that reject cursorless clicks)" />
+                    <TextBlock Margin="24,5,0,0" Foreground="{StaticResource MutedBrush}" FontSize="11" TextWrapping="Wrap"
+                               Text="Allows Lulu to use Windows input as a fallback. The pointer returns after five seconds unless you move it yourself. F12 remains the emergency stop." />
+
+                    <Border Margin="0,22,0,20" Height="1" Background="#283945" />
+                    <TextBlock x:Name="VoiceSection" Text="Voice &amp; Input Settings" Style="{StaticResource PageTitleText}" />
+                    <TextBlock Margin="0,5,0,0" TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" FontSize="11"
+                               Text="Choose speech recognition and Lulu's speaking voice independently from the reasoning provider above." />
+
+                    <Grid Margin="0,13,0,0">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="170" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock VerticalAlignment="Center" Text="Speech-to-text" FontWeight="SemiBold" />
+                        <ComboBox x:Name="SpeechToTextProviderBox" Grid.Column="1" SelectionChanged="SpeechToTextProviderBox_OnSelectionChanged">
+                            <ComboBoxItem Content="Native" />
+                            <ComboBoxItem Content="Whisper.cpp" />
+                            <ComboBoxItem Content="AssemblyAI" />
+                        </ComboBox>
+                    </Grid>
+                    <Border x:Name="NativeSpeechToTextCard" Margin="0,9,0,0" Padding="12" BorderBrush="#2D414E" BorderThickness="1" CornerRadius="4" Background="#101922">
+                        <StackPanel>
+                            <DockPanel>
+                                <TextBlock Text="Native transcription" FontWeight="Bold" />
+                                <Border DockPanel.Dock="Right" Padding="7,2" Margin="10,0,0,0" Background="#183A4B">
+                                    <TextBlock Text="BUILT IN" FontSize="9" FontWeight="Bold" Foreground="{StaticResource BabyBlueBrush}" />
+                                </Border>
+                            </DockPanel>
+                            <TextBlock x:Name="NativeSpeechToTextStatusText" Margin="0,7,0,0" FontSize="11"
+                                       Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" />
+                            <Grid x:Name="OpenAiNativeTranscriptionPanel" Margin="0,10,0,0" Visibility="Collapsed">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="170" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock VerticalAlignment="Center" Text="OpenAI transcription model" FontSize="11" />
+                                <TextBox x:Name="OpenAiTranscriptionModelBox" Grid.Column="1" />
+                            </Grid>
+                        </StackPanel>
+                    </Border>
+                    <Border x:Name="WhisperCppCard" Margin="0,9,0,0" Padding="12" BorderBrush="#2D414E" BorderThickness="1" CornerRadius="4"
+                            Background="#101922" Visibility="Collapsed">
+                        <StackPanel>
+                            <DockPanel>
+                                <TextBlock Text="whisper.cpp Tiny" FontWeight="Bold" />
+                                <Border DockPanel.Dock="Right" Padding="7,2" Background="#173D32">
+                                    <TextBlock Text="LOCAL" FontSize="9" FontWeight="Bold" Foreground="#75E7B9" />
+                                </Border>
+                            </DockPanel>
+                            <TextBlock Margin="0,7,0,9" FontSize="11" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap"
+                                       Text="Speech is transcribed on this PC. Point Lulu to whisper-cli.exe and the multilingual ggml-tiny.bin model." />
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="120" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock VerticalAlignment="Center" Text="Executable" FontSize="11" />
+                                <TextBox x:Name="WhisperCppExecutablePathBox" Grid.Column="1" />
+                            </Grid>
+                            <Grid Margin="0,8,0,0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="120" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock VerticalAlignment="Center" Text="Tiny model" FontSize="11" />
+                                <TextBox x:Name="WhisperCppModelPathBox" Grid.Column="1" />
+                                <Button Grid.Column="2" Margin="8,0,0,0" Content="Test" Tag="Whisper.cpp" Click="ValidateSpeechProvider_OnClick" />
+                            </Grid>
+                            <TextBlock x:Name="WhisperCppStatusText" Margin="0,7,0,0" FontSize="11" Foreground="{StaticResource MutedBrush}" />
+                        </StackPanel>
+                    </Border>
+                    <Border x:Name="AssemblyAiCard" Margin="0,9,0,0" Padding="12" BorderBrush="#2D414E" BorderThickness="1" CornerRadius="4"
+                            Background="#101922" Visibility="Collapsed">
+                        <StackPanel>
+                            <DockPanel>
+                                <TextBlock Text="AssemblyAI transcription" FontWeight="Bold" />
+                                <Border DockPanel.Dock="Right" Padding="7,2" Background="#3B2835">
+                                    <TextBlock Text="CLOUD" FontSize="9" FontWeight="Bold" Foreground="#FFB9D5" />
+                                </Border>
+                            </DockPanel>
+                            <TextBlock Margin="0,8,0,0" Text="AssemblyAI API key" FontSize="11" FontWeight="SemiBold" />
+                            <PasswordBox x:Name="AssemblyAiApiKeyBox" Margin="0,5,0,0" />
+                            <Grid Margin="0,8,0,0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="120" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock VerticalAlignment="Center" Text="Model" FontSize="11" />
+                                <TextBox x:Name="AssemblyAiModelBox" Grid.Column="1" />
+                                <Button Grid.Column="2" Margin="8,0,0,0" Content="Test" Tag="AssemblyAI" Click="ValidateSpeechProvider_OnClick" />
+                            </Grid>
+                            <TextBlock x:Name="AssemblyAiStatusText" Margin="0,7,0,0" FontSize="11" Foreground="{StaticResource MutedBrush}"
+                                       Text="Enter a key to add or replace the credential stored by Windows." />
+                        </StackPanel>
+                    </Border>
+
+                    <Grid Margin="0,16,0,0">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="170" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock VerticalAlignment="Center" Text="Text-to-speech" FontWeight="SemiBold" />
+                        <ComboBox x:Name="TextToSpeechProviderBox" Grid.Column="1" SelectionChanged="TextToSpeechProviderBox_OnSelectionChanged">
+                            <ComboBoxItem Content="Native" />
+                            <ComboBoxItem Content="Piper" />
+                            <ComboBoxItem Content="Chatterbox-Nano" />
+                            <ComboBoxItem Content="ElevenLabs" />
+                        </ComboBox>
+                    </Grid>
+                    <Border x:Name="NativeTextToSpeechCard" Margin="0,9,0,0" Padding="12" BorderBrush="#2D414E" BorderThickness="1" CornerRadius="4" Background="#101922">
+                        <StackPanel>
+                            <DockPanel>
+                                <TextBlock Text="Native voice" FontWeight="Bold" />
+                                <Border DockPanel.Dock="Right" Padding="7,2" Margin="10,0,0,0" Background="#183A4B">
+                                    <TextBlock Text="BUILT IN" FontSize="9" FontWeight="Bold" Foreground="{StaticResource BabyBlueBrush}" />
+                                </Border>
+                            </DockPanel>
+                            <TextBlock x:Name="NativeTextToSpeechStatusText" Margin="0,7,0,0" FontSize="11"
+                                       Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" />
+                            <StackPanel x:Name="GeminiNativeVoicePanel" Margin="0,10,0,0" Visibility="Collapsed">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="170" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock VerticalAlignment="Center" Text="Gemini speech model" FontSize="11" />
+                                    <TextBox x:Name="SpeechModelBox" Grid.Column="1" />
+                                </Grid>
+                                <Grid Margin="0,8,0,0">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="170" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock VerticalAlignment="Center" Text="Gemini voice" FontSize="11" />
+                                    <ComboBox x:Name="VoiceBox" Grid.Column="1">
+                                        <ComboBoxItem Content="Kore" />
+                                        <ComboBoxItem Content="Aoede" />
+                                        <ComboBoxItem Content="Puck" />
+                                        <ComboBoxItem Content="Charon" />
+                                        <ComboBoxItem Content="Fenrir" />
+                                    </ComboBox>
+                                </Grid>
+                            </StackPanel>
+                            <StackPanel x:Name="OpenAiNativeVoicePanel" Margin="0,10,0,0" Visibility="Collapsed">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="170" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock VerticalAlignment="Center" Text="OpenAI speech model" FontSize="11" />
+                                    <TextBox x:Name="OpenAiSpeechModelBox" Grid.Column="1" />
+                                </Grid>
+                                <Grid Margin="0,8,0,0">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="170" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock VerticalAlignment="Center" Text="OpenAI voice" FontSize="11" />
+                                    <ComboBox x:Name="OpenAiVoiceBox" Grid.Column="1">
+                                        <ComboBoxItem Content="alloy" />
+                                        <ComboBoxItem Content="ash" />
+                                        <ComboBoxItem Content="coral" />
+                                        <ComboBoxItem Content="echo" />
+                                        <ComboBoxItem Content="fable" />
+                                        <ComboBoxItem Content="nova" />
+                                        <ComboBoxItem Content="onyx" />
+                                        <ComboBoxItem Content="sage" />
+                                        <ComboBoxItem Content="shimmer" />
+                                    </ComboBox>
+                                </Grid>
+                            </StackPanel>
+                        </StackPanel>
+                    </Border>
+                    <Border x:Name="PiperCard" Margin="0,9,0,0" Padding="12" BorderBrush="#2D414E" BorderThickness="1" CornerRadius="4"
+                            Background="#101922" Visibility="Collapsed">
+                        <StackPanel>
+                            <DockPanel>
+                                <TextBlock Text="Piper voice" FontWeight="Bold" />
+                                <Border DockPanel.Dock="Right" Padding="7,2" Background="#173D32">
+                                    <TextBlock Text="LOCAL / FAST" FontSize="9" FontWeight="Bold" Foreground="#75E7B9" />
+                                </Border>
+                            </DockPanel>
+                            <Grid Margin="0,9,0,0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="120" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock VerticalAlignment="Center" Text="Executable" FontSize="11" />
+                                <TextBox x:Name="PiperExecutablePathBox" Grid.Column="1" />
+                            </Grid>
+                            <Grid Margin="0,8,0,0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="120" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock VerticalAlignment="Center" Text="Voice model" FontSize="11" />
+                                <TextBox x:Name="PiperVoiceModelPathBox" Grid.Column="1" />
+                                <Button Grid.Column="2" Margin="8,0,0,0" Content="Test" Tag="Piper" Click="ValidateSpeechProvider_OnClick" />
+                            </Grid>
+                            <TextBlock x:Name="PiperStatusText" Margin="0,7,0,0" FontSize="11" Foreground="{StaticResource MutedBrush}" />
+                        </StackPanel>
+                    </Border>
+                    <Border x:Name="ChatterboxNanoCard" Margin="0,9,0,0" Padding="12" BorderBrush="#2D414E" BorderThickness="1" CornerRadius="4"
+                            Background="#101922" Visibility="Collapsed">
+                        <StackPanel>
+                            <DockPanel>
+                                <TextBlock Text="Chatterbox-Nano voice" FontWeight="Bold" />
+                                <Border DockPanel.Dock="Right" Padding="7,2" Background="#173D32">
+                                    <TextBlock Text="LOCAL / QUALITY" FontSize="9" FontWeight="Bold" Foreground="#75E7B9" />
+                                </Border>
+                            </DockPanel>
+                            <TextBlock Margin="0,7,0,9" FontSize="11" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap"
+                                       Text="Optional higher-quality local voice through an OpenAI-compatible Chatterbox-Nano loopback server." />
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="120" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock VerticalAlignment="Center" Text="Local endpoint" FontSize="11" />
+                                <TextBox x:Name="ChatterboxEndpointBox" Grid.Column="1" />
+                            </Grid>
+                            <Grid Margin="0,8,0,0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="120" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock VerticalAlignment="Center" Text="Model" FontSize="11" />
+                                <TextBox x:Name="ChatterboxModelBox" Grid.Column="1" />
+                            </Grid>
+                            <Grid Margin="0,8,0,0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="120" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock VerticalAlignment="Center" Text="Voice" FontSize="11" />
+                                <TextBox x:Name="ChatterboxVoiceBox" Grid.Column="1" />
+                                <Button Grid.Column="2" Margin="8,0,0,0" Content="Test" Tag="Chatterbox-Nano" Click="ValidateSpeechProvider_OnClick" />
+                            </Grid>
+                            <TextBlock x:Name="ChatterboxStatusText" Margin="0,7,0,0" FontSize="11" Foreground="{StaticResource MutedBrush}" />
+                        </StackPanel>
+                    </Border>
+                    <Border x:Name="ElevenLabsCard" Margin="0,9,0,0" Padding="12" BorderBrush="#2D414E" BorderThickness="1" CornerRadius="4"
+                            Background="#101922" Visibility="Collapsed">
+                        <StackPanel>
+                            <DockPanel>
+                                <TextBlock Text="ElevenLabs voice" FontWeight="Bold" />
+                                <Border DockPanel.Dock="Right" Padding="7,2" Background="#3B2835">
+                                    <TextBlock Text="CLOUD" FontSize="9" FontWeight="Bold" Foreground="#FFB9D5" />
+                                </Border>
+                            </DockPanel>
+                            <TextBlock Margin="0,8,0,0" Text="ElevenLabs API key" FontSize="11" FontWeight="SemiBold" />
+                            <PasswordBox x:Name="ElevenLabsApiKeyBox" Margin="0,5,0,0" />
+                            <Grid Margin="0,8,0,0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="120" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock VerticalAlignment="Center" Text="Voice ID" FontSize="11" />
+                                <TextBox x:Name="ElevenLabsVoiceIdBox" Grid.Column="1" />
+                            </Grid>
+                            <Grid Margin="0,8,0,0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="120" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock VerticalAlignment="Center" Text="Voice model" FontSize="11" />
+                                <TextBox x:Name="ElevenLabsModelBox" Grid.Column="1" />
+                                <Button Grid.Column="2" Margin="8,0,0,0" Content="Test" Tag="ElevenLabs" Click="ValidateSpeechProvider_OnClick" />
+                            </Grid>
+                            <TextBlock x:Name="ElevenLabsStatusText" Margin="0,7,0,0" FontSize="11" Foreground="{StaticResource MutedBrush}"
+                                       Text="Enter a key to add or replace the credential stored by Windows." />
+                        </StackPanel>
+                    </Border>
+
+                    <Grid Margin="0,13,0,0">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="150" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock VerticalAlignment="Center" Text="Microphone" />
+                        <ComboBox x:Name="MicrophoneBox" Grid.Column="1" SelectedValuePath="Id">
+                            <ComboBox.ItemTemplate>
+                                <DataTemplate>
+                                    <TextBlock Text="{Binding Name}" Foreground="#E8EDF2" />
+                                </DataTemplate>
+                            </ComboBox.ItemTemplate>
+                        </ComboBox>
+                    </Grid>
+                    <TextBlock x:Name="MicrophoneStatusText" Margin="150,5,0,0" FontSize="11"
+                               Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" />
+
+                    <Border Margin="0,24,0,20" Height="1" Background="#283945" />
+                    <TextBlock x:Name="ScreenSection" Text="Screen Context" Style="{StaticResource PageTitleText}" />
+                    <TextBlock Margin="0,5,0,8" TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}"
+                               Text="Control what visual context Lulu receives for screen understanding and automation." />
+                    <CheckBox x:Name="CaptureScreenCheck" Margin="0,13,0,0" Content="Attach one fresh entire-desktop image to every request" />
+                    <CheckBox x:Name="SpeechEnabledCheck" Margin="0,10,0,0" Content="Speak answers when the selected provider supports speech" />
+                    <CheckBox x:Name="StartWithWindowsCheck" Margin="0,10,0,0" Content="Start Lulu quietly with Windows" />
+
+                    <TextBlock x:Name="InlineStatusText" Margin="0,18,0,0" MinHeight="34" TextWrapping="Wrap"
+                               Foreground="{StaticResource BabyBlueBrush}" />
+
+                    <Border Margin="0,24,0,20" Height="1" Background="#283945" />
+                    <DockPanel>
+                        <StackPanel>
+                            <TextBlock x:Name="DiagnosticsSection" Text="System Diagnostics" Style="{StaticResource PageTitleText}" />
+                            <TextBlock Margin="0,4,0,0" Text="Real-time provider, microphone, and runtime readiness."
+                                       Foreground="{StaticResource MutedBrush}" />
+                        </StackPanel>
+                        <Button DockPanel.Dock="Right" Content="↻  Rerun" Margin="12,0,0,0"
+                                Style="{StaticResource SecondaryButton}" Click="ValidateReasoningProvider_OnClick" />
+                    </DockPanel>
+
+                    <Border Margin="0,20,0,0" Style="{StaticResource UtilityCard}">
+                        <StackPanel>
+                            <TextBlock Text="PROVIDER READINESS" Style="{StaticResource MonoLabelText}" />
+                            <Border Margin="0,10,0,0" Padding="12,10" Background="#0B1117"
+                                    BorderBrush="{StaticResource BorderStrongBrush}" BorderThickness="1" CornerRadius="2">
+                                <Grid>
+                                    <StackPanel Orientation="Horizontal">
+                                        <Ellipse Width="8" Height="8" Fill="{StaticResource MintBrush}" Margin="0,0,10,0" />
+                                        <TextBlock x:Name="DiagnosticsProviderText" Text="Selected reasoning provider" />
+                                    </StackPanel>
+                                    <TextBlock HorizontalAlignment="Right" Text="CONFIGURED" Foreground="{StaticResource MintBrush}"
+                                               FontFamily="{StaticResource MonoFont}" FontSize="11" FontWeight="SemiBold" />
+                                </Grid>
+                            </Border>
+                            <Border Margin="0,8,0,0" Padding="12,10" Background="#0B1117"
+                                    BorderBrush="{StaticResource BorderStrongBrush}" BorderThickness="1" CornerRadius="2">
+                                <Grid>
+                                    <StackPanel Orientation="Horizontal">
+                                        <Ellipse Width="8" Height="8" Fill="{StaticResource BabyBlueBrush}" Margin="0,0,10,0" />
+                                        <TextBlock x:Name="DiagnosticsVoiceText" Text="Voice pipeline" />
+                                    </StackPanel>
+                                    <TextBlock HorizontalAlignment="Right" Text="ACTIVE" Foreground="{StaticResource BabyBlueBrush}"
+                                               FontFamily="{StaticResource MonoFont}" FontSize="11" FontWeight="SemiBold" />
+                                </Grid>
+                            </Border>
+                        </StackPanel>
+                    </Border>
+
+                    <Grid Margin="0,12,0,0">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <Border Grid.Column="0" Margin="0,0,6,0" Style="{StaticResource UtilityCard}">
+                            <StackPanel>
+                                <TextBlock Text="HARDWARE &amp; INPUT" Style="{StaticResource MonoLabelText}" />
+                                <TextBlock Margin="0,12,0,0" Text="Microphone" Foreground="{StaticResource MutedBrush}" />
+                                <TextBlock Text="Default device" Foreground="{StaticResource MintBrush}" />
+                            </StackPanel>
+                        </Border>
+                        <Border Grid.Column="1" Margin="6,0,0,0" Style="{StaticResource UtilityCard}">
+                            <StackPanel>
+                                <TextBlock Text="RUNTIME STATUS" Style="{StaticResource MonoLabelText}" />
+                                <TextBlock x:Name="DiagnosticsRuntimeText" Margin="0,12,0,0" Text="Ready"
+                                           TextWrapping="Wrap" Foreground="{StaticResource BabyBlueBrush}" />
+                            </StackPanel>
+                        </Border>
+                    </Grid>
+
+                    <Button Content="Open logs" Margin="0,12,0,0" HorizontalAlignment="Left"
+                            Style="{StaticResource SecondaryButton}" Click="OpenLogs_OnClick" />
+                </StackPanel>
+                </ScrollViewer>
+            </Grid>
+
+            <Border Grid.Row="2" Background="#0D131A" BorderBrush="#263642" BorderThickness="0,1,0,0">
+                <Grid Margin="16,6">
+                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                        <Border Padding="7,3" Background="#252C33" BorderBrush="#45515B" BorderThickness="1" CornerRadius="2">
+                            <TextBlock Text="CTRL+SHIFT+1" Style="{StaticResource MonoLabelText}" Foreground="#E1E6EA" />
+                        </Border>
+                        <TextBlock Margin="8,0,0,0" VerticalAlignment="Center" Foreground="{StaticResource MutedBrush}"
+                                   Text="Hold to talk" />
+                    </StackPanel>
+                    <TextBlock HorizontalAlignment="Center" VerticalAlignment="Center"
+                               Style="{StaticResource MonoLabelText}" Text="Ctrl+K to Search  •  Esc to Hide" />
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                        <Button Content="Logs" Margin="0,0,8,0" Style="{StaticResource SecondaryButton}" Click="OpenLogs_OnClick" />
+                        <Button Content="Open Lulu" Margin="0,0,8,0" Style="{StaticResource SecondaryButton}" Click="OpenAssistant_OnClick" />
+                        <Button x:Name="SaveButton" Content="Save setup" Padding="18,8" Click="Save_OnClick" />
+                    </StackPanel>
+                </Grid>
+            </Border>
+        </Grid>
+    </Border>
+</Window>
