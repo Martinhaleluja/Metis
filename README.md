@@ -1,5 +1,7 @@
 # Metis
 
+An AI companion for your computer.
+
 Metis is a Windows-native desktop companion rebuilt with C# and .NET 8/WPF.
 
 Metis lives in the tray, follows the cursor as a vector companion, records while `Ctrl+Shift+1` is held, captures the complete virtual desktop, and sends the request to the selected reasoning provider. For screen-aware requests, the provider can return a small structured desktop plan that moves Metis independently and performs compatible cursorless actions.
