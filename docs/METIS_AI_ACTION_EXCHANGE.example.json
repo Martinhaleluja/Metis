@@ -1,0 +1,183 @@
+{
+  "purpose": "Example of the JSON exchange Metis uses when asking an AI to perform a Windows task.",
+  "important_notes": [
+    "This is a safe example/template, not a log containing your API key or private screenshot.",
+    "The API key is sent separately in an HTTP header and must never be placed in this JSON.",
+    "The screenshot data field contains a placeholder here; the running app replaces it with base64 image data.",
+    "The response actions are executed in array order from first to last."
+  ],
+  "example_user_command": "Open Notepad and type Hello Max",
+  "request_sent_to_ai": {
+    "systemInstruction": {
+      "parts": [
+        {
+          "text": "You are Metis, a concise Windows desktop companion and task agent. Return only one JSON object matching the supplied response schema. For a low-risk computer command, return the complete ordered action sequence needed to carry it out."
+        }
+      ]
+    },
+    "contents": [
+      {
+        "role": "user",
+        "parts": [
+          {
+            "text": "screen_capture_attached: yes\nscreen_capture_mime_type: image/jpeg\nscreen_capture_dimensions: 1920x1080\nactive_window: Desktop\n\nuser_request:\nOpen Notepad and type Hello Max\n\naccessibility_elements:\n<WINDOWS_UI_AUTOMATION_JSON_IS_INSERTED_HERE>"
+          },
+          {
+            "inlineData": {
+              "mimeType": "image/jpeg",
+              "data": "<BASE64_SCREENSHOT_BYTES_ARE_INSERTED_HERE>"
+            }
+          }
+        ]
+      }
+    ],
+    "generationConfig": {
+      "temperature": 0.1,
+      "maxOutputTokens": 1000,
+      "responseMimeType": "application/json",
+      "responseJsonSchema": {
+        "type": "object",
+        "properties": {
+          "screen_observed": {
+            "type": "boolean"
+          },
+          "spoken_text": {
+            "type": "string"
+          },
+          "bubble_cue": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "actions": {
+            "type": "array",
+            "maxItems": 12,
+            "items": {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "enum": [
+                    "move_pointer",
+                    "left_click",
+                    "double_click",
+                    "right_click",
+                    "type_text",
+                    "key_press",
+                    "open_app",
+                    "open_url",
+                    "wait"
+                  ]
+                },
+                "x": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ],
+                  "minimum": 0,
+                  "maximum": 1000
+                },
+                "y": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ],
+                  "minimum": 0,
+                  "maximum": 1000
+                },
+                "delay_ms": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ],
+                  "minimum": 0,
+                  "maximum": 10000
+                },
+                "label": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "automation_id": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "text": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "key": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              },
+              "required": [
+                "type",
+                "x",
+                "y",
+                "delay_ms",
+                "label",
+                "automation_id",
+                "text",
+                "key"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "screen_observed",
+          "spoken_text",
+          "bubble_cue",
+          "actions"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "response_received_from_ai": {
+    "screen_observed": true,
+    "spoken_text": "I will open Notepad and type that for you.",
+    "bubble_cue": null,
+    "actions": [
+      {
+        "type": "open_app",
+        "x": null,
+        "y": null,
+        "delay_ms": null,
+        "label": "Open Notepad",
+        "automation_id": null,
+        "text": "Notepad",
+        "key": null
+      },
+      {
+        "type": "wait",
+        "x": null,
+        "y": null,
+        "delay_ms": 1200,
+        "label": "Wait for Notepad",
+        "automation_id": null,
+        "text": null,
+        "key": null
+      },
+      {
+        "type": "type_text",
+        "x": null,
+        "y": null,
+        "delay_ms": null,
+        "label": "Type the requested text",
+        "automation_id": null,
+        "text": "Hello Max",
+        "key": null
+      }
+    ]
+  }
+}

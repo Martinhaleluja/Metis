@@ -6,6 +6,9 @@ TestResults/
 artifacts/
 models/
 tools/
+installer/.generated/
+installer/.tools/
+installer/output/
 *.user
 *.suo
 *.nupkg

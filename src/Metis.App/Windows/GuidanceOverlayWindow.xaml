@@ -1,0 +1,15 @@
+<Window x:Class="Metis.App.Windows.GuidanceOverlayWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Metis guidance"
+        WindowStyle="None"
+        ResizeMode="NoResize"
+        AllowsTransparency="True"
+        Background="Transparent"
+        ShowInTaskbar="False"
+        Topmost="True"
+        IsHitTestVisible="False"
+        Focusable="False"
+        WindowStartupLocation="Manual">
+    <Canvas x:Name="MarkCanvas" />
+</Window>

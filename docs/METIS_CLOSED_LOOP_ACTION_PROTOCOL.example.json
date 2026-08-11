@@ -1,0 +1,294 @@
+{
+  "protocol_version": "2.0",
+  "purpose": "Closed-loop action protocol for one Metis companion to observe, plan, execute, verify, and replan Windows tasks.",
+  "request_prompt_addition": "Operate in a closed loop. Return only the next small batch of ordered actions that can be safely executed from the current observation. Never predict controls or coordinates that are not visible yet. After any action that changes the window, page, application, or search results, return an observe action. Metis will execute the batch and send execution_results plus a fresh screenshot and accessibility tree. Use those new observations to choose the next actions. Prefer direct app or browser commands, then AutomationElement IDs, then current screenshot coordinates, and use physical input only as a fallback. Use condition-based waits instead of fixed sleeps whenever possible. Return status continue while more work remains, done only after success_criteria has been verified, and blocked when the goal cannot be completed safely.",
+  "execution_policy": {
+    "single_visible_companion": true,
+    "maximum_actions_per_response": 6,
+    "maximum_replans": 8,
+    "execute_actions_in_array_order": true,
+    "serialize_physical_mouse_and_keyboard": true,
+    "allow_background_network_work_while_waiting": true,
+    "reobserve_after": [
+      "open_app",
+      "open_url",
+      "left_click",
+      "double_click",
+      "key_press:enter",
+      "browser_search",
+      "window_change"
+    ],
+    "action_priority": [
+      "direct_app_or_browser_command",
+      "automation_element",
+      "fresh_screenshot_coordinates",
+      "physical_input_fallback"
+    ]
+  },
+  "supported_action_types": [
+    "move_pointer",
+    "left_click",
+    "double_click",
+    "right_click",
+    "type_text",
+    "key_press",
+    "open_app",
+    "open_url",
+    "focus_window",
+    "wait_for_window",
+    "wait_for_element",
+    "wait_for_text",
+    "observe",
+    "verify",
+    "finish"
+  ],
+  "initial_request_sent_to_ai": {
+    "plan_id": null,
+    "replan_number": 0,
+    "original_goal": "Open Chrome, search for Metis AI desktop companion, and open the correct result.",
+    "current_window": "Desktop",
+    "screen_capture_attached": true,
+    "screen_capture": {
+      "mime_type": "image/jpeg",
+      "width": 1920,
+      "height": 1080,
+      "data": "<BASE64_CURRENT_SCREENSHOT>"
+    },
+    "accessibility_elements": "<CURRENT_WINDOWS_UI_AUTOMATION_JSON>",
+    "execution_results": []
+  },
+  "initial_response_received_from_ai": {
+    "plan_id": "search-task-001",
+    "replan_number": 0,
+    "goal": "Open Chrome, search for Metis AI desktop companion, and open the correct result.",
+    "status": "continue",
+    "spoken_text": "I’m opening Chrome and starting the search.",
+    "bubble_cue": null,
+    "actions": [
+      {
+        "id": "step-1",
+        "type": "open_app",
+        "text": "Google Chrome",
+        "key": null,
+        "x": null,
+        "y": null,
+        "automation_id": null,
+        "delay_ms": null,
+        "timeout_ms": 8000,
+        "label": "Open Chrome",
+        "expected_state": "A Google Chrome window exists"
+      },
+      {
+        "id": "step-2",
+        "type": "wait_for_window",
+        "text": "Google Chrome",
+        "key": null,
+        "x": null,
+        "y": null,
+        "automation_id": null,
+        "delay_ms": null,
+        "timeout_ms": 8000,
+        "label": "Wait for Chrome",
+        "expected_state": "Google Chrome is foreground and ready"
+      },
+      {
+        "id": "step-3",
+        "type": "key_press",
+        "text": null,
+        "key": "ctrl+l",
+        "x": null,
+        "y": null,
+        "automation_id": null,
+        "delay_ms": null,
+        "timeout_ms": 2000,
+        "label": "Focus address bar",
+        "expected_state": "The browser address bar is focused"
+      },
+      {
+        "id": "step-4",
+        "type": "type_text",
+        "text": "Metis AI desktop companion",
+        "key": null,
+        "x": null,
+        "y": null,
+        "automation_id": null,
+        "delay_ms": null,
+        "timeout_ms": 3000,
+        "label": "Enter search query",
+        "expected_state": "The address bar contains the requested query"
+      },
+      {
+        "id": "step-5",
+        "type": "key_press",
+        "text": null,
+        "key": "enter",
+        "x": null,
+        "y": null,
+        "automation_id": null,
+        "delay_ms": null,
+        "timeout_ms": 3000,
+        "label": "Start search",
+        "expected_state": "The browser begins loading search results"
+      },
+      {
+        "id": "step-6",
+        "type": "observe",
+        "text": "Wait for the search results page and capture a fresh observation.",
+        "key": null,
+        "x": null,
+        "y": null,
+        "automation_id": null,
+        "delay_ms": null,
+        "timeout_ms": 10000,
+        "label": "Inspect search results",
+        "expected_state": "Search results are visible"
+      }
+    ],
+    "success_criteria": {
+      "type": "page_or_window_matches_goal",
+      "value": "The correct Metis AI desktop companion result is open"
+    },
+    "failure_policy": {
+      "maximum_retries_per_action": 2,
+      "on_timeout": "observe_and_replan",
+      "on_missing_element": "observe_and_replan",
+      "on_input_rejected": "try_next_action_priority",
+      "on_unsafe_action": "stop_and_report_blocked"
+    }
+  },
+  "execution_feedback_sent_to_ai": {
+    "plan_id": "search-task-001",
+    "replan_number": 1,
+    "original_goal": "Open Chrome, search for Metis AI desktop companion, and open the correct result.",
+    "current_window": "Metis AI desktop companion - Google Search - Google Chrome",
+    "execution_results": [
+      {
+        "action_id": "step-1",
+        "success": true,
+        "message": "Chrome opened"
+      },
+      {
+        "action_id": "step-2",
+        "success": true,
+        "message": "Chrome became ready"
+      },
+      {
+        "action_id": "step-3",
+        "success": true,
+        "message": "Address bar focused"
+      },
+      {
+        "action_id": "step-4",
+        "success": true,
+        "message": "Typed 25 characters"
+      },
+      {
+        "action_id": "step-5",
+        "success": true,
+        "message": "Pressed enter"
+      },
+      {
+        "action_id": "step-6",
+        "success": true,
+        "message": "Fresh search-results observation captured"
+      }
+    ],
+    "screen_capture_attached": true,
+    "screen_capture": {
+      "mime_type": "image/jpeg",
+      "width": 1920,
+      "height": 1080,
+      "data": "<BASE64_UPDATED_SEARCH_RESULTS_SCREENSHOT>"
+    },
+    "accessibility_elements": "<UPDATED_BROWSER_UI_AUTOMATION_OR_DOM_JSON>",
+    "request": "Inspect only this fresh observation and return the next safe action batch needed to complete the original goal."
+  },
+  "follow_up_response_received_from_ai": {
+    "plan_id": "search-task-001",
+    "replan_number": 1,
+    "goal": "Open Chrome, search for Metis AI desktop companion, and open the correct result.",
+    "status": "continue",
+    "spoken_text": "I found the relevant result and I’m opening it.",
+    "bubble_cue": "Opening result",
+    "actions": [
+      {
+        "id": "step-7",
+        "type": "left_click",
+        "text": null,
+        "key": null,
+        "x": 412,
+        "y": 338,
+        "automation_id": "search-result-metis",
+        "delay_ms": null,
+        "timeout_ms": 3000,
+        "label": "Open the matching Metis result",
+        "expected_state": "The selected Metis result begins loading"
+      },
+      {
+        "id": "step-8",
+        "type": "observe",
+        "text": "Wait for navigation and capture the destination page.",
+        "key": null,
+        "x": null,
+        "y": null,
+        "automation_id": null,
+        "delay_ms": null,
+        "timeout_ms": 10000,
+        "label": "Verify destination",
+        "expected_state": "The destination page is visible"
+      },
+      {
+        "id": "step-9",
+        "type": "verify",
+        "text": "Confirm that the open page matches the original Metis goal.",
+        "key": null,
+        "x": null,
+        "y": null,
+        "automation_id": null,
+        "delay_ms": null,
+        "timeout_ms": 3000,
+        "label": "Verify completion",
+        "expected_state": "The correct Metis result is open"
+      }
+    ],
+    "success_criteria": {
+      "type": "page_or_window_matches_goal",
+      "value": "The correct Metis AI desktop companion result is open"
+    },
+    "failure_policy": {
+      "maximum_retries_per_action": 2,
+      "on_timeout": "observe_and_replan",
+      "on_missing_element": "observe_and_replan",
+      "on_input_rejected": "try_next_action_priority",
+      "on_unsafe_action": "stop_and_report_blocked"
+    }
+  },
+  "final_response_shape": {
+    "plan_id": "search-task-001",
+    "replan_number": 2,
+    "goal": "Open Chrome, search for Metis AI desktop companion, and open the correct result.",
+    "status": "done",
+    "spoken_text": "The correct result is open.",
+    "bubble_cue": null,
+    "actions": [
+      {
+        "id": "step-10",
+        "type": "finish",
+        "text": "The destination was verified against the original goal.",
+        "key": null,
+        "x": null,
+        "y": null,
+        "automation_id": null,
+        "delay_ms": null,
+        "timeout_ms": null,
+        "label": "Task complete",
+        "expected_state": "Goal verified"
+      }
+    ],
+    "success_criteria": {
+      "type": "page_or_window_matches_goal",
+      "value": "verified"
+    },
+    "failure_policy": null
+  }
+}

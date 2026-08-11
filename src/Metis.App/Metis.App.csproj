@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <UseWPF>true</UseWPF>
+    <UseWindowsForms>true</UseWindowsForms>
+    <UseSystemDrawing>true</UseSystemDrawing>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <AssemblyName>Metis</AssemblyName>
+    <RootNamespace>Metis.App</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- Ships the sound pack beside the executable so the default relative
+         path resolves for a published build and the installer includes it. -->
+    <Content Include="..\..\sound effects\**\*.*"
+             Link="sound effects\%(RecursiveDir)%(Filename)%(Extension)"
+             CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Metis.Core\Metis.Core.csproj" />
+    <ProjectReference Include="..\Metis.AI\Metis.AI.csproj" />
+    <ProjectReference Include="..\Metis.Data\Metis.Data.csproj" />
+    <ProjectReference Include="..\Metis.Windows\Metis.Windows.csproj" />
+  </ItemGroup>
+</Project>

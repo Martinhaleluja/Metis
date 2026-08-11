@@ -1,0 +1,89 @@
+<Window x:Class="Metis.App.Windows.NotchWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Metis activity"
+        WindowStyle="None"
+        ResizeMode="NoResize"
+        AllowsTransparency="True"
+        Background="Transparent"
+        ShowInTaskbar="False"
+        ShowActivated="False"
+        Topmost="True"
+        Focusable="False"
+        WindowStartupLocation="Manual"
+        Width="560" Height="64">
+    <Grid Background="Transparent">
+        <!-- The notch hangs off the top edge, so only the bottom corners are
+             rounded. It is always present while Metis runs: tucked to a thin
+             sliver when idle, expanded when there is something to say. -->
+        <Border x:Name="NotchBody"
+                Background="#0A0A0C"
+                CornerRadius="0,0,18,18"
+                HorizontalAlignment="Center"
+                VerticalAlignment="Top"
+                Width="104" Height="34"
+                Cursor="Hand"
+                MouseLeftButtonDown="Notch_OnMouseLeftButtonDown"
+                MouseLeftButtonUp="Notch_OnMouseLeftButtonUp"
+                MouseMove="Notch_OnMouseMove"
+                MouseEnter="Notch_OnMouseEnter"
+                MouseLeave="Notch_OnMouseLeave"
+                RenderTransformOrigin="0.5,0">
+            <Border.RenderTransform>
+                <TranslateTransform x:Name="NotchDrop" Y="-22" />
+            </Border.RenderTransform>
+            <Border.Effect>
+                <DropShadowEffect Color="#000000" BlurRadius="16" ShadowDepth="3" Opacity="0.42" />
+            </Border.Effect>
+
+            <Grid>
+                <!-- Tucked state: a grabber bar, so the notch reads as
+                     something you can pull rather than a stray black shape. -->
+                <Border x:Name="Grabber" Width="30" Height="3" CornerRadius="2"
+                        Background="#5A5A61" HorizontalAlignment="Center"
+                        VerticalAlignment="Bottom" Margin="0,0,0,7" />
+
+                <Grid x:Name="NotchContent" Margin="14,0" Opacity="0">
+                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                        <Grid Width="16" Height="16" Margin="0,0,9,0" VerticalAlignment="Center">
+                            <Ellipse x:Name="PulseHalo" Width="16" Height="16" Fill="#0A7CFF" Opacity="0.28" />
+                            <Ellipse x:Name="StatusLight" Width="8" Height="8" Fill="#0A7CFF"
+                                     HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Grid>
+
+                        <TextBlock x:Name="ActivityText" Text="" VerticalAlignment="Center"
+                                   Foreground="#F2F2F7" FontSize="12.5" FontWeight="Medium"
+                                   TextTrimming="CharacterEllipsis" MaxWidth="260" />
+
+                        <ItemsControl x:Name="StepPips" VerticalAlignment="Center" Margin="10,1,0,0"
+                                      Visibility="Collapsed">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <StackPanel Orientation="Horizontal" />
+                                </ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                        </ItemsControl>
+
+                        <StackPanel x:Name="ThinkingDots" Orientation="Horizontal" VerticalAlignment="Center"
+                                    Margin="10,1,0,0" Visibility="Collapsed">
+                            <Ellipse x:Name="Dot1" Width="5" Height="5" Fill="#8E8E93" Margin="0,0,4,0" />
+                            <Ellipse x:Name="Dot2" Width="5" Height="5" Fill="#8E8E93" Margin="0,0,4,0" />
+                            <Ellipse x:Name="Dot3" Width="5" Height="5" Fill="#8E8E93" />
+                        </StackPanel>
+                    </StackPanel>
+                </Grid>
+
+                <!-- Hover affordances: pull-down chevron and a settings gear.
+                     Only shown on hover so the resting notch stays quiet. -->
+                <StackPanel x:Name="HoverControls" Orientation="Horizontal" Opacity="0"
+                            HorizontalAlignment="Right" VerticalAlignment="Center" Margin="0,0,10,0">
+                    <TextBlock x:Name="Chevron" Text="⌄" FontSize="15" Foreground="#C7C7CC"
+                               Margin="0,-3,10,0" VerticalAlignment="Center" />
+                    <TextBlock Text="⚙" FontSize="13" Foreground="#C7C7CC" VerticalAlignment="Center"
+                               Cursor="Hand" ToolTip="Metis setup"
+                               MouseLeftButtonUp="Settings_OnMouseLeftButtonUp" />
+                </StackPanel>
+            </Grid>
+        </Border>
+    </Grid>
+</Window>
