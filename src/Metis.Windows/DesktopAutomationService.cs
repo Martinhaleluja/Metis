@@ -45,6 +45,15 @@ public sealed class DesktopAutomationService : IDesktopAutomationService
 
     public bool FullControlEnabled { get; set; }
 
+    public bool MoveRealCursor { get; set; }
+
+    /// <summary>
+    /// Physical input requires both permissions: desktop control at all, and
+    /// permission to take the pointer specifically. Keeping them separate is
+    /// what lets Metis work fully while leaving the cursor alone.
+    /// </summary>
+    private bool MayMoveRealCursor => FullControlEnabled && MoveRealCursor;
+
     public bool TryResolveTarget(
         DesktopAction action,
         ScreenCapture capture,
@@ -98,9 +107,9 @@ public sealed class DesktopAutomationService : IDesktopAutomationService
         }
 
         if (action.Kind is DesktopActionKind.TypeText or DesktopActionKind.KeyPress or
-            DesktopActionKind.OpenApp or DesktopActionKind.OpenUrl)
+            DesktopActionKind.OpenApp or DesktopActionKind.OpenUrl or DesktopActionKind.RunCommand)
         {
-            return ExecuteKeyboardOrLaunchAction(action);
+            return await ExecuteKeyboardOrLaunchActionAsync(action, cancellationToken).ConfigureAwait(false);
         }
 
         if (!TryResolveTarget(action, capture, out var screenX, out var screenY, out var mappingError))
@@ -111,28 +120,46 @@ public sealed class DesktopAutomationService : IDesktopAutomationService
         try
         {
             cancellationToken.ThrowIfCancellationRequested();
+            // Background first, throughout. The user asked to keep working while
+            // Metis does, and every route that moves the real pointer takes the
+            // machine away from them for as long as it runs. The physical path
+            // is kept only for the applications that ignore both accessibility
+            // and window messages, and it is the last thing tried rather than
+            // the first.
             if (action.Kind == DesktopActionKind.MovePointer)
             {
-                var physicalHoverError = 0;
-                if (FullControlEnabled && _physicalInput.TryMoveAt(screenX, screenY, out physicalHoverError))
+                if (_backgroundInput.TryHoverAt(screenX, screenY, out var hoverError))
                 {
                     return new DesktopActionResult(
                         action,
                         true,
-                        FormatSuccess(action, "Moved Metis with full Windows hover control", screenX, screenY),
+                        FormatSuccess(action, "Hovered without moving the Windows pointer", screenX, screenY),
                         screenX,
                         screenY);
                 }
 
-                var hoverSent = _backgroundInput.TryHoverAt(screenX, screenY, out var hoverError);
-                var message = hoverSent
-                    ? FormatSuccess(action, "Moved Metis and sent a cursorless hover", screenX, screenY)
-                    : FullControlEnabled
-                        ? $"Windows rejected both full-control and cursorless hover at ({screenX}, {screenY}). " +
-                          $"Full control: {FormatWindowsError(physicalHoverError)} Cursorless: {FormatWindowsError(hoverError)}"
-                        : $"Moved Metis to ({screenX}, {screenY}), but the application rejected cursorless hover messages " +
-                          $"({FormatWindowsError(hoverError)}).";
-                return new DesktopActionResult(action, hoverSent, message, screenX, screenY);
+                if (!MayMoveRealCursor)
+                {
+                    return new DesktopActionResult(
+                        action,
+                        false,
+                        $"The application at ({screenX}, {screenY}) ignored a background hover. " +
+                        $"The Windows pointer was not moved, because Metis is set to leave your pointer alone. " +
+                        $"{FormatWindowsError(hoverError)}",
+                        screenX,
+                        screenY);
+                }
+
+                var moved = _physicalInput.TryMoveAt(screenX, screenY, out var physicalHoverError);
+                return new DesktopActionResult(
+                    action,
+                    moved,
+                    moved
+                        ? FormatSuccess(action, "Moved the Windows pointer, because a background hover was refused", screenX, screenY)
+                        : $"Windows rejected both the background hover and moving the pointer at ({screenX}, {screenY}). " +
+                          $"Background: {FormatWindowsError(hoverError)} Pointer: {FormatWindowsError(physicalHoverError)}",
+                    screenX,
+                    screenY);
             }
 
             if (_uiAutomation is not null &&
@@ -165,50 +192,53 @@ public sealed class DesktopAutomationService : IDesktopAutomationService
                 }
             }
 
-            var physicalInputError = 0;
-            if (FullControlEnabled &&
-                _physicalInput.TryClickAt(action.Kind, screenX, screenY, out physicalInputError))
+            if (_backgroundInput.TryClickAt(action.Kind, screenX, screenY, out var inputError))
             {
-                var fullControlVerb = action.Kind switch
+                var verb = action.Kind switch
                 {
-                    DesktopActionKind.LeftClick => "Clicked with full Windows control",
-                    DesktopActionKind.DoubleClick => "Double-clicked with full Windows control",
-                    DesktopActionKind.RightClick => "Right-clicked with full Windows control",
-                    _ => "Activated with full Windows control"
+                    DesktopActionKind.LeftClick => "Clicked without moving the Windows pointer",
+                    DesktopActionKind.DoubleClick => "Double-clicked without moving the Windows pointer",
+                    DesktopActionKind.RightClick => "Right-clicked without moving the Windows pointer",
+                    _ => "Activated"
                 };
                 return new DesktopActionResult(
                     action,
                     true,
-                    FormatSuccess(action, fullControlVerb, screenX, screenY),
+                    FormatSuccess(action, verb, screenX, screenY),
                     screenX,
                     screenY);
             }
 
-            if (!_backgroundInput.TryClickAt(action.Kind, screenX, screenY, out var inputError))
+            if (!MayMoveRealCursor)
             {
                 return new DesktopActionResult(
                     action,
                     false,
-                    FullControlEnabled
-                        ? $"Windows rejected Metis's full-control and cursorless {Describe(action.Kind)} at ({screenX}, {screenY}). " +
-                          $"Full control: {FormatWindowsError(physicalInputError)} Cursorless: {FormatWindowsError(inputError)}"
-                        : $"The application at ({screenX}, {screenY}) rejected Metis's cursorless {Describe(action.Kind)}. " +
-                          $"The Windows pointer was not moved. {FormatWindowsError(inputError)}",
+                    $"The application at ({screenX}, {screenY}) refused a background {Describe(action.Kind)}. " +
+                    $"The Windows pointer was not moved, because Metis is set to leave your pointer alone — turn on " +
+                    $"\"Let Metis move the pointer\" in Setup to allow it. {FormatWindowsError(inputError)}",
                     screenX,
                     screenY);
             }
 
-            var verb = action.Kind switch
+            // Last resort. This takes the pointer away from the user, so it is
+            // reported as having done so rather than as a plain success.
+            var clicked = _physicalInput.TryClickAt(action.Kind, screenX, screenY, out var physicalInputError);
+            var fullControlVerb = action.Kind switch
             {
-                DesktopActionKind.LeftClick => "Clicked without moving the Windows pointer",
-                DesktopActionKind.DoubleClick => "Double-clicked without moving the Windows pointer",
-                DesktopActionKind.RightClick => "Right-clicked without moving the Windows pointer",
-                _ => "Activated"
+                DesktopActionKind.LeftClick => "Clicked with the pointer, because a background click was refused",
+                DesktopActionKind.DoubleClick => "Double-clicked with the pointer, because a background click was refused",
+                DesktopActionKind.RightClick => "Right-clicked with the pointer, because a background click was refused",
+                _ => "Activated with the pointer, because a background attempt was refused"
             };
+
             return new DesktopActionResult(
                 action,
-                true,
-                FormatSuccess(action, verb, screenX, screenY),
+                clicked,
+                clicked
+                    ? FormatSuccess(action, fullControlVerb, screenX, screenY)
+                    : $"Windows rejected both the background and pointer {Describe(action.Kind)} at ({screenX}, {screenY}). " +
+                      $"Background: {FormatWindowsError(inputError)} Pointer: {FormatWindowsError(physicalInputError)}",
                 screenX,
                 screenY);
         }
@@ -227,7 +257,9 @@ public sealed class DesktopAutomationService : IDesktopAutomationService
         }
     }
 
-    private DesktopActionResult ExecuteKeyboardOrLaunchAction(DesktopAction action)
+    private async Task<DesktopActionResult> ExecuteKeyboardOrLaunchActionAsync(
+        DesktopAction action,
+        CancellationToken cancellationToken)
     {
         if (!FullControlEnabled)
         {
@@ -235,6 +267,44 @@ public sealed class DesktopAutomationService : IDesktopAutomationService
                 action,
                 false,
                 "Typing and navigation require Full desktop control in Metis Setup.");
+        }
+
+        // Text first goes through the accessibility tree, which addresses the
+        // focused control directly. Synthesised keystrokes go wherever focus
+        // happens to be at that instant, so a user who clicks into their own
+        // document mid-task would receive Metis's text in it.
+        if (action.Kind == DesktopActionKind.TypeText && _uiAutomation is not null &&
+            !string.IsNullOrEmpty(action.Text))
+        {
+            var typed = await _uiAutomation
+                .TrySetFocusedValueAsync(action.Text, cancellationToken)
+                .ConfigureAwait(false);
+            if (typed.Success)
+            {
+                return new DesktopActionResult(action, true, typed.Message);
+            }
+
+            // Document bodies, plain edit controls and consoles expose no value
+            // pattern, which is most of the places people actually type. Posting
+            // the characters to the focused window reaches those without
+            // synthesising keystrokes that could land anywhere.
+            if (_backgroundInput.TryTypeText(action.Text, out var postError))
+            {
+                return new DesktopActionResult(
+                    action,
+                    true,
+                    $"Typed {action.Text.Length} character(s) into the focused window without using the keyboard.");
+            }
+
+            if (!MayMoveRealCursor)
+            {
+                _ = postError;
+                return new DesktopActionResult(
+                    action,
+                    false,
+                    $"{typed.Message} Metis is set to leave your keyboard alone, so it did not type this. " +
+                    "Turn on \"Let Metis move the pointer\" in Setup to allow it.");
+            }
         }
 
         var success = action.Kind switch
@@ -247,6 +317,8 @@ public sealed class DesktopAutomationService : IDesktopAutomationService
                 _physicalInput.TryOpenApp(action.Text ?? string.Empty, out _),
             DesktopActionKind.OpenUrl =>
                 _physicalInput.TryOpenUrl(action.Text ?? string.Empty, out _),
+            DesktopActionKind.RunCommand =>
+                _physicalInput.TryRunCommand(action.Text ?? string.Empty, elevated: false, out _),
             _ => false
         };
 
@@ -260,6 +332,8 @@ public sealed class DesktopAutomationService : IDesktopAutomationService
                     DesktopActionKind.TypeText => "Windows rejected Metis's generated typing input.",
                     DesktopActionKind.KeyPress => $"Windows rejected the key command '{action.Key ?? "unknown"}'.",
                     DesktopActionKind.OpenApp => $"Windows could not open '{ShortLabel(action.Text)}'.",
+                    DesktopActionKind.RunCommand =>
+                        $"The command did not run. It may have been declined at the Windows prompt: '{ShortLabel(action.Text)}'.",
                     DesktopActionKind.OpenUrl => "Windows rejected the URL or could not open the default browser.",
                     _ => "Windows rejected the navigation command."
                 });
@@ -272,7 +346,12 @@ public sealed class DesktopAutomationService : IDesktopAutomationService
             {
                 DesktopActionKind.TypeText => $"Typed {action.Text?.Length ?? 0} character(s).",
                 DesktopActionKind.KeyPress => $"Pressed {action.Key}.",
-                DesktopActionKind.OpenApp => $"Opened {ShortLabel(action.Text)} through Windows Search.",
+                // Deliberately does not name a route. Metis tries a direct
+                // launch first and only falls back to Windows Search, and a
+                // message claiming the wrong one sends anyone reading the log
+                // to look in the wrong place.
+                DesktopActionKind.OpenApp => $"Opened {ShortLabel(action.Text)}.",
+                DesktopActionKind.RunCommand => $"Ran: {ShortLabel(action.Text)}",
                 DesktopActionKind.OpenUrl => "Opened the requested web address in the default browser.",
                 _ => "Completed the navigation command."
             });

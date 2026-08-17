@@ -74,6 +74,14 @@ public enum ContextActivationTransition
 {
     None,
     Pressed,
+
+    /// <summary>
+    /// Shift arrived after the hold had already started, turning a context
+    /// activation into an inspect one. Without this the classification depended
+    /// on whether Shift happened to land before or after Ctrl+Alt completed,
+    /// which made the same three keys behave differently run to run.
+    /// </summary>
+    UpgradedToInspect,
     Released
 }
 
@@ -113,9 +121,10 @@ public sealed class ContextActivationKeyState
         var shift = _keysDown.Contains(LeftShift) || _keysDown.Contains(RightShift);
         var combination = control && alt;
 
-        if (combination && IsActive && shift)
+        if (combination && IsActive && shift && !ShiftSeen)
         {
             ShiftSeen = true;
+            return ContextActivationTransition.UpgradedToInspect;
         }
 
         if (combination && !IsActive)
@@ -143,6 +152,59 @@ public sealed class ContextActivationKeyState
 
     private static bool IsRelevant(uint virtualKey) =>
         virtualKey is LeftControl or RightControl or LeftShift or RightShift or LeftAlt or RightAlt;
+}
+
+/// <summary>
+/// Ctrl+Space, which turns continuous listening on and off.
+///
+/// A toggle rather than a hold, because the whole point is to stop holding
+/// something. It fires once when Space goes down with Ctrl already held, and
+/// will not fire again until Space is released — otherwise the key repeat
+/// Windows sends while a key is held would switch listening on and off dozens
+/// of times a second.
+/// </summary>
+public sealed class ActiveListeningKeyState
+{
+    public const uint LeftControl = 0xA2;
+    public const uint RightControl = 0xA3;
+    public const uint Space = 0x20;
+
+    private bool _firedForThisPress;
+
+    /// <summary>
+    /// True when the chord should toggle listening.
+    ///
+    /// <paramref name="controlHeld"/> is asked of Windows at the moment Space
+    /// arrives rather than accumulated from earlier hook callbacks. Tracking it
+    /// here looked equivalent and was not: a hook misses key-ups whenever
+    /// another window takes focus mid-chord or input is injected, and a Ctrl
+    /// that is believed held forever turns every subsequent space — every space
+    /// in an ordinary sentence — into a toggle. In testing that switched
+    /// listening on and off four times from one keypress.
+    /// </summary>
+    public bool Update(uint virtualKey, bool isDown, bool controlHeld)
+    {
+        if (virtualKey != Space)
+        {
+            return false;
+        }
+
+        if (!isDown)
+        {
+            _firedForThisPress = false;
+            return false;
+        }
+
+        if (!controlHeld || _firedForThisPress)
+        {
+            return false;
+        }
+
+        _firedForThisPress = true;
+        return true;
+    }
+
+    public void Reset() => _firedForThisPress = false;
 }
 
 public sealed class EmergencyStopKeyState

@@ -12,6 +12,7 @@ internal interface IPhysicalDesktopInput
     bool TryPressKey(string key, out int error);
     bool TryOpenApp(string appName, out int error);
     bool TryOpenUrl(string url, out int error);
+    bool TryRunCommand(string command, bool elevated, out int error);
 }
 
 /// <summary>
@@ -163,6 +164,32 @@ internal sealed class NativePhysicalDesktopInput : IPhysicalDesktopInput
         return TrySend(inputs.ToArray(), out error);
     }
 
+    /// <summary>
+    /// How long the Start menu is given to take focus, and then how long
+    /// Windows Search is given to resolve what was typed.
+    ///
+    /// The old values were 180 ms and 260 ms, which are shorter than the Start
+    /// menu takes to appear on an ordinary machine. Pressing Enter early does
+    /// not merely fail: the search list is still settling, so the highlighted
+    /// result may be something else entirely, and Metis launches the wrong
+    /// program while reporting success. Waiting is the cheap half of that
+    /// trade.
+    /// </summary>
+    private const int StartMenuFocusMilliseconds = 700;
+    private const int SearchResolveMilliseconds = 1100;
+
+    /// <summary>
+    /// Opens any installed program by name.
+    ///
+    /// Two routes, in order of reliability. A direct shell launch resolves
+    /// anything on PATH or carrying an App Paths registry entry — which covers
+    /// the great majority of installed desktop software, from notepad and
+    /// mspaint to Chrome and Code — and it does so with no dependence on the
+    /// Start menu, no timing to get wrong, and no possibility of launching a
+    /// neighbouring search result. Only when that fails does Metis fall back to
+    /// typing into Windows Search, which is what reaches Store apps and things
+    /// known by a display name rather than an executable.
+    /// </summary>
     public bool TryOpenApp(string appName, out int error)
     {
         var normalized = appName?.Trim() ?? string.Empty;
@@ -172,19 +199,151 @@ internal sealed class NativePhysicalDesktopInput : IPhysicalDesktopInput
             return false;
         }
 
+        if (TryLaunchDirectly(normalized, out error))
+        {
+            return true;
+        }
+
         if (!TryPressKey("win", out error))
         {
             return false;
         }
 
-        Thread.Sleep(180);
+        Thread.Sleep(StartMenuFocusMilliseconds);
         if (!TryTypeText(normalized, out error))
         {
             return false;
         }
 
-        Thread.Sleep(260);
+        Thread.Sleep(SearchResolveMilliseconds);
         return TryPressKey("enter", out error);
+    }
+
+    /// <summary>
+    /// Characters that turn a program name into something else — a path, a
+    /// second command, a redirect, a switch. A launch is given a bare name and
+    /// never arguments, so anything carrying these is refused here and left to
+    /// the search route, where it is typed as literal text rather than executed.
+    /// </summary>
+    private static readonly char[] NotInAProgramName =
+        ['\\', '/', '"', '\'', '|', '&', ';', '<', '>', '%', '^', '`', '\t'];
+
+    /// <summary>
+    /// Whether a name is a bare program name that may be handed to the shell.
+    ///
+    /// A direct launch executes what it is given, so it is given only names.
+    /// Anything carrying a path, a quote, a switch, or a second command is
+    /// refused here and left to the search route, where it is typed as literal
+    /// text into a search box rather than executed.
+    /// </summary>
+    internal static bool IsBareProgramName(string appName) =>
+        !string.IsNullOrWhiteSpace(appName) &&
+        appName.Length <= 100 &&
+        !appName.Any(char.IsControl) &&
+        appName.IndexOfAny(NotInAProgramName) < 0 &&
+        !appName.StartsWith('-') &&
+        !appName.Contains("..", StringComparison.Ordinal);
+
+    private static bool TryLaunchDirectly(string appName, out int error)
+    {
+        error = 0;
+
+        if (!IsBareProgramName(appName))
+        {
+            return false;
+        }
+
+        // ShellExecute resolves a bare name against PATH and the App Paths
+        // registry. Appending .exe as a second attempt picks up the entries
+        // registered with an extension, which is how most installers write them.
+        foreach (var candidate in Candidates(appName))
+        {
+            try
+            {
+                using var started = Process.Start(new ProcessStartInfo(candidate)
+                {
+                    UseShellExecute = true
+                });
+
+                return true;
+            }
+            catch
+            {
+                // Not resolvable under this name; try the next form, then fall
+                // back to Windows Search.
+            }
+        }
+
+        return false;
+    }
+
+    internal static IEnumerable<string> Candidates(string appName)
+    {
+        yield return appName;
+
+        if (!appName.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
+        {
+            yield return appName + ".exe";
+
+            // "Google Chrome" is registered as chrome.exe, "Visual Studio Code"
+            // as code.exe: the last word is usually the executable's own name.
+            var lastWord = appName.Split(' ', StringSplitOptions.RemoveEmptyEntries).LastOrDefault();
+            if (!string.IsNullOrEmpty(lastWord) && !string.Equals(lastWord, appName, StringComparison.Ordinal))
+            {
+                yield return lastWord + ".exe";
+            }
+        }
+    }
+
+    /// <summary>
+    /// Runs a reviewed system command through PowerShell, elevating only when
+    /// the review said it was needed.
+    ///
+    /// The command is passed as a single argument to <c>-Command</c> rather
+    /// than assembled into a longer line, and nothing the caller supplies is
+    /// concatenated around it, so there is no second command to smuggle in
+    /// through quoting. Elevation goes through ShellExecute's runas verb, which
+    /// makes Windows show its own consent prompt — the user sees a UAC dialog
+    /// naming PowerShell, on top of the confirmation Metis already asked for.
+    /// </summary>
+    public bool TryRunCommand(string command, bool elevated, out int error)
+    {
+        var review = Metis.Core.Services.SystemCommandPolicy.Review(command);
+        if (review.IsRefused)
+        {
+            error = 87;
+            return false;
+        }
+
+        try
+        {
+            var start = new ProcessStartInfo("powershell.exe")
+            {
+                UseShellExecute = true,
+                CreateNoWindow = false
+            };
+
+            start.ArgumentList.Add("-NoProfile");
+            start.ArgumentList.Add("-NonInteractive");
+            start.ArgumentList.Add("-Command");
+            start.ArgumentList.Add(review.Command);
+
+            if (elevated || review.NeedsElevation)
+            {
+                start.Verb = "runas";
+            }
+
+            using var started = Process.Start(start);
+            error = 0;
+            return started is not null;
+        }
+        catch
+        {
+            // A cancelled UAC prompt arrives here as an exception. That is the
+            // user declining, which is a refusal rather than a fault.
+            error = Marshal.GetLastWin32Error();
+            return false;
+        }
     }
 
     public bool TryOpenUrl(string url, out int error)

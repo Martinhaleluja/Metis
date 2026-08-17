@@ -12,11 +12,13 @@ public sealed class GlobalPushToTalk : IGlobalPushToTalk
     private const int WmKeyUp = 0x0101;
     private const int WmSysKeyDown = 0x0104;
     private const int WmSysKeyUp = 0x0105;
+    private const uint VkEscape = 0x1B;
     private readonly object _gate = new();
     private readonly HookProcedure _hookProcedure;
     private readonly PushToTalkKeyState _keyState = new();
     private readonly ContextActivationKeyState _contextKeyState = new();
     private readonly EmergencyStopKeyState _emergencyStopKeyState = new();
+    private readonly ActiveListeningKeyState _activeListeningKeyState = new();
     private nint _hookHandle;
     private bool _disposed;
 
@@ -30,6 +32,29 @@ public sealed class GlobalPushToTalk : IGlobalPushToTalk
     public event EventHandler? EmergencyStopPressed;
     public event EventHandler<ActivationKind>? ContextActivationPressed;
     public event EventHandler<ActivationKind>? ContextActivationReleased;
+
+    /// <summary>
+    /// Raised when Shift joins a hold that had already started, so a context
+    /// activation becomes an inspect one part-way through.
+    /// </summary>
+    public event EventHandler? ContextActivationUpgraded;
+
+    /// <summary>Raised when Ctrl+Space turns continuous listening on or off.</summary>
+    public event EventHandler? ActiveListeningToggled;
+
+    /// <summary>
+    /// Raised when Escape is pressed while <see cref="CancelKeyEnabled"/> is
+    /// set. The trace surface cannot take keyboard input itself — it is
+    /// deliberately never activated, so it never has focus — which meant the
+    /// Escape its own hint offered did nothing at all.
+    /// </summary>
+    public event EventHandler? CancelPressed;
+
+    /// <summary>
+    /// Whether Escape currently belongs to Metis. Only set while a trace is on
+    /// screen: swallowing Escape globally would break every other application.
+    /// </summary>
+    public bool CancelKeyEnabled { get; set; }
 
     public bool ContextShortcutsEnabled { get; set; } = true;
 
@@ -76,6 +101,7 @@ public sealed class GlobalPushToTalk : IGlobalPushToTalk
             _keyState.Reset();
             _contextKeyState.Reset();
             _emergencyStopKeyState.Reset();
+            _activeListeningKeyState.Reset();
         }
 
         if (handle != nint.Zero && !UnhookWindowsHookEx(handle))
@@ -89,6 +115,19 @@ public sealed class GlobalPushToTalk : IGlobalPushToTalk
         }
     }
 
+    /// <summary>
+    /// Whether either Ctrl key is physically down right now, asked of Windows
+    /// rather than remembered. A hook loses key-ups when focus moves mid-chord
+    /// or input is injected, and a remembered modifier that never comes back up
+    /// silently rewrites what every later keystroke means.
+    /// </summary>
+    private static bool IsControlHeldNow() =>
+        (GetAsyncKeyState(ActiveListeningKeyState.LeftControl) & 0x8000) != 0 ||
+        (GetAsyncKeyState(ActiveListeningKeyState.RightControl) & 0x8000) != 0;
+
+    [DllImport("user32.dll")]
+    private static extern short GetAsyncKeyState(uint virtualKey);
+
     private nint HookCallback(int code, nint message, nint data)
     {
         if (code >= 0)
@@ -100,11 +139,16 @@ public sealed class GlobalPushToTalk : IGlobalPushToTalk
             {
                 EventHandler? handler = null;
                 var emergencyStop = false;
+                var toggleListening = false;
                 var contextTransition = ContextActivationTransition.None;
                 var contextKind = ActivationKind.Context;
                 lock (_gate)
                 {
                     emergencyStop = _emergencyStopKeyState.Update(keyboard.VirtualKey, isDown);
+                    toggleListening = _activeListeningKeyState.Update(
+                        keyboard.VirtualKey,
+                        isDown,
+                        IsControlHeldNow());
                     var pushToTalk = _keyState.Update(keyboard.VirtualKey, isDown);
                     handler = pushToTalk switch
                     {
@@ -134,10 +178,18 @@ public sealed class GlobalPushToTalk : IGlobalPushToTalk
                     EmergencyStopPressed?.Invoke(this, EventArgs.Empty);
                 }
 
+                if (toggleListening)
+                {
+                    ActiveListeningToggled?.Invoke(this, EventArgs.Empty);
+                }
+
                 switch (contextTransition)
                 {
                     case ContextActivationTransition.Pressed:
                         ContextActivationPressed?.Invoke(this, contextKind);
+                        break;
+                    case ContextActivationTransition.UpgradedToInspect:
+                        ContextActivationUpgraded?.Invoke(this, EventArgs.Empty);
                         break;
                     case ContextActivationTransition.Released:
                         ContextActivationReleased?.Invoke(this, contextKind);
@@ -145,6 +197,16 @@ public sealed class GlobalPushToTalk : IGlobalPushToTalk
                 }
 
                 handler?.Invoke(this, EventArgs.Empty);
+
+                if (CancelKeyEnabled && isDown && keyboard.VirtualKey == VkEscape)
+                {
+                    // Swallowed, but only while a trace is up: for that moment
+                    // Escape means "put the pen away", and letting it through as
+                    // well would also dismiss whatever is underneath.
+                    CancelPressed?.Invoke(this, EventArgs.Empty);
+                    return 1;
+                }
+
                 if (keyboard.VirtualKey == EmergencyStopKeyState.F12)
                 {
                     return 1;

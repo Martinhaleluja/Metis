@@ -25,6 +25,11 @@ public sealed class FlaUiAutomationService : IUiAutomationService
         CancellationToken cancellationToken = default) =>
         Task.Run(() => DescribeElementAt(screenX, screenY, cancellationToken), cancellationToken);
 
+    public Task<UiElementHit?> FindElementAsync(
+        string query,
+        CancellationToken cancellationToken = default) =>
+        Task.Run(() => FindElement(query, cancellationToken), cancellationToken);
+
     public Task<UiAutomationResult> TryInvokeAsync(
         string automationId,
         ScreenCapture capture,
@@ -36,6 +41,52 @@ public sealed class FlaUiAutomationService : IUiAutomationService
         int screenY,
         CancellationToken cancellationToken = default) =>
         Task.Run(() => TryInvokeAt(screenX, screenY, cancellationToken), cancellationToken);
+
+    public Task<UiAutomationResult> TrySetFocusedValueAsync(
+        string text,
+        CancellationToken cancellationToken = default) =>
+        Task.Run(() => TrySetFocusedValue(text, cancellationToken), cancellationToken);
+
+    /// <summary>
+    /// Writes into the focused control through its value pattern. Appends to
+    /// what is already there rather than replacing it, because the user asked
+    /// Metis to type something, not to clear the field first.
+    /// </summary>
+    private static UiAutomationResult TrySetFocusedValue(string text, CancellationToken cancellationToken)
+    {
+        try
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            using var automation = new UIA3Automation();
+            var focused = automation.FocusedElement();
+            if (focused is null)
+            {
+                return new UiAutomationResult(false, "Nothing on screen has keyboard focus.");
+            }
+
+            var value = focused.Patterns.Value.PatternOrDefault;
+            if (value is null || value.IsReadOnly.ValueOrDefault)
+            {
+                return new UiAutomationResult(
+                    false,
+                    "The focused control does not accept text through the accessibility tree.");
+            }
+
+            var existing = value.Value.ValueOrDefault ?? string.Empty;
+            value.SetValue(existing + text);
+
+            var name = DescribeSingleElement(focused) ?? "the focused control";
+            return new UiAutomationResult(true, $"Typed {text.Length} character(s) into {name} in the background.");
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception exception)
+        {
+            return new UiAutomationResult(false, $"The accessibility tree refused the text: {exception.Message}");
+        }
+    }
 
     private static string? DescribeWindow(ScreenCapture capture, CancellationToken cancellationToken)
     {
@@ -137,6 +188,175 @@ public sealed class FlaUiAutomationService : IUiAutomationService
             return null;
         }
     }
+
+    /// <summary>
+    /// Scores every visible control in the foreground window against the words
+    /// in the request and returns the best match. Windows knows exactly where
+    /// its controls are, so when the model declines to give coordinates this
+    /// still finds the thing the user asked about — and finds it precisely.
+    /// </summary>
+    private static UiElementHit? FindElement(string query, CancellationToken cancellationToken)
+    {
+        var terms = query
+            .ToLowerInvariant()
+            .Split([' ', '\t', ',', '.', '?', '!', '"', '\''], StringSplitOptions.RemoveEmptyEntries)
+            .Where(word => word.Length > 2 && !IgnoredWords.Contains(word))
+            .Distinct()
+            .ToArray();
+        if (terms.Length == 0)
+        {
+            return null;
+        }
+
+        try
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            using var automation = new UIA3Automation();
+
+            // Search the window the user is actually in. Falling back to the
+            // whole desktop would match controls in Metis's own windows or in
+            // apps behind the one being asked about.
+            var handle = GetForegroundWindow();
+            var window = handle != nint.Zero ? automation.FromHandle(handle) : automation.GetDesktop();
+
+            UiElementHit? best = null;
+            var bestScore = 0;
+
+            foreach (var element in window.FindAllDescendants())
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                try
+                {
+                    if (element.IsOffscreen)
+                    {
+                        continue;
+                    }
+
+                    var bounds = element.BoundingRectangle;
+                    if (bounds.Width < 8 || bounds.Height < 8)
+                    {
+                        continue;
+                    }
+
+                    var name = (element.Name ?? string.Empty).Trim();
+                    var controlType = element.ControlType.ToString();
+                    var lowerName = name.ToLowerInvariant();
+
+                    // Only the visible name counts as textual evidence. Neither
+                    // the control type nor the automation id is matched by
+                    // substring, because both routinely contain words like
+                    // "bar" or "text" and would match a request for a "search
+                    // bar" to the window's system MenuBar.
+                    var score = terms.Count(term => lowerName.Contains(term, StringComparison.Ordinal)) * 2;
+
+                    if (terms.Any(term => string.Equals(lowerName, term, StringComparison.Ordinal)))
+                    {
+                        score += 4;
+                    }
+
+                    if (WantedTypes(terms).Contains(controlType))
+                    {
+                        score += 2;
+                    }
+
+                    // A weak, purely incidental hit is worse than admitting the
+                    // control was not found: a mark on the wrong thing actively
+                    // misleads, whereas no mark simply says "I could not tell".
+                    if (score < 2)
+                    {
+                        continue;
+                    }
+
+                    if (bounds.Width * bounds.Height < 240_000)
+                    {
+                        score += 1;
+                    }
+
+                    if (score <= bestScore)
+                    {
+                        continue;
+                    }
+
+                    bestScore = score;
+                    best = new UiElementHit(
+                        name.Length > 0 ? name : controlType,
+                        controlType,
+                        (int)(bounds.Left + (bounds.Width / 2)),
+                        (int)(bounds.Top + (bounds.Height / 2)),
+                        (int)bounds.Width,
+                        (int)bounds.Height);
+                }
+                catch
+                {
+                    // One unreadable element must not stop the search.
+                }
+            }
+
+            return best;
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private static extern nint GetForegroundWindow();
+
+    /// <summary>
+    /// Turns the kind of thing the user named into the control types that
+    /// satisfy it. "Where can I type" names no control, but it does say the
+    /// answer is a text field — which is enough to find one.
+    /// </summary>
+    private static HashSet<string> WantedTypes(IEnumerable<string> terms)
+    {
+        var wanted = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var term in terms)
+        {
+            switch (term)
+            {
+                case "type" or "typing" or "input" or "text" or "enter" or "write" or "field" or "box" or "search":
+                    wanted.Add("Edit");
+                    wanted.Add("Document");
+                    wanted.Add("ComboBox");
+                    break;
+                case "button" or "press" or "click":
+                    wanted.Add("Button");
+                    wanted.Add("SplitButton");
+                    break;
+                case "menu":
+                    wanted.Add("MenuItem");
+                    wanted.Add("Menu");
+                    break;
+                case "link":
+                    wanted.Add("Hyperlink");
+                    break;
+                case "checkbox" or "tick":
+                    wanted.Add("CheckBox");
+                    break;
+                case "tab":
+                    wanted.Add("TabItem");
+                    break;
+                case "list" or "dropdown":
+                    wanted.Add("List");
+                    wanted.Add("ComboBox");
+                    break;
+            }
+        }
+
+        return wanted;
+    }
+
+    private static readonly HashSet<string> IgnoredWords = new(StringComparer.Ordinal)
+    {
+        "show", "where", "the", "can", "you", "please", "find", "point", "highlight",
+        "help", "what", "which", "how", "and", "for", "with", "this", "that",
+        "into", "metis", "screen", "does", "there", "put"
+    };
 
     private static string? DescribeSingleElement(AutomationElement element)
     {

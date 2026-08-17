@@ -22,6 +22,21 @@ public sealed class VirtualDesktopCaptureService : IScreenCaptureService
     private const long LocalJpegQuality = 68L;
     private const string CaptureMimeType = "image/jpeg";
     private volatile bool _compactLocalProfile;
+    private readonly Func<Rectangle> _readVirtualScreenBounds;
+
+    /// <summary>
+    /// Creates a capture service reading the live virtual desktop bounds.
+    /// </summary>
+    /// <param name="readVirtualScreenBounds">
+    /// Where the desktop's bounds come from. Injectable so a caller can pin
+    /// them to a single reading: <c>SystemInformation.VirtualScreen</c> is
+    /// process-global and answers differently once anything establishes DPI
+    /// awareness, so code that reads it once to predict a capture and again
+    /// inside the capture can legitimately get two different desktops.
+    /// </param>
+    public VirtualDesktopCaptureService(Func<Rectangle>? readVirtualScreenBounds = null) =>
+        _readVirtualScreenBounds = readVirtualScreenBounds ??
+                                   (static () => System.Windows.Forms.SystemInformation.VirtualScreen);
 
     public void UseCompactLocalProfile(bool enabled) => _compactLocalProfile = enabled;
 
@@ -31,7 +46,7 @@ public sealed class VirtualDesktopCaptureService : IScreenCaptureService
     private ScreenCapture? Capture(CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        var bounds = System.Windows.Forms.SystemInformation.VirtualScreen;
+        var bounds = _readVirtualScreenBounds();
         if (bounds.Width <= 1 || bounds.Height <= 1)
         {
             return null;

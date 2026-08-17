@@ -44,7 +44,7 @@ public sealed class DesktopAutomationServiceTests
         Assert.True(result.Success, result.Message);
         Assert.Equal((400, 200), Assert.Single(input.Hovers));
         Assert.Empty(input.Clicks);
-        Assert.Contains("cursorless hover", result.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("without moving the Windows pointer", result.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -112,8 +112,13 @@ public sealed class DesktopAutomationServiceTests
         Assert.Empty(input.Clicks);
     }
 
+    /// <summary>
+    /// The pointer is the last resort, not the first. It is only reached after
+    /// both the accessibility tree and a background message have refused, and
+    /// only when the user has allowed the cursor to be taken.
+    /// </summary>
     [Fact]
-    public async Task ExecuteAsync_FullControlUsesPhysicalFallbackWhenUiAutomationCannotInvoke()
+    public async Task ExecuteAsync_TakesThePointerOnlyAfterEveryBackgroundRouteRefuses()
     {
         var backgroundInput = new FakeBackgroundInput { ClickResult = false, ClickError = 5 };
         var physicalInput = new FakePhysicalInput();
@@ -127,7 +132,8 @@ public sealed class DesktopAutomationServiceTests
             uiAutomation,
             physicalInput)
         {
-            FullControlEnabled = true
+            FullControlEnabled = true,
+            MoveRealCursor = true
         };
 
         var result = await service.ExecuteAsync(
@@ -135,21 +141,50 @@ public sealed class DesktopAutomationServiceTests
             Capture(0, 0, 1000, 1000));
 
         Assert.True(result.Success, result.Message);
+        Assert.Single(backgroundInput.Clicks);
         Assert.Equal((DesktopActionKind.LeftClick, 500, 500), Assert.Single(physicalInput.Clicks));
-        Assert.Empty(backgroundInput.Clicks);
-        Assert.Contains("full Windows control", result.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("because a background click was refused", result.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// The default. The user asked to keep working while Metis does, so an
+    /// application that refuses every background route is reported rather than
+    /// having the cursor taken from under them.
+    /// </summary>
+    [Fact]
+    public async Task ExecuteAsync_LeavesThePointerAloneByDefault()
+    {
+        var backgroundInput = new FakeBackgroundInput { ClickResult = false, ClickError = 5 };
+        var physicalInput = new FakePhysicalInput();
+        var service = new DesktopAutomationService(
+            backgroundInput,
+            (_, _) => Task.CompletedTask,
+            new FakeUiAutomationService { PointResult = new UiAutomationResult(false, "No UIA pattern") },
+            physicalInput)
+        {
+            FullControlEnabled = true
+        };
+
+        var result = await service.ExecuteAsync(
+            new DesktopAction(DesktopActionKind.LeftClick, 500, 500, Label: "Start"),
+            Capture(0, 0, 1000, 1000));
+
+        Assert.False(result.Success);
+        Assert.Empty(physicalInput.Clicks);
+        Assert.Contains("leave your pointer alone", result.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
-    public async Task ExecuteAsync_FullControlMovesPhysicalPointerForNativeHover()
+    public async Task ExecuteAsync_MovesThePointerOnlyWhenABackgroundHoverIsRefused()
     {
         var physicalInput = new FakePhysicalInput();
         var service = new DesktopAutomationService(
-            new FakeBackgroundInput(),
+            new FakeBackgroundInput { HoverResult = false, HoverError = 5 },
             (_, _) => Task.CompletedTask,
             physicalInput: physicalInput)
         {
-            FullControlEnabled = true
+            FullControlEnabled = true,
+            MoveRealCursor = true
         };
 
         var result = await service.ExecuteAsync(
@@ -269,10 +304,35 @@ public sealed class DesktopAutomationServiceTests
             error = ClickError;
             return ClickResult;
         }
+
+        public List<string> PostedText { get; } = [];
+
+        public bool TypeResult { get; init; } = true;
+
+        public bool TryTypeText(string text, out int error)
+        {
+            PostedText.Add(text);
+            error = 0;
+            return TypeResult;
+        }
     }
 
     private sealed class FakeUiAutomationService : IUiAutomationService
     {
+        public string? TypedInBackground { get; private set; }
+
+        public bool BackgroundTypingWorks { get; init; }
+
+        public Task<UiAutomationResult> TrySetFocusedValueAsync(
+            string text,
+            CancellationToken cancellationToken = default)
+        {
+            TypedInBackground = text;
+            return Task.FromResult(new UiAutomationResult(
+                BackgroundTypingWorks,
+                BackgroundTypingWorks ? "Typed in the background." : "No value pattern."));
+        }
+
         public UiAutomationResult IdResult { get; init; } = new(false, "No ID result");
         public UiAutomationResult PointResult { get; init; } = new(false, "No point result");
         public string? LastAutomationId { get; private set; }
@@ -286,6 +346,10 @@ public sealed class DesktopAutomationServiceTests
             int screenX,
             int screenY,
             CancellationToken cancellationToken = default) => Task.FromResult<string?>(null);
+
+        public Task<UiElementHit?> FindElementAsync(
+            string query,
+            CancellationToken cancellationToken = default) => Task.FromResult<UiElementHit?>(null);
 
         public Task<UiAutomationResult> TryInvokeAsync(
             string automationId,
@@ -312,6 +376,7 @@ public sealed class DesktopAutomationServiceTests
         public List<(DesktopActionKind Kind, int X, int Y)> Clicks { get; } = [];
         public List<string> TypedText { get; } = [];
         public List<string> PressedKeys { get; } = [];
+        public List<(string Command, bool Elevated)> Commands { get; } = [];
         public bool MoveResult { get; init; } = true;
         public bool ClickResult { get; init; } = true;
 
@@ -327,6 +392,13 @@ public sealed class DesktopAutomationServiceTests
             Clicks.Add((kind, screenX, screenY));
             error = ClickResult ? 0 : 5;
             return ClickResult;
+        }
+
+        public bool TryRunCommand(string command, bool elevated, out int error)
+        {
+            Commands.Add((command, elevated));
+            error = 0;
+            return true;
         }
 
         public bool TryTypeText(string text, out int error)

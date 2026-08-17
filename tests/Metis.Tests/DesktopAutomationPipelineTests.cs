@@ -51,6 +51,8 @@ public sealed class DesktopAutomationPipelineTests
     {
         public bool FullControlEnabled { get; set; }
 
+        public bool MoveRealCursor { get; set; }
+
         private int _concurrency;
 
         public TaskCompletionSource FirstStarted { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -99,6 +101,8 @@ public sealed class DesktopAutomationPipelineTests
     private sealed class BlockingExecutor : IDesktopAutomationService
     {
         public bool FullControlEnabled { get; set; }
+
+        public bool MoveRealCursor { get; set; }
 
         public TaskCompletionSource Started { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
 

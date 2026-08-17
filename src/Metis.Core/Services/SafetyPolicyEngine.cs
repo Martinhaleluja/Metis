@@ -34,6 +34,14 @@ public sealed class SafetyPolicyEngine : ISafetyPolicyEngine
     {
         ArgumentNullException.ThrowIfNull(action);
 
+        // A command is high risk whatever it says. There is no wording that
+        // makes a shell safe, and sorting commands into tiers would teach the
+        // user that some of them do not need reading.
+        if (action.Kind == DesktopActionKind.RunCommand)
+        {
+            return RiskLevel.High;
+        }
+
         if (LowRiskActions.Contains(action.Kind))
         {
             return RiskLevel.Low;

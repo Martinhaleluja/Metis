@@ -23,6 +23,9 @@ public interface ISecretStore
     string? ReadOpenClawToken();
     void WriteOpenClawToken(string token);
     void DeleteOpenClawToken();
+    string? ReadOpenRouterApiKey();
+    void WriteOpenRouterApiKey(string apiKey);
+    void DeleteOpenRouterApiKey();
     string? ReadAssemblyAiApiKey();
     void WriteAssemblyAiApiKey(string apiKey);
     void DeleteAssemblyAiApiKey();
@@ -227,6 +230,32 @@ public interface IGlobalPushToTalk : IDisposable
     event EventHandler<ActivationKind>? ContextActivationReleased;
 
     /// <summary>
+    /// Raised when Shift joins a hold already in progress, upgrading it to an
+    /// inspect activation.
+    /// </summary>
+    event EventHandler? ContextActivationUpgraded;
+
+    /// <summary>
+    /// Raised when Ctrl+Space is pressed, turning continuous listening on or
+    /// off. A toggle rather than a hold, because its purpose is to let the user
+    /// work with both hands while Metis listens.
+    /// </summary>
+    event EventHandler? ActiveListeningToggled;
+
+    /// <summary>
+    /// Raised when Escape is pressed while <see cref="CancelKeyEnabled"/> is
+    /// set, so on-screen surfaces that never take focus can still be dismissed
+    /// with the key their own hint offers.
+    /// </summary>
+    event EventHandler? CancelPressed;
+
+    /// <summary>
+    /// Whether Escape currently belongs to Metis. Enabled only while something
+    /// is on screen that Escape should dismiss.
+    /// </summary>
+    bool CancelKeyEnabled { get; set; }
+
+    /// <summary>
     /// Enables the Ctrl+Alt shortcuts. The original hold-to-talk chord and the
     /// F12 emergency stop stay active regardless.
     /// </summary>
@@ -239,6 +268,20 @@ public interface IGlobalPushToTalk : IDisposable
 
 public interface IUiAutomationService
 {
+    /// <summary>
+    /// Puts text into whichever control currently has keyboard focus, through
+    /// the accessibility tree rather than by synthesising keystrokes.
+    ///
+    /// Typed keystrokes go wherever focus happens to be at that instant, so a
+    /// user who clicks into their own document mid-task receives Metis's text
+    /// in it. Setting the value addresses the control directly and cannot land
+    /// anywhere else. It only works where the control exposes a value pattern,
+    /// which most real text fields do and most canvases do not.
+    /// </summary>
+    Task<UiAutomationResult> TrySetFocusedValueAsync(
+        string text,
+        CancellationToken cancellationToken = default);
+
     Task<string?> DescribeWindowAsync(
         ScreenCapture capture,
         CancellationToken cancellationToken = default);
@@ -251,6 +294,17 @@ public interface IUiAutomationService
     Task<string?> DescribeElementAtAsync(
         int screenX,
         int screenY,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Finds the on-screen control that best matches a description, using the
+    /// accessibility tree rather than the model's estimate. This is how Metis
+    /// can still point at something when the model answered in prose without
+    /// coordinates, and it yields the control's exact rectangle so the
+    /// highlight takes its true shape.
+    /// </summary>
+    Task<UiElementHit?> FindElementAsync(
+        string query,
         CancellationToken cancellationToken = default);
 
     Task<UiAutomationResult> TryInvokeAsync(
@@ -286,6 +340,14 @@ public interface ICursorService
 public interface IDesktopAutomationService
 {
     bool FullControlEnabled { get; set; }
+
+    /// <summary>
+    /// Whether the real Windows pointer may be moved when no background route
+    /// works. False keeps the cursor and keyboard focus with the user, at the
+    /// cost of refusing the applications that ignore accessibility and window
+    /// messages alike.
+    /// </summary>
+    bool MoveRealCursor { get; set; }
 
     bool TryResolveTarget(
         DesktopAction action,

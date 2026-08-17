@@ -23,6 +23,13 @@ public static class AssistantPlanParser
     private const int MaxGoalLength = 2_000;
     private const int MaxExpectedStateLength = 500;
 
+    /// <summary>
+    /// A run of text to underline is a phrase, not a paragraph. Long enough for
+    /// a sentence on screen, short enough that a model cannot ask Metis to mark
+    /// an entire document.
+    /// </summary>
+    private const int MaxAnnotationTextLength = 320;
+
     private static readonly string[] RestrictedClickTerms =
     [
         "buy", "purchase", "checkout", "place order", "pay now", "confirm payment",
@@ -41,7 +48,7 @@ public static class AssistantPlanParser
         var original = responseText?.Trim() ?? string.Empty;
         if (original.Length == 0 || !TryExtractJson(original, out var json))
         {
-            return AssistantPlan.SpeechOnly(original);
+            return Fallback(original);
         }
 
         try
@@ -50,7 +57,7 @@ public static class AssistantPlanParser
             var root = document.RootElement;
             if (root.ValueKind != JsonValueKind.Object || !LooksLikePlan(root))
             {
-                return AssistantPlan.SpeechOnly(original);
+                return Fallback(original);
             }
 
             var spokenText = ReadString(root, "spoken_text", "spokenText") ?? string.Empty;
@@ -60,12 +67,32 @@ public static class AssistantPlanParser
             var replanNumber = Math.Clamp(ReadInt(root, "replan_number", "replanNumber") ?? 0, 0, 20);
             var status = NormalizeStatus(ReadString(root, "status"));
             var goal = Shorten(ReadString(root, "goal"), MaxGoalLength);
+            // The annotation may arrive nested under "annotation" or flattened
+            // onto the reply. Both are accepted because both are natural things
+            // for a model to produce, and rejecting one costs a mark on screen.
+            var isNested = TryGetProperty(root, out var nested, "annotation") &&
+                           nested.ValueKind == JsonValueKind.Object;
+            var annotationRoot = isNested ? nested : root;
+
+            var scopeName = Shorten(ReadString(annotationRoot, "scope", "highlight", "mark"), 24);
+            var elementName = Shorten(ReadString(annotationRoot, "element", "element_name", "control"), MaxLabelLength);
+
+            // A bare "text" is only the annotation's words when it sits inside
+            // an annotation object. At the top level that key belongs to any
+            // number of other things, and reading it here would underline a
+            // phrase the model never pointed at.
+            var annotationText = Shorten(
+                isNested
+                    ? ReadString(annotationRoot, "text", "annotation_text", "annotationText")
+                    : ReadString(root, "annotation_text", "annotationText"),
+                MaxAnnotationTextLength);
             // Check both the originating request and the returned plan. Gemini can
             // receive voice directly, so the generated text may be the only local
             // representation of a spoken sensitive request.
             var blockRestrictedClicks = ContainsRestrictedClickIntent(userRequest) ||
                                         ContainsRestrictedClickIntent(json);
             var actions = ReadActions(root, hasScreenshot, blockRestrictedClicks);
+            var steps = ReadLessonSteps(root, hasScreenshot);
 
             // A malformed structured response should still produce useful speech, but
             // never expose the raw JSON to Metis's speech engine or bubble.
@@ -82,12 +109,145 @@ public static class AssistantPlanParser
                 planId,
                 replanNumber,
                 status,
-                goal);
+                goal,
+                steps,
+                scopeName,
+                elementName,
+                annotationText);
         }
         catch (JsonException)
         {
+            return Fallback(original);
+        }
+    }
+
+    /// <summary>
+    /// What Metis says when a structured reply came back too broken to read and
+    /// nothing could be rescued from it.
+    /// </summary>
+    private const string UnreadableReplyMessage =
+        "That answer came back cut off. Ask me again and I'll have another go.";
+
+    /// <summary>
+    /// Markers that identify a reply as one of Metis's own plans rather than
+    /// prose that merely happens to contain a brace. The distinction matters:
+    /// a user who asks to be shown some JSON should get it read back, whereas a
+    /// half-written plan is Metis's own plumbing and must never be spoken.
+    /// </summary>
+    private static readonly string[] PlanMarkers =
+    [
+        "\"spoken_text\"", "\"spokenText\"",
+        "\"bubble_cue\"", "\"bubbleCue\"",
+        "\"plan_id\"", "\"planId\"",
+        "\"screen_observed\"", "\"screenObserved\"",
+        "\"actions\"", "\"lesson_steps\"", "\"lessonSteps\""
+    ];
+
+    private static readonly string[] SpokenTextKeys = ["\"spoken_text\"", "\"spokenText\""];
+
+    /// <summary>
+    /// Decides what to say when the structured reply could not be read.
+    ///
+    /// A model's answer is truncated far more often than it is malformed, and a
+    /// truncated plan usually still carries its opening field intact — so the
+    /// sentence Metis was going to say is normally sitting right there in the
+    /// wreckage. Rescuing it turns a failed turn into a successful one. Reading
+    /// the raw JSON aloud, which is what happened before, is the one outcome
+    /// that is never acceptable: it spells out every brace, quote, and colon and
+    /// tells the user nothing.
+    /// </summary>
+    private static AssistantPlan Fallback(string original)
+    {
+        if (!LooksLikePlanFragment(original))
+        {
+            // Genuine prose. The model chose to answer in words, which is a
+            // perfectly good reply and should be spoken exactly as written.
             return AssistantPlan.SpeechOnly(original);
         }
+
+        return TrySalvageSpokenText(original, out var salvaged)
+            ? AssistantPlan.SpeechOnly(salvaged)
+            : AssistantPlan.SpeechOnly(UnreadableReplyMessage);
+    }
+
+    private static bool LooksLikePlanFragment(string text) =>
+        PlanMarkers.Any(marker => text.Contains(marker, StringComparison.Ordinal));
+
+    /// <summary>
+    /// Reads the value of "spoken_text" straight out of the text, without
+    /// requiring the surrounding JSON to be complete or even valid. An
+    /// unterminated string still yields everything written so far, which is
+    /// exactly the case that matters when a reply was cut short mid-sentence.
+    /// </summary>
+    private static bool TrySalvageSpokenText(string text, out string spoken)
+    {
+        spoken = string.Empty;
+
+        foreach (var key in SpokenTextKeys)
+        {
+            var keyIndex = text.IndexOf(key, StringComparison.Ordinal);
+            if (keyIndex < 0)
+            {
+                continue;
+            }
+
+            var cursor = keyIndex + key.Length;
+            while (cursor < text.Length && (char.IsWhiteSpace(text[cursor]) || text[cursor] == ':'))
+            {
+                cursor++;
+            }
+
+            if (cursor >= text.Length || text[cursor] != '"')
+            {
+                continue;
+            }
+
+            cursor++;
+            var value = new System.Text.StringBuilder();
+            while (cursor < text.Length && text[cursor] != '"')
+            {
+                if (text[cursor] != '\\' || cursor + 1 >= text.Length)
+                {
+                    value.Append(text[cursor]);
+                    cursor++;
+                    continue;
+                }
+
+                cursor++;
+                var escape = text[cursor];
+                if (escape == 'u' && cursor + 4 < text.Length &&
+                    ushort.TryParse(
+                        text.AsSpan(cursor + 1, 4),
+                        System.Globalization.NumberStyles.HexNumber,
+                        System.Globalization.CultureInfo.InvariantCulture,
+                        out var codePoint))
+                {
+                    value.Append((char)codePoint);
+                    cursor += 5;
+                    continue;
+                }
+
+                value.Append(escape switch
+                {
+                    'n' => '\n',
+                    'r' => '\r',
+                    't' => '\t',
+                    'b' => '\b',
+                    'f' => '\f',
+                    _ => escape
+                });
+                cursor++;
+            }
+
+            var candidate = value.ToString().Trim();
+            if (candidate.Length > 0)
+            {
+                spoken = candidate;
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private static IReadOnlyList<DesktopAction> ReadActions(
@@ -169,6 +329,28 @@ public static class AssistantPlanParser
                 continue;
             }
 
+            if (kind == DesktopActionKind.RunCommand)
+            {
+                // Reviewed here as well as at execution: a command the policy
+                // refuses outright should never reach a confirmation prompt,
+                // because showing the user something they must decline teaches
+                // them to click through the ones that matter.
+                var command = ReadString(element, "command", "text", "value");
+                var review = Metis.Core.Services.SystemCommandPolicy.Review(command);
+                if (!hasScreenshot || blockRestrictedClicks || review.IsRefused)
+                {
+                    continue;
+                }
+
+                actions.Add(new DesktopAction(
+                    kind,
+                    Label: Shorten(ReadString(element, "label"), MaxLabelLength),
+                    HasCoordinates: false,
+                    Text: review.Command,
+                    Id: actionId));
+                continue;
+            }
+
             if (kind is DesktopActionKind.TypeText or DesktopActionKind.KeyPress or
                 DesktopActionKind.OpenApp or DesktopActionKind.OpenUrl)
             {
@@ -219,6 +401,8 @@ public static class AssistantPlanParser
                 continue;
             }
 
+            // The extent is optional. Without it a mark can only be a ring;
+            // with it the mark takes the target's real proportions.
             actions.Add(new DesktopAction(
                 kind,
                 Math.Clamp(x, 0, 1000),
@@ -226,7 +410,9 @@ public static class AssistantPlanParser
                 Label: Shorten(ReadString(element, "label"), MaxLabelLength),
                 AutomationId: automationId,
                 HasCoordinates: true,
-                Id: actionId));
+                Id: actionId,
+                NormalizedWidth: Math.Clamp(ReadInt(element, "w", "width") ?? 0, 0, 1000),
+                NormalizedHeight: Math.Clamp(ReadInt(element, "h", "height") ?? 0, 0, 1000)));
         }
 
         return actions;
@@ -257,6 +443,7 @@ public static class AssistantPlanParser
             "observe" or "reobserve" => DesktopActionKind.Observe,
             "verify" => DesktopActionKind.Verify,
             "finish" or "done" => DesktopActionKind.Finish,
+            "run_command" or "runcommand" or "command" or "shell" => DesktopActionKind.RunCommand,
             _ => default
         };
 
@@ -269,7 +456,8 @@ public static class AssistantPlanParser
             or "open_app" or "launch_app"
             or "open_url" or "navigate_url" or "navigate_to" or "wait"
             or "wait_for_window" or "wait_for_element" or "wait_for_text"
-            or "observe" or "reobserve" or "verify" or "finish" or "done";
+            or "observe" or "reobserve" or "verify" or "finish" or "done"
+            or "run_command" or "runcommand" or "command" or "shell";
     }
 
     private static bool IsSafeAppName(string? value) =>
@@ -349,6 +537,80 @@ public static class AssistantPlanParser
                int.TryParse(value.GetString(), out number)
             ? number
             : null;
+    }
+
+    private const int MaxLessonSteps = 12;
+
+    /// <summary>
+    /// Reads the steps the learner performs themselves. These are never
+    /// executed, so they carry no risk of a bad coordinate causing a stray
+    /// click — an out-of-range target simply loses its highlight and the step
+    /// still reads as instruction.
+    /// </summary>
+    private static IReadOnlyList<LessonStep>? ReadLessonSteps(JsonElement root, bool hasScreenshot)
+    {
+        if (!TryGetProperty(root, out var array, "steps", "lesson_steps", "lessonSteps") ||
+            array.ValueKind != JsonValueKind.Array)
+        {
+            return null;
+        }
+
+        var steps = new List<LessonStep>();
+        foreach (var element in array.EnumerateArray())
+        {
+            if (element.ValueKind != JsonValueKind.Object)
+            {
+                continue;
+            }
+
+            var instruction = Shorten(ReadString(element, "instruction", "step", "do"), 240);
+            if (string.IsNullOrWhiteSpace(instruction))
+            {
+                continue;
+            }
+
+            var x = ReadInt(element, "x") ?? -1;
+            var y = ReadInt(element, "y") ?? -1;
+            if (!hasScreenshot || x is < 0 or > 1000 || y is < 0 or > 1000)
+            {
+                x = -1;
+                y = -1;
+            }
+
+            // Size and gesture end are optional; a step without them still
+            // teaches, it just points instead of tracing a shape or a path.
+            var width = Math.Clamp(ReadInt(element, "w", "width") ?? 0, 0, 1000);
+            var height = Math.Clamp(ReadInt(element, "h", "height") ?? 0, 0, 1000);
+            var dragToX = ReadInt(element, "to_x", "toX", "drag_to_x") ?? -1;
+            var dragToY = ReadInt(element, "to_y", "toY", "drag_to_y") ?? -1;
+            if (!hasScreenshot || dragToX is < 0 or > 1000 || dragToY is < 0 or > 1000)
+            {
+                dragToX = -1;
+                dragToY = -1;
+            }
+
+            steps.Add(new LessonStep(
+                instruction!,
+                Shorten(ReadString(element, "why", "reason"), 240),
+                Shorten(ReadString(element, "done_when", "doneWhen", "verify"), 240),
+                x,
+                y,
+                Shorten(ReadString(element, "label", "target"), 60),
+                Shorten(ReadString(element, "scope", "highlight", "mark"), 24),
+                hasScreenshot ? width : 0,
+                hasScreenshot ? height : 0,
+                dragToX,
+                dragToY,
+                Shorten(ReadString(element, "element", "element_name", "control"), MaxLabelLength),
+                Shorten(ReadString(element, "text", "annotation_text"), MaxAnnotationTextLength)));
+
+            if (steps.Count >= MaxLessonSteps)
+            {
+                break;
+            }
+        }
+
+        return steps.Count == 0 ? null : steps;
     }
 
     private static bool ReadBoolean(JsonElement element, params string[] names)
