@@ -113,6 +113,13 @@ public partial class SetupWindow : Window
         ContextShortcutsCheck.IsChecked = settings.ContextShortcutsEnabled;
         WakeWordBox.Text = WakeWordListener.Normalize(settings.WakeWord);
         MoveRealCursorCheck.IsChecked = settings.MoveRealCursor;
+        SupabaseUrlBox.Text = settings.SupabaseUrl;
+        SupabaseAnonKeyBox.Text = settings.SupabaseAnonKey;
+        // Read back through the parser rather than off the raw string, so a
+        // hand-edited or empty value lands on Production instead of throwing.
+        SelectComboItem(
+            MetisEnvironmentBox,
+            Entitlements.ParseEnvironment(settings.MetisEnvironment).ToString());
         VisualGuidanceCheck.IsChecked = settings.VisualGuidanceEnabled;
         MemoryEnabledCheck.IsChecked = settings.MemoryEnabled;
         ActivationSoundsCheck.IsChecked = settings.ActivationSoundsEnabled;
@@ -382,6 +389,9 @@ public partial class SetupWindow : Window
             ContextShortcutsEnabled = ContextShortcutsCheck.IsChecked == true,
             WakeWord = WakeWordListener.Normalize(WakeWordBox.Text),
             MoveRealCursor = MoveRealCursorCheck.IsChecked == true,
+            SupabaseUrl = SupabaseUrlBox.Text.Trim(),
+            SupabaseAnonKey = SupabaseAnonKeyBox.Text.Trim(),
+            MetisEnvironment = SelectedContent(MetisEnvironmentBox, "Production").ToLowerInvariant(),
             VisualGuidanceEnabled = VisualGuidanceCheck.IsChecked == true,
             MemoryEnabled = MemoryEnabledCheck.IsChecked == true,
             ActivationSoundsEnabled = ActivationSoundsCheck.IsChecked == true,

@@ -124,6 +124,33 @@
                                Text="Press Ctrl+Space and Metis listens without you holding anything. Say this word to start a request. Pick something you do not say by accident — nothing is sent anywhere until Metis hears it." />
                     <CheckBox x:Name="VisualGuidanceCheck" Margin="0,10,0,0"
                               Content="Draw highlights, arrows, and numbered steps over the screen" />
+                    <TextBlock Text="Metis Account (optional)" Style="{StaticResource PageTitleText}" Margin="0,26,0,0" />
+                    <TextBlock Margin="0,5,0,12" TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}"
+                               Text="Leave these empty to run Metis entirely on your own API key with no account. Fill them in to sign in, which is only needed for syncing and, later, Pro features." />
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="170" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+                        <TextBlock VerticalAlignment="Center" Text="Backend URL" FontWeight="SemiBold" />
+                        <TextBox x:Name="SupabaseUrlBox" Grid.Column="1" MaxLength="200" />
+                        <TextBlock Grid.Row="1" VerticalAlignment="Center" Text="Publishable key" FontWeight="SemiBold" Margin="0,10,0,0" />
+                        <TextBox x:Name="SupabaseAnonKeyBox" Grid.Row="1" Grid.Column="1" Margin="0,10,0,0" MaxLength="400" />
+                        <TextBlock Grid.Row="2" VerticalAlignment="Center" Text="Environment" FontWeight="SemiBold" Margin="0,10,0,0" />
+                        <ComboBox x:Name="MetisEnvironmentBox" Grid.Row="2" Grid.Column="1" Margin="0,10,0,0">
+                            <ComboBoxItem Content="Production" />
+                            <ComboBoxItem Content="Staging" />
+                            <ComboBoxItem Content="Development" />
+                        </ComboBox>
+                    </Grid>
+                    <TextBlock Margin="170,5,0,0" FontSize="11" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap"
+                               Text="The publishable key is public by design and safe to keep here — it identifies the project and grants nothing on its own. Your password is never stored." />
+
                     <CheckBox x:Name="MoveRealCursorCheck" Margin="0,10,0,0"
                               Content="Let Metis move the pointer when an app refuses to work in the background" />
                     <TextBlock Margin="24,4,0,0" FontSize="11" Foreground="{StaticResource MutedBrush}"

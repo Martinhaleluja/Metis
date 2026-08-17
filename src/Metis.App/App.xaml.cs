@@ -229,6 +229,10 @@ public partial class App : System.Windows.Application
         {
             Padding = new Forms.Padding(8, 6, 18, 6)
         };
+        var accountItem = new Forms.ToolStripMenuItem("Account", null, (_, _) => Dispatcher.Invoke(ShowAccount))
+        {
+            Padding = new Forms.Padding(8, 6, 18, 6)
+        };
         var quitItem = new Forms.ToolStripMenuItem("Quit", null, (_, _) => Dispatcher.Invoke(Quit))
         {
             Padding = new Forms.Padding(8, 6, 18, 6)
@@ -236,6 +240,7 @@ public partial class App : System.Windows.Application
 
         menu.Items.Add(openItem);
         menu.Items.Add(setupItem);
+        menu.Items.Add(accountItem);
         menu.Items.Add(new Forms.ToolStripSeparator());
         menu.Items.Add(quitItem);
 
@@ -254,6 +259,46 @@ public partial class App : System.Windows.Application
     /// Exposes the four operating modes from the tray so the user can change
     /// how much Metis teaches versus does without opening Setup.
     /// </summary>
+    private AccountWindow? _accountWindow;
+
+    /// <summary>
+    /// Opens the account window, creating it once and reusing it. Signing in is
+    /// optional throughout: Metis works with no account at all, so this is a
+    /// menu entry rather than anything the user is made to pass through.
+    /// </summary>
+    private void ShowAccount()
+    {
+        if (_runtime is null)
+        {
+            return;
+        }
+
+        if (_accountWindow is null)
+        {
+            _accountWindow = new AccountWindow(_runtime, new CredentialStoreSessionAccess());
+            _accountWindow.Closed += (_, _) => _accountWindow = null;
+        }
+
+        _accountWindow.Show();
+        _accountWindow.Activate();
+    }
+
+    /// <summary>
+    /// Hands the sign-in window only the session token, not the whole
+    /// credential store. A dialog that collects a password has no business
+    /// being able to read every provider key on the machine.
+    /// </summary>
+    private sealed class CredentialStoreSessionAccess : AccountWindow.ISecretStoreAccess
+    {
+        private readonly Metis.Data.WindowsCredentialStore _store = new();
+
+        public string? ReadSupabaseRefreshToken() => _store.ReadSupabaseRefreshToken();
+
+        public void WriteSupabaseRefreshToken(string token) => _store.WriteSupabaseRefreshToken(token);
+
+        public void DeleteSupabaseRefreshToken() => _store.DeleteSupabaseRefreshToken();
+    }
+
     /// <summary>
     /// Reflects what Metis did on the last request, so the tray tooltip
     /// answers "is it about to touch my computer?" without the user having
