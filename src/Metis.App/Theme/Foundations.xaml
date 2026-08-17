@@ -1,0 +1,51 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:system="clr-namespace:System;assembly=mscorlib">
+    <!--
+        Type, motion, and geometry. None of these vary by theme, so they live
+        outside the swappable token dictionaries and can stay StaticResource
+        at every call site.
+    -->
+
+    <FontFamily x:Key="UiFont">Segoe UI Variable Text, Segoe UI</FontFamily>
+    <FontFamily x:Key="DisplayFont">Segoe UI Variable Display, Segoe UI</FontFamily>
+    <!-- SF Mono led this list but does not exist on Windows, so every lookup
+         fell through it. Cascadia Mono ships with Windows 11 and is the real
+         first choice. -->
+    <FontFamily x:Key="MonoFont">Cascadia Mono, JetBrains Mono, Consolas</FontFamily>
+
+    <!-- Type scale -->
+    <system:Double x:Key="FontSizeMicro">11</system:Double>
+    <system:Double x:Key="FontSizeSmall">12.5</system:Double>
+    <system:Double x:Key="FontSizeBody">13</system:Double>
+    <system:Double x:Key="FontSizeLead">15</system:Double>
+    <system:Double x:Key="FontSizeSubtitle">17</system:Double>
+    <system:Double x:Key="FontSizeTitle">23</system:Double>
+    <system:Double x:Key="FontSizeDisplay">32</system:Double>
+
+    <!-- Geometry -->
+    <CornerRadius x:Key="RadiusButton">7</CornerRadius>
+    <CornerRadius x:Key="RadiusField">8</CornerRadius>
+    <CornerRadius x:Key="RadiusCard">12</CornerRadius>
+    <CornerRadius x:Key="RadiusWindow">12</CornerRadius>
+    <CornerRadius x:Key="RadiusPill">999</CornerRadius>
+
+    <Thickness x:Key="SpaceCard">20</Thickness>
+    <Thickness x:Key="SpaceField">9,7</Thickness>
+    <Thickness x:Key="SpaceButton">14,8</Thickness>
+
+    <!--
+        Motion. One curve reused everywhere is most of what makes a set of
+        animations read as one system, so StandardEase is the default and
+        EmphasisEase is reserved for something arriving rather than moving.
+    -->
+    <CubicEase x:Key="StandardEase" EasingMode="EaseOut" />
+    <BackEase x:Key="EmphasisEase" EasingMode="EaseOut" Amplitude="0.18" />
+
+    <Duration x:Key="DurationMicro">0:0:0.12</Duration>
+    <Duration x:Key="DurationFade">0:0:0.18</Duration>
+    <Duration x:Key="DurationClose">0:0:0.24</Duration>
+    <Duration x:Key="DurationOpen">0:0:0.36</Duration>
+
+    <KeyTime x:Key="KeyTimeMicro">0:0:0.12</KeyTime>
+</ResourceDictionary>

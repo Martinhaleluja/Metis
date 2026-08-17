@@ -37,8 +37,15 @@ public sealed class OpenAiProviderTests
         Assert.Contains("data:image/jpeg;base64", observedBody, StringComparison.Ordinal);
         Assert.Contains("\"store\":false", observedBody, StringComparison.Ordinal);
         Assert.Contains("\"type\":\"json_schema\"", observedBody, StringComparison.Ordinal);
-        Assert.Contains("\"maxItems\":6", observedBody, StringComparison.Ordinal);
         Assert.Contains("\"screen_observed\"", observedBody, StringComparison.Ordinal);
+
+        // The batch size used to be pinned here as "maxItems":6. That keyword
+        // was removed because Gemini rejects the whole request once the schema
+        // grows past its complexity budget, and the cap lives in
+        // AssistantPlanParser where it is actually enforced. What matters at
+        // this boundary is that the plan shape reaches the provider.
+        Assert.Contains("\"scope\"", observedBody, StringComparison.Ordinal);
+        Assert.Contains("\"steps\"", observedBody, StringComparison.Ordinal);
     }
 
     [Fact]

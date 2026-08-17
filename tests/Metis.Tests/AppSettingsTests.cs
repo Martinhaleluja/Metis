@@ -99,4 +99,108 @@ public sealed class AppSettingsTests
         Assert.Equal("http://127.0.0.1:18789", normalized.OpenClawEndpoint);
         Assert.Equal("http://127.0.0.1:11434", normalized.OllamaEndpoint);
     }
+
+    [Theory]
+    [InlineData("openrouter", "OpenRouter")]
+    [InlineData(" OPEN ROUTER ", "OpenRouter")]
+    [InlineData("open-router", "OpenRouter")]
+    public void Normalize_canonicalizes_openrouter(string input, string expected)
+    {
+        var normalized = new AppSettings { AiProvider = input }.Normalize();
+
+        Assert.Equal(expected, normalized.AiProvider);
+    }
+
+    [Fact]
+    public void Normalize_repairs_openrouter_endpoint_and_model()
+    {
+        var normalized = new AppSettings
+        {
+            OpenRouterEndpoint = "not-an-address",
+            OpenRouterModel = "  models/qwen/qwen-2.5-vl-72b-instruct:free  "
+        }.Normalize();
+
+        Assert.Equal("https://openrouter.ai/api", normalized.OpenRouterEndpoint);
+        Assert.Equal("qwen/qwen-2.5-vl-72b-instruct:free", normalized.OpenRouterModel);
+    }
+
+    /// <summary>
+    /// Metis reasons about a screenshot every turn, so the shipped default has
+    /// to be a model that accepts images.
+    /// </summary>
+    [Fact]
+    public void The_default_openrouter_model_is_a_free_vision_model()
+    {
+        var settings = new AppSettings();
+
+        Assert.EndsWith(":free", settings.OpenRouterModel, StringComparison.Ordinal);
+        Assert.Equal("https://openrouter.ai/api", settings.OpenRouterEndpoint);
+    }
+
+    [Theory]
+    [InlineData("System", "System")]
+    [InlineData("light", "Light")]
+    [InlineData(" DARK ", "Dark")]
+    [InlineData("solarized", "System")]
+    [InlineData("", "System")]
+    public void Normalize_canonicalizes_theme_preference(string input, string expected)
+    {
+        var normalized = new AppSettings { ThemePreference = input }.Normalize();
+
+        Assert.Equal(expected, normalized.ThemePreference);
+    }
+
+    /// <summary>
+    /// The property is declared non-nullable, but a hand-edited or truncated
+    /// settings.json can still deserialise an explicit null into it, which is
+    /// why the normaliser accepts one.
+    /// </summary>
+    [Fact]
+    public void Normalize_treats_a_null_theme_preference_as_following_windows()
+    {
+        var normalized = new AppSettings { ThemePreference = null! }.Normalize();
+
+        Assert.Equal("System", normalized.ThemePreference);
+    }
+
+    [Theory]
+    [InlineData(0, 1)]
+    [InlineData(-3, 1)]
+    [InlineData(1, 1)]
+    [InlineData(7, 7)]
+    public void Normalize_repairs_an_impossible_settings_version(int input, int expected)
+    {
+        var normalized = new AppSettings { SettingsVersion = input }.Normalize();
+
+        Assert.Equal(expected, normalized.SettingsVersion);
+    }
+
+    [Fact]
+    public void A_fresh_install_follows_windows_and_has_not_seen_onboarding()
+    {
+        var settings = new AppSettings();
+
+        Assert.Equal(1, settings.SettingsVersion);
+        Assert.Equal("System", settings.ThemePreference);
+        Assert.False(settings.OnboardingCompleted);
+        Assert.False(settings.ReduceMotion);
+    }
+
+    /// <summary>
+    /// Onboarding completion has to survive a save/load round trip or the
+    /// wizard reappears on every launch, which is the bug this flag exists to
+    /// fix.
+    /// </summary>
+    [Fact]
+    public void Normalize_preserves_the_onboarding_and_motion_flags()
+    {
+        var normalized = new AppSettings
+        {
+            OnboardingCompleted = true,
+            ReduceMotion = true
+        }.Normalize();
+
+        Assert.True(normalized.OnboardingCompleted);
+        Assert.True(normalized.ReduceMotion);
+    }
 }

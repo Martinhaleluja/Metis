@@ -69,7 +69,7 @@ public sealed class ClaudeReasoningProvider : IReasoningProvider, IDisposable
         var payload = JsonSerializer.Serialize(new
         {
             model = normalizedModel,
-            max_tokens = 1000,
+            max_tokens = ReasoningProviderSupport.MaxPlanTokens,
             temperature = 0.1,
             system = ReasoningProviderSupport.BuildSystemInstruction(request),
             messages = new[] { new { role = "user", content } }

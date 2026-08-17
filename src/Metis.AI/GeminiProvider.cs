@@ -425,16 +425,60 @@ public sealed partial class GeminiProvider : IGeminiProvider, IDisposable
         };
     }
 
+    /// <summary>
+    /// Everything Gemini said about a failure, including the field violations.
+    ///
+    /// Gemini's top-level message for a malformed request is the entirely
+    /// uninformative "Request contains an invalid argument."; which argument it
+    /// means is in error.details[].fieldViolations[]. Reading only the message
+    /// meant a schema the API had refused produced an error naming nothing, and
+    /// the offending field had to be found by bisecting the schema against the
+    /// live API instead of simply being read out of the reply.
+    /// </summary>
     private static string ReadErrorMessage(string body)
     {
         try
         {
             using var document = JsonDocument.Parse(body);
-            if (document.RootElement.TryGetProperty("error", out var error))
+            if (!document.RootElement.TryGetProperty("error", out var error))
             {
-                var message = GetString(error, "message");
-                return string.IsNullOrWhiteSpace(message) ? string.Empty : Shorten(message.Trim(), 350);
+                return string.Empty;
             }
+
+            var parts = new List<string>();
+            var message = GetString(error, "message");
+            if (!string.IsNullOrWhiteSpace(message))
+            {
+                parts.Add(message.Trim());
+            }
+
+            if (error.TryGetProperty("details", out var details) &&
+                details.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var detail in details.EnumerateArray())
+                {
+                    if (!detail.TryGetProperty("fieldViolations", out var violations) ||
+                        violations.ValueKind != JsonValueKind.Array)
+                    {
+                        continue;
+                    }
+
+                    foreach (var violation in violations.EnumerateArray())
+                    {
+                        var field = GetString(violation, "field");
+                        var description = GetString(violation, "description");
+                        var line = string.IsNullOrWhiteSpace(field)
+                            ? description
+                            : $"{field}: {description}";
+                        if (!string.IsNullOrWhiteSpace(line))
+                        {
+                            parts.Add(line.Trim());
+                        }
+                    }
+                }
+            }
+
+            return parts.Count == 0 ? string.Empty : Shorten(string.Join(" ", parts), 600);
         }
         catch (JsonException)
         {

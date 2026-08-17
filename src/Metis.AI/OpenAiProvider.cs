@@ -74,7 +74,7 @@ public sealed class OpenAiProvider : IOpenAiProvider, IDisposable
                 }
             },
             store = false,
-            max_output_tokens = 1000,
+            max_output_tokens = ReasoningProviderSupport.MaxPlanTokens,
             text = new
             {
                 format = new

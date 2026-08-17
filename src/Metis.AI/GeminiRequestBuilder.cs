@@ -75,7 +75,7 @@ public static class GeminiRequestBuilder
             generationConfig = new
             {
                 temperature = 0.1,
-                maxOutputTokens = 1000,
+                maxOutputTokens = ReasoningProviderSupport.MaxPlanTokens,
                 responseMimeType = "application/json",
                 responseJsonSchema = ReasoningProviderSupport.AssistantPlanJsonSchema
             }

@@ -1,0 +1,91 @@
+METIS — An AI Companion for Learning the Digital World by Doing
+
+Martin Nakasole, developer  ·  Lamek Hidengwa, designer
+
+
+WHAT IT IS
+
+Metis is a context-aware AI companion that helps people learn and confidently
+use software, websites and digital tools while they are actually working with
+them.
+
+Most tools do one of two things: they explain a task somewhere else, in a
+tutorial you have to translate back to your own screen, or they simply do the
+task for you and leave you no better off. Metis does neither. It understands
+what is on your screen, works out what you are trying to accomplish, and
+guides you inside the application you are already using.
+
+It can speak with you, explain unfamiliar tools, highlight buttons and
+controls, show you where to navigate, notice mistakes, and suggest what to do
+next as you work.
+
+
+YOU CHOOSE HOW MUCH IT DOES
+
+  Learn       You do the work. Metis teaches while you do it.
+  Guide       You do the work. Metis points to the next step.
+  Assist      Metis shares the work, and leaves the real choices to you.
+  Autopilot   Metis performs the task and can explain it afterwards.
+
+Start with Learn or Guide if you want the skill to stay with you. You can
+change mode at any time from the notification area.
+
+Metis keeps a record of which steps you have already managed, and gradually
+says less about the things you have proven you can do. Your progress is shown
+on the Preferences dashboard.
+
+
+IT WORKS WITHOUT AN INTERNET CONNECTION
+
+Metis can run entirely on your own computer using Ollama, Whisper.cpp and
+Piper. Nothing is sent anywhere, no connection is needed once the models are
+installed, and no data is spent. Choose "Keep everything on this PC" during
+setup.
+
+Otherwise Metis uses a cloud model of your choosing (Gemini, OpenAI, Claude or
+OpenRouter) and you supply the API key.
+
+OpenRouter gives access to many hosted models behind one key, including free
+ones. Two things to know before relying on the free tier: they are rate
+limited to roughly 20 requests a minute and a small number per day, and many
+are served by providers that may log or train on what they receive -- which
+for Metis means pictures of your screen. If the work must stay private, use
+the fully local option instead.
+
+
+WHAT IT CAN SEE
+
+When you ask a question, Metis takes a picture of your whole desktop -- every
+monitor -- and sends it to the AI provider you chose, so it can answer. On the
+fully local setting it is processed on this computer instead and sent nowhere.
+Metis does not watch continuously and it does not record.
+
+You can turn screen capture off during setup or later in Preferences. Metis
+will still answer questions; it just will not be able to see or point at
+anything.
+
+Metis also reads the names and labels of on-screen controls so it can point
+accurately. It cannot see inside applications running as administrator.
+
+API keys are stored in Windows Credential Manager, never in a settings file.
+
+
+SAFETY
+
+In every mode, Metis stops and asks before anything that deletes, buys, pays,
+sends or submits. That limit is built in and cannot be configured away.
+
+
+KEYS TO KNOW
+
+  Ctrl+Shift+1      Hold to talk
+  Ctrl+Alt          Ask about what is on screen
+  Ctrl+Alt+Shift    Point at whatever is under the pointer
+  F12               Stop Metis immediately
+
+While Metis is running, F12 is reserved for stopping it, so other programs
+will not receive that key.
+
+
+Metis installs for the current user only and does not require administrator
+rights.

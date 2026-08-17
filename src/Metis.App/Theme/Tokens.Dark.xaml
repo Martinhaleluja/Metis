@@ -1,0 +1,120 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <!--
+        Metis dark tokens, derived from the notch rather than invented next to
+        it. Canvas is the notch's own #0A0A0C and the text and muted values are
+        the notch's, so in dark mode the notch stops being a foreign object and
+        becomes the darkest surface of one continuous scale.
+
+        Must declare exactly the same keys as Tokens.Light.xaml.
+    -->
+
+    <!-- Brand. Accent lifts for contrast on dark, and "strong" now means
+         brighter rather than deeper: on a dark surface a hover that darkens
+         reads as disabled. -->
+    <Color x:Key="Accent">#3B9BFF</Color>
+    <Color x:Key="AccentStrong">#68B4FF</Color>
+    <Color x:Key="AccentSoft">#12283F</Color>
+    <Color x:Key="AccentContrast">#04121F</Color>
+
+    <!-- Surfaces -->
+    <Color x:Key="Canvas">#0A0A0C</Color>
+    <Color x:Key="Header">#121216</Color>
+    <Color x:Key="Panel">#131316</Color>
+    <Color x:Key="PanelRaised">#1B1B1F</Color>
+    <Color x:Key="PanelHighest">#232328</Color>
+
+    <!-- Text -->
+    <Color x:Key="Text">#F2F2F7</Color>
+    <Color x:Key="Muted">#8E8E93</Color>
+    <Color x:Key="Faint">#6A6A70</Color>
+
+    <!-- Lines -->
+    <Color x:Key="Border">#2A2A30</Color>
+    <Color x:Key="BorderStrong">#3A3A42</Color>
+
+    <!-- Control fills -->
+    <Color x:Key="Control">#1E1E23</Color>
+    <Color x:Key="ControlHover">#26262C</Color>
+    <Color x:Key="ControlActive">#2E2E35</Color>
+    <Color x:Key="Field">#161619</Color>
+    <Color x:Key="Hover">#26262C</Color>
+    <Color x:Key="TrackFill">#33333B</Color>
+
+    <!-- Semantic, shifted to the brighter Apple dark variants -->
+    <Color x:Key="Mint">#30D158</Color>
+    <Color x:Key="Pink">#FF6FB5</Color>
+    <Color x:Key="Warning">#FF9F0A</Color>
+    <Color x:Key="Danger">#FF453A</Color>
+    <Color x:Key="DangerSoft">#3A1618</Color>
+    <Color x:Key="DangerInk">#FFB4B0</Color>
+
+    <!-- Identical to light: these carry meaning, not style. -->
+    <Color x:Key="StatusListening">#30D158</Color>
+    <Color x:Key="StatusThinking">#0A7CFF</Color>
+    <Color x:Key="StatusCapturing">#5E5CE6</Color>
+    <Color x:Key="StatusSpeaking">#64D2FF</Color>
+    <Color x:Key="StatusError">#FF453A</Color>
+    <Color x:Key="StatusStopped">#FF9F0A</Color>
+
+    <Color x:Key="NotchBody">#0A0A0C</Color>
+    <Color x:Key="NotchGrabber">#5A5A61</Color>
+    <Color x:Key="NotchText">#F2F2F7</Color>
+    <Color x:Key="NotchMuted">#8E8E93</Color>
+    <Color x:Key="NotchChrome">#C7C7CC</Color>
+
+    <Color x:Key="BubbleThem">#26262C</Color>
+    <Color x:Key="BubbleThemInk">#F2F2F7</Color>
+
+    <SolidColorBrush x:Key="AccentBrush" Color="{StaticResource Accent}" />
+    <SolidColorBrush x:Key="AccentStrongBrush" Color="{StaticResource AccentStrong}" />
+    <SolidColorBrush x:Key="AccentSoftBrush" Color="{StaticResource AccentSoft}" />
+    <SolidColorBrush x:Key="AccentContrastBrush" Color="{StaticResource AccentContrast}" />
+
+    <SolidColorBrush x:Key="CanvasBrush" Color="{StaticResource Canvas}" />
+    <SolidColorBrush x:Key="HeaderBrush" Color="{StaticResource Header}" />
+    <SolidColorBrush x:Key="PanelBrush" Color="{StaticResource Panel}" />
+    <SolidColorBrush x:Key="PanelRaisedBrush" Color="{StaticResource PanelRaised}" />
+    <SolidColorBrush x:Key="PanelHighestBrush" Color="{StaticResource PanelHighest}" />
+
+    <SolidColorBrush x:Key="TextBrush" Color="{StaticResource Text}" />
+    <SolidColorBrush x:Key="MutedBrush" Color="{StaticResource Muted}" />
+    <SolidColorBrush x:Key="FaintBrush" Color="{StaticResource Faint}" />
+
+    <SolidColorBrush x:Key="BorderBrush" Color="{StaticResource Border}" />
+    <SolidColorBrush x:Key="BorderStrongBrush" Color="{StaticResource BorderStrong}" />
+
+    <SolidColorBrush x:Key="ControlBrush" Color="{StaticResource Control}" />
+    <SolidColorBrush x:Key="ControlHoverBrush" Color="{StaticResource ControlHover}" />
+    <SolidColorBrush x:Key="ControlActiveBrush" Color="{StaticResource ControlActive}" />
+    <SolidColorBrush x:Key="FieldBrush" Color="{StaticResource Field}" />
+    <SolidColorBrush x:Key="HoverBrush" Color="{StaticResource Hover}" />
+    <SolidColorBrush x:Key="TrackFillBrush" Color="{StaticResource TrackFill}" />
+
+    <SolidColorBrush x:Key="MintBrush" Color="{StaticResource Mint}" />
+    <SolidColorBrush x:Key="PinkBrush" Color="{StaticResource Pink}" />
+    <SolidColorBrush x:Key="WarningBrush" Color="{StaticResource Warning}" />
+    <SolidColorBrush x:Key="DangerBrush" Color="{StaticResource Danger}" />
+    <SolidColorBrush x:Key="DangerSoftBrush" Color="{StaticResource DangerSoft}" />
+    <SolidColorBrush x:Key="DangerInkBrush" Color="{StaticResource DangerInk}" />
+
+    <SolidColorBrush x:Key="StatusListeningBrush" Color="{StaticResource StatusListening}" />
+    <SolidColorBrush x:Key="StatusThinkingBrush" Color="{StaticResource StatusThinking}" />
+    <SolidColorBrush x:Key="StatusCapturingBrush" Color="{StaticResource StatusCapturing}" />
+    <SolidColorBrush x:Key="StatusSpeakingBrush" Color="{StaticResource StatusSpeaking}" />
+    <SolidColorBrush x:Key="StatusErrorBrush" Color="{StaticResource StatusError}" />
+    <SolidColorBrush x:Key="StatusStoppedBrush" Color="{StaticResource StatusStopped}" />
+
+    <SolidColorBrush x:Key="NotchBodyBrush" Color="{StaticResource NotchBody}" />
+    <SolidColorBrush x:Key="NotchGrabberBrush" Color="{StaticResource NotchGrabber}" />
+    <SolidColorBrush x:Key="NotchTextBrush" Color="{StaticResource NotchText}" />
+    <SolidColorBrush x:Key="NotchMutedBrush" Color="{StaticResource NotchMuted}" />
+    <SolidColorBrush x:Key="NotchChromeBrush" Color="{StaticResource NotchChrome}" />
+
+    <SolidColorBrush x:Key="BubbleThemBrush" Color="{StaticResource BubbleThem}" />
+    <SolidColorBrush x:Key="BubbleThemInkBrush" Color="{StaticResource BubbleThemInk}" />
+
+    <SolidColorBrush x:Key="BabyBlueBrush" Color="{StaticResource Accent}" />
+    <SolidColorBrush x:Key="BabyBlueStrongBrush" Color="{StaticResource AccentStrong}" />
+    <SolidColorBrush x:Key="InkBrush" Color="{StaticResource Canvas}" />
+</ResourceDictionary>

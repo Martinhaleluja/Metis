@@ -11,14 +11,15 @@
   <ItemGroup>
     <!-- Ships the sound pack beside the executable so the default relative
          path resolves for a published build and the installer includes it. -->
-    <Content Include="..\..\sound effects\**\*.*"
-             Link="sound effects\%(RecursiveDir)%(Filename)%(Extension)"
-             CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\..\sound effects\**\*.*" Link="sound effects\%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Metis.Core\Metis.Core.csproj" />
     <ProjectReference Include="..\Metis.AI\Metis.AI.csproj" />
     <ProjectReference Include="..\Metis.Data\Metis.Data.csproj" />
     <ProjectReference Include="..\Metis.Windows\Metis.Windows.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.2" />
   </ItemGroup>
 </Project>

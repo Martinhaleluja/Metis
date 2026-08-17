@@ -18,7 +18,7 @@ Paths may be absolute or relative to `Metis.exe`. The preset uses:
 ```text
 tools\whisper.cpp\Release\whisper-cli.exe
 models\whisper\ggml-tiny.bin
-tools\piper\venv\Scripts\piper.exe
+tools\piper-standalone\piper\piper.exe
 models\piper\en_US-lessac-medium.onnx
 ```
 
@@ -28,7 +28,7 @@ The Piper model's matching `.onnx.json` file must be beside the `.onnx` file.
 
 1. Install Ollama for Windows and run `ollama pull qwen3-vl:2b-instruct-q4_K_M` on an 8 GB PC.
 2. Install/build whisper.cpp, place `whisper-cli.exe` at the configured path, and download the multilingual Tiny GGML model as `ggml-tiny.bin`.
-3. Install Piper and an English voice model. Point Metis to the Piper executable and `.onnx` voice.
+3. Extract the standalone `piper_windows_amd64.zip` build and an English voice model. Point Metis to the Piper executable and `.onnx` voice. Use the standalone binary rather than a Python virtualenv, which breaks as soon as its interpreter or original folder moves.
 4. Open Metis Setup, choose Ollama, then click **Use fully local preset**.
 5. Use the Ollama, whisper.cpp, and Piper **Test** buttons. Each missing component reports its exact path or connection error.
 6. Save setup.

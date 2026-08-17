@@ -1,9 +1,9 @@
 using System.Collections.ObjectModel;
 using System.Windows;
+using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
-using System.Windows.Shapes;
 using Metis.App.Runtime;
 using Metis.Core.Models;
 
@@ -15,7 +15,7 @@ public partial class AssistantWindow : Window
     private readonly Action _showSetup;
     private readonly ObservableCollection<MessageItem> _messages = [];
     private bool _allowClose;
-    private bool _typingAnimationRunning;
+    private bool _suppressChatSelection;
 
     public AssistantWindow(MetisRuntime runtime, Action showSetup)
     {
@@ -39,9 +39,72 @@ public partial class AssistantWindow : Window
         _messages.Add(new MessageItem(
             "Metis",
             "I'm ready. Ask me about your screen, or tell me what to do."));
+
+        _runtime.ChatsChanged += (_, _) => Dispatcher.Invoke(RefreshChats);
+        RefreshChats();
     }
 
     public void AllowClose() => _allowClose = true;
+
+    /// <summary>
+    /// Rebuilds the chat list. The current conversation stays selected so that
+    /// saving a turn does not look like the user was moved to another chat.
+    /// </summary>
+    private void RefreshChats()
+    {
+        _suppressChatSelection = true;
+        try
+        {
+            ChatSelector.Items.Clear();
+            foreach (var session in _runtime.Chats.Take(30))
+            {
+                ChatSelector.Items.Add(new ComboBoxItem
+                {
+                    Content = session.Title,
+                    Tag = session.Id,
+                    ToolTip = $"{session.Application ?? "Metis"} · {session.UpdatedAt:g}"
+                });
+            }
+
+            if (ChatSelector.Items.Count == 0)
+            {
+                ChatSelector.Items.Add(new ComboBoxItem { Content = "This chat", Tag = _runtime.CurrentChat.Id });
+            }
+
+            foreach (ComboBoxItem item in ChatSelector.Items)
+            {
+                if ((item.Tag as string) == _runtime.CurrentChat.Id)
+                {
+                    ChatSelector.SelectedItem = item;
+                    break;
+                }
+            }
+
+            ChatSelector.SelectedItem ??= ChatSelector.Items[0];
+        }
+        finally
+        {
+            _suppressChatSelection = false;
+        }
+    }
+
+    private void ChatSelector_OnSelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_suppressChatSelection || ChatSelector.SelectedItem is not ComboBoxItem { Tag: string id })
+        {
+            return;
+        }
+
+        _messages.Clear();
+        _runtime.ResumeChat(id);
+    }
+
+    private void NewChat_OnClick(object sender, RoutedEventArgs e)
+    {
+        _runtime.StartNewChat();
+        _messages.Clear();
+        _messages.Add(new MessageItem("Metis", "New chat. What are we working on?"));
+    }
 
     private async void Send_OnClick(object sender, RoutedEventArgs e) => await SendPromptAsync();
 
@@ -110,49 +173,7 @@ public partial class AssistantWindow : Window
             _ => (System.Windows.Media.Brush)FindResource("MintBrush")
         };
 
-        SetTyping(state == AssistantState.Thinking);
     });
-
-    /// <summary>
-    /// Shows the three-dot bubble while Metis is composing, with the dots
-    /// staggered so the motion travels left to right the way a phone's typing
-    /// indicator does.
-    /// </summary>
-    private void SetTyping(bool typing)
-    {
-        if (typing == _typingAnimationRunning)
-        {
-            return;
-        }
-
-        _typingAnimationRunning = typing;
-        TypingBubble.Visibility = typing ? Visibility.Visible : Visibility.Collapsed;
-
-        Ellipse[] dots = [TypingDot1, TypingDot2, TypingDot3];
-        for (var index = 0; index < dots.Length; index++)
-        {
-            if (!typing)
-            {
-                dots[index].BeginAnimation(OpacityProperty, null);
-                dots[index].BeginAnimation(HeightProperty, null);
-                continue;
-            }
-
-            var pulse = new DoubleAnimation(0.35, 1, TimeSpan.FromMilliseconds(560))
-            {
-                AutoReverse = true,
-                RepeatBehavior = RepeatBehavior.Forever,
-                BeginTime = TimeSpan.FromMilliseconds(index * 180),
-                EasingFunction = new SineEase { EasingMode = EasingMode.EaseInOut }
-            };
-            dots[index].BeginAnimation(OpacityProperty, pulse);
-        }
-
-        if (typing)
-        {
-            ScrollToLatest();
-        }
-    }
 
     private void ScrollToLatest() => Dispatcher.BeginInvoke(
         () => MessagesScroll.ScrollToEnd(),

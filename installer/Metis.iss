@@ -11,7 +11,9 @@
 #endif
 
 #define AppName "Metis"
-#define AppPublisher "Martin Nakasole"
+; Credited on the setup wizard, in Add/Remove Programs, and in the file
+; properties of both the installer and the application.
+#define AppPublisher "Martin Nakasole (developer) and Lamek Hidengwa (designer)"
 #define AppExeName "Metis.exe"
 #define AppUrl "https://github.com/Martinhaleluja/Metis"
 
@@ -36,6 +38,12 @@ OutputDir=output
 OutputBaseFilename=Metis-Setup-{#AppVersion}-win-x64
 SetupIconFile={#InstallerIcon}
 UninstallDisplayIcon={app}\{#AppExeName}
+; Shown before the install location page. Metis captures the whole desktop and
+; sends it to a cloud provider by default, so that is disclosed before anything
+; is written to disk rather than only inside the app's own first-run wizard.
+InfoBeforeFile=Info.txt
+AppComments=An AI companion for learning the digital world by doing
+WizardImageAlphaFormat=defined
 Compression=lzma2/ultra64
 SolidCompression=yes
 WizardStyle=modern
@@ -48,7 +56,7 @@ ChangesAssociations=no
 ChangesEnvironment=no
 VersionInfoVersion={#AppVersion}.0
 VersionInfoCompany={#AppPublisher}
-VersionInfoDescription=Metis Windows Setup
+VersionInfoDescription=Metis — An AI Companion for Learning the Digital World by Doing
 VersionInfoProductName={#AppName}
 VersionInfoProductVersion={#AppVersion}
 VersionInfoCopyright=Copyright (c) 2026 {#AppPublisher}
@@ -63,8 +71,8 @@ Name: "desktopicon"; Description: "Create a desktop shortcut"; GroupDescription:
 Source: "{#PublishDir}\*"; DestDir: "{app}"; Excludes: "*.pdb"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
-Name: "{autoprograms}\{#AppName}"; Filename: "{app}\{#AppExeName}"; WorkingDir: "{app}"; Comment: "Local-first AI desktop companion"
-Name: "{autodesktop}\{#AppName}"; Filename: "{app}\{#AppExeName}"; WorkingDir: "{app}"; Tasks: desktopicon; Comment: "Local-first AI desktop companion"
+Name: "{autoprograms}\{#AppName}"; Filename: "{app}\{#AppExeName}"; WorkingDir: "{app}"; Comment: "Learn the digital world by doing — Metis teaches while you work"; IconFilename: "{app}\{#AppExeName}"
+Name: "{autodesktop}\{#AppName}"; Filename: "{app}\{#AppExeName}"; WorkingDir: "{app}"; Tasks: desktopicon; Comment: "Learn the digital world by doing — Metis teaches while you work"; IconFilename: "{app}\{#AppExeName}"
 
 [Run]
 Filename: "{app}\{#AppExeName}"; Description: "Launch {#AppName}"; WorkingDir: "{app}"; Flags: nowait postinstall skipifsilent

@@ -25,5 +25,14 @@
     <None Include="..\..\src\Metis.App\Windows\SetupWindow.xaml"
           Link="Fixtures\SetupWindow.xaml"
           CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\src\Metis.App\Theme\Tokens.Light.xaml"
+          Link="Fixtures\Tokens.Light.xaml"
+          CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\src\Metis.App\Theme\Tokens.Dark.xaml"
+          Link="Fixtures\Tokens.Dark.xaml"
+          CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\src\Metis.App\Theme\Controls.xaml"
+          Link="Fixtures\Controls.xaml"
+          CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

@@ -6,6 +6,60 @@ namespace Metis.Tests;
 
 public sealed class GeminiRequestBuilderTests
 {
+    /// <summary>
+    /// Gemini rejects the entire request once the response schema grows past a
+    /// complexity budget it does not document, and it says only "Request
+    /// contains an invalid argument" when it does. Adding the lesson steps
+    /// crossed that line, and every voice request failed until the two maxItems
+    /// keywords came out.
+    ///
+    /// They were never load-bearing: AssistantPlanParser caps steps and actions
+    /// itself while reading, which is the limit that actually protects Metis.
+    /// This pins the rule, because the schema is shared with four other
+    /// providers and the temptation to restate a parser limit in it is
+    /// permanent.
+    /// </summary>
+    [Fact]
+    public void The_response_schema_states_no_array_length_limits()
+    {
+        var json = GeminiRequestBuilder.BuildGenerateContentJson(
+            new GeminiRequest("What is on screen?", [1, 2, 3]));
+
+        Assert.DoesNotContain("maxItems", json, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("minItems", json, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// The annotation fields have to reach the provider, or the model is being
+    /// asked in the instruction for something the schema forbids it to return.
+    /// </summary>
+    [Fact]
+    public void The_response_schema_carries_the_annotation_and_lesson_fields()
+    {
+        var json = GeminiRequestBuilder.BuildGenerateContentJson(
+            new GeminiRequest("Where is save?", [1, 2, 3]));
+
+        using var document = JsonDocument.Parse(json);
+        var schema = document.RootElement
+            .GetProperty("generationConfig")
+            .GetProperty("responseJsonSchema");
+        var properties = schema.GetProperty("properties");
+
+        Assert.True(properties.TryGetProperty("scope", out _));
+        Assert.True(properties.TryGetProperty("element", out _));
+        Assert.True(properties.TryGetProperty("annotation_text", out _));
+
+        var stepProperties = properties.GetProperty("steps").GetProperty("items").GetProperty("properties");
+        foreach (var field in new[] { "instruction", "done_when", "scope", "x", "y", "w", "h", "element", "text" })
+        {
+            Assert.True(stepProperties.TryGetProperty(field, out _), $"steps is missing '{field}'");
+        }
+
+        var actionProperties = properties.GetProperty("actions").GetProperty("items").GetProperty("properties");
+        Assert.True(actionProperties.TryGetProperty("w", out _));
+        Assert.True(actionProperties.TryGetProperty("h", out _));
+    }
+
     [Fact]
     public void Generate_content_payload_contains_text_image_and_audio_parts()
     {

@@ -49,7 +49,7 @@ public sealed class JsonMemoryStore : IMemoryService, IDisposable
         }
     }
 
-    public async Task RecordSkillUseAsync(
+    public async Task<SkillProgress?> RecordSkillUseAsync(
         string application,
         string skill,
         bool succeeded,
@@ -58,8 +58,10 @@ public sealed class JsonMemoryStore : IMemoryService, IDisposable
     {
         if (string.IsNullOrWhiteSpace(skill))
         {
-            return;
+            return null;
         }
+
+        SkillProgress? progress = null;
 
         await MutateAsync(
             document =>
@@ -72,6 +74,12 @@ public sealed class JsonMemoryStore : IMemoryService, IDisposable
                     ?? new SkillRecord { Application = normalizedApplication, Skill = normalizedSkill };
 
                 var updated = SkillMemoryEngine.Record(existing, succeeded, neededGuidance);
+
+                // Captured inside the mutation so the comparison is against the
+                // level that was actually stored, not one re-read afterwards
+                // and possibly changed by another turn in between.
+                progress = new SkillProgress(updated, existing.Level);
+
                 var skills = document.Skills
                     .Where(record => record.Key != updated.Key)
                     .Append(updated)
@@ -81,6 +89,8 @@ public sealed class JsonMemoryStore : IMemoryService, IDisposable
                 return document with { Skills = skills };
             },
             cancellationToken).ConfigureAwait(false);
+
+        return progress;
     }
 
     public async Task RecordTaskOutcomeAsync(

@@ -10,11 +10,21 @@ internal static class MetisIconFactory
     {
         using var bitmap = new Bitmap(32, 32, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
         using (var graphics = Graphics.FromImage(bitmap))
-        using (var brush = new SolidBrush(Color.FromArgb(255, 120, 216, 255)))
         using (var path = CreateCompanionPath())
         {
             graphics.SmoothingMode = SmoothingMode.AntiAlias;
+            graphics.PixelOffsetMode = PixelOffsetMode.HighQuality;
             graphics.Clear(Color.Transparent);
+
+            // The same Sky gradient the shortcut icon is built from, so the
+            // tray and the desktop show one character rather than a flat
+            // silhouette next to a lit one.
+            var bounds = path.GetBounds();
+            using var brush = new LinearGradientBrush(
+                new PointF(bounds.X, bounds.Y),
+                new PointF(bounds.Right, bounds.Bottom),
+                Color.FromArgb(255, 165, 225, 255),
+                Color.FromArgb(255, 70, 194, 255));
             graphics.FillPath(brush, path);
         }
 

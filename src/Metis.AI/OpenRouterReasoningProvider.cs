@@ -9,13 +9,19 @@ using Metis.Core.Models;
 namespace Metis.AI;
 
 /// <summary>
-/// OpenClaw Gateway provider using its OpenResponses-compatible HTTP surface.
-/// OpenClaw plans work; Metis remains the only component that executes desktop input.
+/// OpenRouter provider, giving Metis access to many hosted models — including
+/// free ones — behind a single key.
+///
+/// Deliberately not built on the OpenClaw provider despite both being
+/// "OpenAI-compatible": OpenClaw speaks the Responses API (POST /responses,
+/// input_image parts) and OpenRouter only implements Chat Completions (POST
+/// /chat/completions, image_url parts). Pointing OpenClaw at OpenRouter 404s,
+/// so the request and response shapes here are genuinely different.
 /// </summary>
-public sealed class OpenClawReasoningProvider : IReasoningProvider, IDisposable
+public sealed class OpenRouterReasoningProvider : IReasoningProvider, IDisposable
 {
-    private const string ProviderId = "openclaw";
-    private const string DefaultEndpoint = "http://127.0.0.1:18789";
+    private const string ProviderId = "openrouter";
+    private const string DefaultEndpoint = "https://openrouter.ai/api";
     private static readonly byte[] DiagnosticPng = Convert.FromBase64String(
         "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=");
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
@@ -24,7 +30,7 @@ public sealed class OpenClawReasoningProvider : IReasoningProvider, IDisposable
     private readonly bool _ownsClient;
     private bool _disposed;
 
-    public OpenClawReasoningProvider(HttpClient? httpClient = null, Uri? endpoint = null)
+    public OpenRouterReasoningProvider(HttpClient? httpClient = null, Uri? endpoint = null)
     {
         Endpoint = ReasoningProviderSupport.NormalizeEndpoint(
             endpoint,
@@ -32,20 +38,18 @@ public sealed class OpenClawReasoningProvider : IReasoningProvider, IDisposable
             "/v1",
             ProviderId);
         _ownsClient = httpClient is null;
-        _httpClient = httpClient ?? new HttpClient { Timeout = TimeSpan.FromSeconds(90) };
+        _httpClient = httpClient ?? new HttpClient { Timeout = TimeSpan.FromSeconds(120) };
     }
 
     public ReasoningProviderDescriptor Descriptor { get; } = new(
         ProviderId,
-        "OpenClaw Gateway",
-        ReasoningAuthenticationKind.OptionalBearerToken,
+        "OpenRouter",
+        ReasoningAuthenticationKind.ApiKey,
         ReasoningProviderCapabilities.Text |
         ReasoningProviderCapabilities.Vision |
         ReasoningProviderCapabilities.ModelDiscovery |
         ReasoningProviderCapabilities.StructuredPlans |
-        ReasoningProviderCapabilities.LocalEndpoint |
-        ReasoningProviderCapabilities.RemoteEndpoint |
-        ReasoningProviderCapabilities.AgentGateway);
+        ReasoningProviderCapabilities.RemoteEndpoint);
 
     public Uri Endpoint { get; }
 
@@ -57,38 +61,37 @@ public sealed class OpenClawReasoningProvider : IReasoningProvider, IDisposable
     {
         ThrowIfDisposed();
         var normalizedModel = NormalizeModel(model);
-        var prompt = ReasoningProviderSupport.BuildUserPrompt(request);
-        var content = new List<object> { new { type = "input_text", text = prompt } };
+
+        // Chat Completions multimodal shape: image_url is an object with a url,
+        // not the bare string the Responses API takes.
+        var content = new List<object> { new { type = "text", text = ReasoningProviderSupport.BuildUserPrompt(request) } };
         if (request.ScreenshotBytes is { Length: > 0 })
         {
             content.Add(new
             {
-                type = "input_image",
-                image_url = $"data:{ReasoningProviderSupport.NormalizeImageMimeType(request.ScreenshotMimeType)};base64,{Convert.ToBase64String(request.ScreenshotBytes)}"
+                type = "image_url",
+                image_url = new
+                {
+                    url = $"data:{ReasoningProviderSupport.NormalizeImageMimeType(request.ScreenshotMimeType)};base64,{Convert.ToBase64String(request.ScreenshotBytes)}"
+                }
             });
         }
 
         var payload = JsonSerializer.Serialize(new
         {
             model = normalizedModel,
-            instructions = ReasoningProviderSupport.BuildSystemInstruction(request),
-            input = new[]
+            messages = new object[]
             {
-                new
-                {
-                    type = "message",
-                    role = "user",
-                    content
-                }
+                new { role = "system", content = ReasoningProviderSupport.BuildSystemInstruction(request) },
+                new { role = "user", content }
             },
             stream = false,
-            store = false,
-            max_output_tokens = ReasoningProviderSupport.MaxPlanTokens,
-            text = new
+            max_tokens = ReasoningProviderSupport.MaxPlanTokens,
+            response_format = new
             {
-                format = new
+                type = "json_schema",
+                json_schema = new
                 {
-                    type = "json_schema",
                     name = "metis_desktop_plan",
                     strict = true,
                     schema = ReasoningProviderSupport.AssistantPlanJsonSchema
@@ -96,7 +99,7 @@ public sealed class OpenClawReasoningProvider : IReasoningProvider, IDisposable
             }
         }, JsonOptions);
 
-        using var httpRequest = CreateRequest(HttpMethod.Post, "responses", credential);
+        using var httpRequest = CreateRequest(HttpMethod.Post, "chat/completions", credential);
         httpRequest.Content = new StringContent(payload, Encoding.UTF8, "application/json");
         using var response = await ReasoningProviderSupport.SendAsync(
                 _httpClient,
@@ -139,11 +142,16 @@ public sealed class OpenClawReasoningProvider : IReasoningProvider, IDisposable
         }
 
         var capabilities = Descriptor.Capabilities & ~ReasoningProviderCapabilities.ModelDiscovery;
+
+        // Metis cannot work without vision — it reasons about a screenshot on
+        // every turn — so text-only models are filtered out rather than
+        // offered and left to fail at the first question.
         return data.EnumerateArray()
+            .Where(SupportsImageInput)
             .Select(item => new
             {
                 Id = ReadString(item, "id"),
-                DisplayName = ReadString(item, "display_name") ?? ReadString(item, "name")
+                DisplayName = ReadString(item, "name")
             })
             .Where(item => !string.IsNullOrWhiteSpace(item.Id))
             .Select(item => new ReasoningModelInfo(
@@ -151,7 +159,34 @@ public sealed class OpenClawReasoningProvider : IReasoningProvider, IDisposable
                 string.IsNullOrWhiteSpace(item.DisplayName) ? item.Id! : item.DisplayName!,
                 capabilities))
             .DistinctBy(item => item.Name, StringComparer.OrdinalIgnoreCase)
+            .OrderBy(item => item.Name, StringComparer.OrdinalIgnoreCase)
             .ToArray();
+    }
+
+    /// <summary>
+    /// OpenRouter advertises modality as architecture.input_modalities, with an
+    /// older architecture.modality string on some entries. A model is kept only
+    /// if one of them mentions image input.
+    /// </summary>
+    private static bool SupportsImageInput(JsonElement model)
+    {
+        if (!model.TryGetProperty("architecture", out var architecture)
+            || architecture.ValueKind != JsonValueKind.Object)
+        {
+            return false;
+        }
+
+        if (architecture.TryGetProperty("input_modalities", out var modalities)
+            && modalities.ValueKind == JsonValueKind.Array)
+        {
+            return modalities.EnumerateArray().Any(entry =>
+                entry.ValueKind == JsonValueKind.String
+                && string.Equals(entry.GetString(), "image", StringComparison.OrdinalIgnoreCase));
+        }
+
+        var legacy = ReadString(architecture, "modality");
+        return legacy is not null
+               && legacy.Contains("image", StringComparison.OrdinalIgnoreCase);
     }
 
     public async Task<ProviderTestResult> TestModelAsync(
@@ -174,14 +209,14 @@ public sealed class OpenClawReasoningProvider : IReasoningProvider, IDisposable
             return new ProviderTestResult(
                 result.Model,
                 true,
-                $"OpenClaw agent {result.Model} is connected ({stopwatch.Elapsed.TotalSeconds:0.0}s).",
+                $"OpenRouter model {result.Model} answered ({stopwatch.Elapsed.TotalSeconds:0.0}s).",
                 stopwatch.Elapsed);
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
             stopwatch.Stop();
             return new ProviderTestResult(
-                string.IsNullOrWhiteSpace(model) ? "openclaw" : model.Trim(),
+                string.IsNullOrWhiteSpace(model) ? "openrouter" : model.Trim(),
                 false,
                 exception.Message,
                 stopwatch.Elapsed);
@@ -196,7 +231,10 @@ public sealed class OpenClawReasoningProvider : IReasoningProvider, IDisposable
             request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", credential.Trim());
         }
 
-        request.Headers.TryAddWithoutValidation("x-openclaw-agent-id", "main");
+        // OpenRouter uses these to attribute traffic. They are optional, but
+        // without them requests are filed as anonymous.
+        request.Headers.TryAddWithoutValidation("HTTP-Referer", "https://github.com/Martinhaleluja/Metis");
+        request.Headers.TryAddWithoutValidation("X-Title", "Metis");
         request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
         request.Headers.UserAgent.ParseAdd("Metis-Desktop/1.0");
         return request;
@@ -205,39 +243,41 @@ public sealed class OpenClawReasoningProvider : IReasoningProvider, IDisposable
     private static string ReadResponseText(string body)
     {
         using var document = ReasoningProviderSupport.ParseJson(ProviderId, body);
-        var root = document.RootElement;
-        if (root.TryGetProperty("output_text", out var directText) && directText.ValueKind == JsonValueKind.String)
-        {
-            return directText.GetString()?.Trim() ?? string.Empty;
-        }
-
-        if (!root.TryGetProperty("output", out var output) || output.ValueKind != JsonValueKind.Array)
+        if (!document.RootElement.TryGetProperty("choices", out var choices)
+            || choices.ValueKind != JsonValueKind.Array)
         {
             return string.Empty;
         }
 
         var text = new List<string>();
-        foreach (var outputItem in output.EnumerateArray())
+        foreach (var choice in choices.EnumerateArray())
         {
-            if (string.Equals(ReadString(outputItem, "type"), "output_text", StringComparison.OrdinalIgnoreCase))
-            {
-                var value = ReadString(outputItem, "text");
-                if (!string.IsNullOrWhiteSpace(value))
-                {
-                    text.Add(value);
-                }
-            }
-
-            if (!outputItem.TryGetProperty("content", out var content) || content.ValueKind != JsonValueKind.Array)
+            if (!choice.TryGetProperty("message", out var message)
+                || message.ValueKind != JsonValueKind.Object)
             {
                 continue;
             }
 
-            text.AddRange(content.EnumerateArray()
-                .Where(item => string.Equals(ReadString(item, "type"), "output_text", StringComparison.OrdinalIgnoreCase))
-                .Select(item => ReadString(item, "text"))
-                .Where(value => !string.IsNullOrWhiteSpace(value))
-                .Select(value => value!));
+            if (message.TryGetProperty("content", out var content))
+            {
+                // Content is normally a string, but a few providers return the
+                // multipart array form even on the way back.
+                if (content.ValueKind == JsonValueKind.String)
+                {
+                    var value = content.GetString();
+                    if (!string.IsNullOrWhiteSpace(value))
+                    {
+                        text.Add(value);
+                    }
+                }
+                else if (content.ValueKind == JsonValueKind.Array)
+                {
+                    text.AddRange(content.EnumerateArray()
+                        .Select(part => ReadString(part, "text"))
+                        .Where(value => !string.IsNullOrWhiteSpace(value))
+                        .Select(value => value!));
+                }
+            }
         }
 
         return string.Join("\n", text).Trim();
@@ -256,44 +296,49 @@ public sealed class OpenClawReasoningProvider : IReasoningProvider, IDisposable
             HttpStatusCode.Unauthorized => ReasoningProviderSupport.Error(
                 ProviderId,
                 ReasoningProviderErrorKind.Authentication,
-                "OpenClaw rejected the Gateway token or password. Save the same secret configured by gateway.auth.",
+                "OpenRouter rejected the API key. Create one at openrouter.ai/keys and save it in Preferences.",
+                status),
+            HttpStatusCode.PaymentRequired => ReasoningProviderSupport.Error(
+                ProviderId,
+                ReasoningProviderErrorKind.QuotaOrRateLimit,
+                $"OpenRouter reports insufficient credit for this model. Free models are capped per day; try a ':free' model or add credit. {detail}",
                 status),
             HttpStatusCode.Forbidden => ReasoningProviderSupport.Error(
                 ProviderId,
                 ReasoningProviderErrorKind.Permission,
-                $"OpenClaw denied this agent run. Check the Gateway operator scopes and agent permissions. {detail}",
+                $"OpenRouter denied this model. Your account's data policy may exclude the providers serving it. {detail}",
                 status),
-            HttpStatusCode.NotFound or HttpStatusCode.MethodNotAllowed => ReasoningProviderSupport.Error(
+            HttpStatusCode.NotFound => ReasoningProviderSupport.Error(
                 ProviderId,
-                ReasoningProviderErrorKind.ServiceUnavailable,
-                "OpenClaw's OpenResponses endpoint is not available. Enable gateway.http.endpoints.responses and restart the Gateway.",
+                ReasoningProviderErrorKind.InvalidRequest,
+                $"OpenRouter has no model '{model ?? "requested"}'. Use Find models to list the vision-capable ones.",
                 status),
             HttpStatusCode.TooManyRequests => ReasoningProviderSupport.Error(
                 ProviderId,
                 ReasoningProviderErrorKind.QuotaOrRateLimit,
-                $"OpenClaw is rate-limiting requests or failed authentication attempts. Wait before retrying. {detail}",
+                $"OpenRouter is rate-limiting this key. Free models allow roughly 20 requests a minute and a limited number per day. {detail}",
                 status),
             HttpStatusCode.BadRequest => ReasoningProviderSupport.Error(
                 ProviderId,
                 ReasoningProviderErrorKind.InvalidRequest,
-                $"OpenClaw rejected Metis's request or agent model '{model ?? "requested"}'. {detail}",
+                $"OpenRouter rejected the request. The model may not accept images or structured output. {detail}",
                 status),
             _ when status >= 500 => ReasoningProviderSupport.Error(
                 ProviderId,
                 ReasoningProviderErrorKind.ServiceUnavailable,
-                $"OpenClaw could not complete the agent run (HTTP {status}). Check the Gateway and its configured model provider. {detail}",
+                $"OpenRouter or the upstream provider could not answer (HTTP {status}). {detail}",
                 status),
             _ => ReasoningProviderSupport.Error(
                 ProviderId,
                 ReasoningProviderErrorKind.Unknown,
-                $"OpenClaw returned HTTP {status}. {detail}",
+                $"OpenRouter returned HTTP {status}. {detail}",
                 status)
         };
     }
 
     private static string NormalizeModel(string? model) =>
         string.IsNullOrWhiteSpace(model) || string.Equals(model.Trim(), "default", StringComparison.OrdinalIgnoreCase)
-            ? "openclaw"
+            ? "google/gemini-2.0-flash-exp:free"
             : model.Trim();
 
     private static string? ReadString(JsonElement element, string property) =>
