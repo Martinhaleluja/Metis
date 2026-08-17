@@ -10,6 +10,7 @@ public sealed class WindowsCredentialStore : ISecretStore
     private const string OpenAiCredentialTarget = "Metis.OpenAI.ApiKey";
     private const string ClaudeCredentialTarget = "Metis.Claude.ApiKey";
     private const string OpenClawCredentialTarget = "Metis.OpenClaw.Token";
+    private const string OpenRouterCredentialTarget = "Metis.OpenRouter.ApiKey";
     private const string AssemblyAiCredentialTarget = "Metis.AssemblyAI.ApiKey";
     private const string ElevenLabsCredentialTarget = "Metis.ElevenLabs.ApiKey";
     private const uint CredTypeGeneric = 1;
@@ -40,11 +41,34 @@ public sealed class WindowsCredentialStore : ISecretStore
 
     public void DeleteOpenClawToken() => DeleteSecret(OpenClawCredentialTarget, "OpenClaw");
 
+    public string? ReadOpenRouterApiKey() => ReadSecret(OpenRouterCredentialTarget, "OpenRouter");
+
+    public void WriteOpenRouterApiKey(string apiKey) => WriteSecret(OpenRouterCredentialTarget, "OpenRouter", apiKey);
+
+    public void DeleteOpenRouterApiKey() => DeleteSecret(OpenRouterCredentialTarget, "OpenRouter");
+
     public string? ReadAssemblyAiApiKey() => ReadSecret(AssemblyAiCredentialTarget, "AssemblyAI");
 
     public void WriteAssemblyAiApiKey(string apiKey) => WriteSecret(AssemblyAiCredentialTarget, "AssemblyAI", apiKey);
 
     public void DeleteAssemblyAiApiKey() => DeleteSecret(AssemblyAiCredentialTarget, "AssemblyAI");
+
+    /// <summary>
+    /// The Supabase refresh token, so signing in survives a restart.
+    ///
+    /// A refresh token rather than the password: it can be revoked from the
+    /// server, it is scoped to this device, and a password stored anywhere is a
+    /// password that can be read back. Windows encrypts this per-user, so
+    /// another account on the same machine cannot read it.
+    /// </summary>
+    public string? ReadSupabaseRefreshToken() => ReadSecret(SupabaseSessionTarget, "Supabase");
+
+    public void WriteSupabaseRefreshToken(string token) =>
+        WriteSecret(SupabaseSessionTarget, "Supabase", token);
+
+    public void DeleteSupabaseRefreshToken() => DeleteSecret(SupabaseSessionTarget, "Supabase");
+
+    private const string SupabaseSessionTarget = "Metis/Supabase/RefreshToken";
 
     public string? ReadElevenLabsApiKey() => ReadSecret(ElevenLabsCredentialTarget, "ElevenLabs");
 

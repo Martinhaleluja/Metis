@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>Metis.Api</AssemblyName>
+    <RootNamespace>Metis.Api</RootNamespace>
+    <InvariantGlobalization>true</InvariantGlobalization>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- The entitlement rules are shared rather than reimplemented. A second
+         copy of "who may do what" written in SQL or TypeScript would drift from
+         the client's copy, and the half that drifts is the one that grants
+         access it should not. -->
+    <ProjectReference Include="..\Metis.Core\Metis.Core.csproj" />
+  </ItemGroup>
+
+</Project>

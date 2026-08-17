@@ -1,0 +1,60 @@
+# Render Blueprint for the Metis AI gateway.
+#
+# Lives at the repository root because Render looks for it there. The Docker
+# build context is the root too, so the Metis.Core project reference resolves —
+# the gateway shares its entitlement rules with the desktop client rather than
+# reimplementing them.
+#
+# Staging and production are two services in one file. That is the whole of the
+# environment separation: same image, different secrets, and neither can reach
+# the other's database.
+
+services:
+  - type: web
+    name: metis-api-staging
+    runtime: docker
+    dockerfilePath: ./src/Metis.Api/Dockerfile
+    dockerContext: .
+    plan: free
+    region: frankfurt
+    branch: main
+    healthCheckPath: /health
+    envVars:
+      - key: METIS_ENV
+        value: staging
+      # Render routes to port 10000 by default.
+      - key: ASPNETCORE_URLS
+        value: http://0.0.0.0:10000
+      # sync: false means Render prompts for the value and keeps it out of this
+      # file. Every one of these is a secret and none belongs in the repository.
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_KEY
+        sync: false
+      - key: GOOGLE_API_KEY
+        sync: false
+
+  # Deliberately not deployed yet: suspended so it exists, holds its own
+  # secrets, and cannot be reached until there is something to sell. Remove
+  # `suspended` when you are ready for it.
+  - type: web
+    name: metis-api-prod
+    runtime: docker
+    dockerfilePath: ./src/Metis.Api/Dockerfile
+    dockerContext: .
+    plan: free
+    region: frankfurt
+    branch: main
+    healthCheckPath: /health
+    suspended: 'yes'
+    envVars:
+      - key: METIS_ENV
+        value: production
+      - key: ASPNETCORE_URLS
+        value: http://0.0.0.0:10000
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_KEY
+        sync: false
+      - key: GOOGLE_API_KEY
+        sync: false
