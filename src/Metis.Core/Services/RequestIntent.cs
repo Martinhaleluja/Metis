@@ -20,7 +20,21 @@ public static class RequestIntent
         "search for", "look up", "navigate", "go to", "browse", "visit",
         "turn on", "turn off", "toggle", "enable", "disable",
         "save", "rename", "create", "make a", "add a", "set the", "change the",
-        "do it", "for me"
+        "do it", "for me",
+
+        // Consequential verbs. These were missing, which meant "delete this
+        // file" was not read as an instruction at all and Metis explained how
+        // to do it instead. Recognising them is not the same as permitting
+        // them: the safety engine still classifies the destructive ones as high
+        // risk and stops for confirmation, and Learn mode still declines
+        // outright. Failing to recognise them only meant Metis misunderstood.
+        "delete", "erase", "empty", "uninstall", "remove",
+        "install", "update", "upgrade", "restart", "reboot", "shut down", "shutdown",
+        "move", "rename to", "send", "reply", "forward", "print", "download", "upload",
+
+        // System and hardware, now that Metis can reach these.
+        "connect", "disconnect", "unmute", "volume", "brightness",
+        "wifi", "wi-fi", "bluetooth", "driver", "device manager", "service"
     ];
 
     private static readonly string[] QuestionOpeners =
@@ -60,6 +74,24 @@ public static class RequestIntent
                QuestionOpeners.Any(opener => trimmed.StartsWith(opener, StringComparison.OrdinalIgnoreCase));
     }
 
+    private static readonly string[] PointingTerms =
+    [
+        "show me", "where is", "where's", "where can i", "where do i", "point to", "point at",
+        "point out", "highlight", "find the", "which button", "which one", "locate", "how do i find"
+    ];
+
+    /// <summary>
+    /// True when the user asked to be shown *where* something is. This is not a
+    /// command to act and not a general question: the honest answer is a mark
+    /// on the screen, and prose alone does not answer it.
+    /// </summary>
+    public static bool IsPointingRequest(string? text)
+    {
+        var trimmed = (text ?? string.Empty).Trim();
+        return trimmed.Length != 0 &&
+               PointingTerms.Any(term => trimmed.Contains(term, StringComparison.OrdinalIgnoreCase));
+    }
+
     /// <summary>
     /// True when answering honestly requires having looked at the screen, so
     /// Metis can refuse rather than describe a desktop it never captured.
@@ -67,7 +99,14 @@ public static class RequestIntent
     public static bool RequiresScreenObservation(string? text)
     {
         var trimmed = (text ?? string.Empty).Trim();
-        return trimmed.Length != 0 &&
+        if (trimmed.Length == 0)
+        {
+            return false;
+        }
+
+        // Asking to be shown where something is always needs the screen: the
+        // answer is a position, and a position cannot be known without looking.
+        return IsPointingRequest(trimmed) ||
                ScreenTerms.Any(term => trimmed.Contains(term, StringComparison.OrdinalIgnoreCase));
     }
 }

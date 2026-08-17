@@ -7,6 +7,7 @@ using System.Windows.Media.Animation;
 using System.Windows.Shapes;
 using System.Windows.Threading;
 using Metis.Core.Models;
+using Metis.Core.Services;
 using MediaColor = System.Windows.Media.Color;
 
 namespace Metis.App.Windows;
@@ -28,6 +29,13 @@ public partial class NotchWindow : Window
 
     private const double ExpandedHeight = 34;
     private const double TuckedWidth = 104;
+
+    /// <summary>
+    /// Width the notch takes while it is the trace toolbar: six controls plus
+    /// the body's own padding, with room to spare so nothing sits against the
+    /// rounded edge where it is awkward to hit.
+    /// </summary>
+    private const double ToolbarWidth = 284;
     private const double HorizontalPadding = 30;
 
     /// <summary>
@@ -53,6 +61,360 @@ public partial class NotchWindow : Window
     /// <summary>Raised when the user clicks the gear on the notch.</summary>
     public event EventHandler? SettingsRequested;
 
+    /// <summary>Raised when the user switches mode from the notch.</summary>
+    public event EventHandler? ModeCycleRequested;
+
+    /// <summary>
+    /// Shows which mode is active — the one thing worth knowing at a glance,
+    /// because it decides whether Metis is able to touch the computer at all.
+    /// Green while it only shows, amber while it may act.
+    /// </summary>
+    public void ShowMode(AssistanceMode mode)
+    {
+        ModeChipText.Text = AssistanceModes.Name(mode).ToUpperInvariant();
+        ModeChip.Background = new SolidColorBrush(mode == AssistanceMode.Autopilot
+            ? MediaColor.FromArgb(0x66, 0xFF, 0x9F, 0x0A)
+            : MediaColor.FromArgb(0x66, 0x30, 0xD1, 0x58));
+
+        // A brief pulse, because changing mode changes what Metis is allowed
+        // to do and that deserves to be noticed.
+        ModeChip.BeginAnimation(
+            OpacityProperty,
+            new DoubleAnimation(0.35, 1, TimeSpan.FromMilliseconds(260))
+            {
+                EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }
+            });
+    }
+
+    /// <summary>
+    /// With two modes a click is a toggle, which is the whole interaction —
+    /// no menu, no list, and the state is already on the chip being clicked.
+    /// </summary>
+    private void ModeChip_OnClick(object sender, System.Windows.Input.MouseButtonEventArgs e)
+    {
+        e.Handled = true;
+        _pressed = false;
+        ModeCycleRequested?.Invoke(this, EventArgs.Empty);
+    }
+
+    /// <summary>Raised when a trace tool is chosen from the notch toolbar.</summary>
+    public event EventHandler<TraceTool>? TraceToolPicked;
+
+    /// <summary>Raised when the user confirms the marked-out area.</summary>
+    public event EventHandler? TraceConfirmed;
+
+    /// <summary>Raised when the user abandons the trace.</summary>
+    public event EventHandler? TraceCancelled;
+
+    /// <summary>True while the notch is showing the trace toolbar.</summary>
+    public bool IsTracing { get; private set; }
+
+    /// <summary>
+    /// Turns the notch into the trace toolbar. Putting the tools here rather
+    /// than in a floating palette keeps the screen clear: the user is trying to
+    /// look at their own work, and a second window would sit on top of it.
+    /// </summary>
+    public void ShowTraceTools(TraceTool active)
+    {
+        IsTracing = true;
+        _retractTimer.Stop();
+        Visibility = Visibility.Visible;
+
+        SetThinking(false);
+        StepPips.Visibility = Visibility.Collapsed;
+        Animate(NotchContent, OpacityProperty, 0, Fade, null);
+        Animate(Grabber, OpacityProperty, 0, Fade, null);
+
+        // The hover controls are right-aligned and the toolbar is centred, so
+        // both on screen at once means the gear sits on top of Ask.
+        HoverControls.Visibility = Visibility.Collapsed;
+        // Release the exit fade before setting opacity. An animation that ends
+        // with FillBehavior.HoldEnd keeps hold of the property, so assigning
+        // Opacity = 1 here does nothing while the previous fade-out is still
+        // holding it at 0 — which left the toolbar laid out, fully sized, and
+        // invisible on every arm after the first.
+        TraceTools.BeginAnimation(OpacityProperty, null);
+        TraceTools.Visibility = Visibility.Visible;
+        TraceTools.Opacity = 1;
+
+        // Sizes must exist before the entrance runs, or the first frame shows
+        // the controls at whatever the layout system had last — which on a
+        // never-measured panel is nothing at all.
+        TraceTools.UpdateLayout();
+
+        HighlightActiveTool(active);
+        StaggerToolsIn();
+
+        // The notch counts as shown while the toolbar is up. Leaving this false
+        // told every hover handler the notch was still resting, and they act on
+        // that by shrinking it back down.
+        _isShown = true;
+
+        // Wide enough for six controls, and it stays fully out so the tools are
+        // reachable without hunting for the notch.
+        Animate(NotchBody, WidthProperty, ToolbarWidth, Shape, new BackEase { Amplitude = 0.2, EasingMode = EasingMode.EaseOut });
+        Animate(NotchDrop, TranslateTransform.YProperty, 0, Shape, new CubicEase { EasingMode = EasingMode.EaseOut });
+
+        // Must come after the trace surface has been shown, or that surface
+        // sits on top and the toolbar cannot be clicked at all.
+        LiftAboveOverlays();
+    }
+
+    /// <summary>
+    /// Checks that the toolbar is genuinely on screen once its entrance has
+    /// settled, and describes what it found when it is not. "The call was made"
+    /// and "the user can see the tools" are different claims, and only the
+    /// second one matters — this toolbar has been silently invisible before,
+    /// once because an animation threw and once because another window covered
+    /// it, and neither showed up as an error.
+    /// </summary>
+    public bool VerifyToolbarVisible(out string report)
+    {
+        var reachable = ToolsAreReachable();
+
+        report = $"visible={TraceTools.Visibility == Visibility.Visible} " +
+                 $"panelOpacity={TraceTools.Opacity:0.00} " +
+                 $"bodyWidth={NotchBody.ActualWidth:0} dropY={NotchDrop.Y:0} " +
+                 $"toolWidth={ToolFreehand.ActualWidth:0} toolOpacity={ToolFreehand.Opacity:0.00} " +
+                 $"windowVisible={Visibility == Visibility.Visible} windowOpacity={Opacity:0.00} " +
+                 $"clickable={reachable}";
+
+        return reachable
+            && TraceTools.Visibility == Visibility.Visible
+            && TraceTools.Opacity > 0.9
+            && ToolFreehand.ActualWidth > 1
+            && ToolFreehand.Opacity > 0.9
+            && NotchBody.ActualWidth >= ToolbarWidth - 1
+            && NotchDrop.Y > -2
+            && Visibility == Visibility.Visible;
+    }
+
+    /// <summary>
+    /// Brings the tools in one after another rather than all at once. The
+    /// stagger reads as a toolbar unfolding, and it also draws the eye left to
+    /// right across the controls in the order they are meant to be used.
+    /// </summary>
+    private void StaggerToolsIn()
+    {
+        Border[] controls = [ToolFreehand, ToolRectangle, ToolFullScreen, ToolDivider, ToolAsk, ToolCancel];
+
+        for (var index = 0; index < controls.Length; index++)
+        {
+            var control = controls[index];
+            control.Opacity = 0;
+
+            // A fresh transform per run. Reusing whatever is already there risks
+            // animating a frozen instance, which throws — and a Style setter
+            // hands every element the same frozen object.
+            var scale = new ScaleTransform(0.6, 0.6);
+            control.RenderTransformOrigin = new System.Windows.Point(0.5, 0.5);
+            control.RenderTransform = scale;
+
+            var begin = TimeSpan.FromMilliseconds(40 * index);
+
+            control.BeginAnimation(
+                OpacityProperty,
+                new DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(180))
+                {
+                    BeginTime = begin,
+                    EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }
+                });
+
+            var pop = new DoubleAnimation(0.6, 1, TimeSpan.FromMilliseconds(260))
+            {
+                BeginTime = begin,
+                EasingFunction = new BackEase { Amplitude = 0.45, EasingMode = EasingMode.EaseOut }
+            };
+            scale.BeginAnimation(ScaleTransform.ScaleXProperty, pop);
+            scale.BeginAnimation(ScaleTransform.ScaleYProperty, pop);
+        }
+    }
+
+    /// <summary>
+    /// Marks which tool is in the user's hand. The colour is animated rather
+    /// than swapped so switching tools reads as a change of state, not a
+    /// repaint.
+    /// </summary>
+    public void HighlightActiveTool(TraceTool active)
+    {
+        foreach (var (tool, element) in new[]
+                 {
+                     (TraceTool.Freehand, ToolFreehand),
+                     (TraceTool.Rectangle, ToolRectangle),
+                     (TraceTool.FullScreen, ToolFullScreen)
+                 })
+        {
+            var target = tool == active
+                ? MediaColor.FromArgb(0xE0, 0x0A, 0x7C, 0xFF)
+                : MediaColor.FromArgb(0x1A, 0xFF, 0xFF, 0xFF);
+
+            if (element.Background is not SolidColorBrush { IsFrozen: false })
+            {
+                element.Background = new SolidColorBrush(
+                    (element.Background as SolidColorBrush)?.Color ?? MediaColor.FromArgb(0x1A, 0xFF, 0xFF, 0xFF));
+            }
+
+            if (element.Background is SolidColorBrush { IsFrozen: false } brush)
+            {
+                brush.BeginAnimation(
+                    SolidColorBrush.ColorProperty,
+                    new ColorAnimation(target, TimeSpan.FromMilliseconds(200))
+                    {
+                        EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }
+                    });
+            }
+            else
+            {
+                element.Background = new SolidColorBrush(target);
+            }
+        }
+    }
+
+    /// <summary>Returns the notch to normal once tracing is over.</summary>
+    public void HideTraceTools()
+    {
+        if (!IsTracing)
+        {
+            return;
+        }
+
+        IsTracing = false;
+        HoverControls.Visibility = Visibility.Visible;
+
+        // Same reason as the toolbar: the hover fade holds this property, so it
+        // has to be released before a plain assignment means anything.
+        HoverControls.BeginAnimation(OpacityProperty, null);
+        HoverControls.Opacity = 0;
+
+        // Exits run faster than entrances, and without the stagger: leaving
+        // should feel decisive where arriving felt considered. Collapsing on
+        // completion rather than immediately is what lets the fade actually be
+        // seen — collapsing in the same breath skipped straight to the end.
+        var fade = new DoubleAnimation(0, TimeSpan.FromMilliseconds(140))
+        {
+            EasingFunction = new CubicEase { EasingMode = EasingMode.EaseIn },
+            FillBehavior = FillBehavior.HoldEnd
+        };
+
+        fade.Completed += (_, _) =>
+        {
+            // A new trace may have started during the fade; collapsing then
+            // would take the toolbar away the moment it was asked for.
+            if (!IsTracing)
+            {
+                TraceTools.Visibility = Visibility.Collapsed;
+            }
+        };
+
+        TraceTools.BeginAnimation(OpacityProperty, fade);
+        Tuck();
+    }
+
+    /// <summary>
+    /// Where this window reports what it saw. Set by the host so notch input
+    /// can be traced without the window taking a dependency on logging.
+    /// </summary>
+    public Action<string>? DebugLog { get; set; }
+
+    /// <summary>
+    /// Whether the toolbar can actually be clicked, by asking Windows which
+    /// window owns the pixels the tools are drawn on. Being visible is not the
+    /// same as being reachable: the full-screen trace surface is topmost too,
+    /// and when it wins the z-order it covers the notch and takes every click
+    /// while the toolbar carries on looking perfectly fine.
+    /// </summary>
+    private bool ToolsAreReachable()
+    {
+        if (ToolFreehand.ActualWidth <= 0 || PresentationSource.FromVisual(ToolFreehand) is null)
+        {
+            return false;
+        }
+
+        var self = Handle;
+        if (self == nint.Zero)
+        {
+            return false;
+        }
+
+        var centre = ToolFreehand.PointToScreen(new System.Windows.Point(
+            ToolFreehand.ActualWidth / 2,
+            ToolFreehand.ActualHeight / 2));
+
+        return WindowFromPoint(new PointStruct
+        {
+            X = (int)Math.Round(centre.X),
+            Y = (int)Math.Round(centre.Y)
+        }) == self;
+    }
+
+    [DllImport("user32.dll")]
+    private static extern nint WindowFromPoint(PointStruct point);
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct PointStruct
+    {
+        public int X;
+        public int Y;
+    }
+
+    /// <summary>
+    /// The screen rectangle each tool actually occupies. Working these out by
+    /// hand from the layout constants is guesswork, and guessing wrong looks
+    /// exactly like the buttons being unclickable.
+    /// </summary>
+    public string DescribeToolRects()
+    {
+        var parts = new List<string>();
+        foreach (var (name, element) in new (string, FrameworkElement)[]
+                 {
+                     ("freehand", ToolFreehand),
+                     ("rectangle", ToolRectangle),
+                     ("fullscreen", ToolFullScreen),
+                     ("ask", ToolAsk),
+                     ("cancel", ToolCancel)
+                 })
+        {
+            if (element.ActualWidth <= 0 || PresentationSource.FromVisual(element) is null)
+            {
+                parts.Add($"{name}=unmeasured");
+                continue;
+            }
+
+            var topLeft = element.PointToScreen(new System.Windows.Point(0, 0));
+            var bottomRight = element.PointToScreen(
+                new System.Windows.Point(element.ActualWidth, element.ActualHeight));
+            parts.Add(
+                $"{name}=({topLeft.X:0},{topLeft.Y:0})-({bottomRight.X:0},{bottomRight.Y:0}) " +
+                $"centre({(topLeft.X + bottomRight.X) / 2:0},{(topLeft.Y + bottomRight.Y) / 2:0})");
+        }
+
+        return string.Join("  ", parts);
+    }
+
+    private void TraceTool_OnClick(object sender, System.Windows.Input.MouseButtonEventArgs e)
+    {
+        DebugLog?.Invoke($"Notch tool clicked: {(sender as FrameworkElement)?.Name}");
+        e.Handled = true;
+        if (sender is FrameworkElement { Tag: string name } && Enum.TryParse<TraceTool>(name, out var tool))
+        {
+            HighlightActiveTool(tool);
+            TraceToolPicked?.Invoke(this, tool);
+        }
+    }
+
+    private void TraceAsk_OnClick(object sender, System.Windows.Input.MouseButtonEventArgs e)
+    {
+        e.Handled = true;
+        TraceConfirmed?.Invoke(this, EventArgs.Empty);
+    }
+
+    private void TraceCancel_OnClick(object sender, System.Windows.Input.MouseButtonEventArgs e)
+    {
+        DebugLog?.Invoke("Notch cancel clicked.");
+        e.Handled = true;
+        TraceCancelled?.Invoke(this, EventArgs.Empty);
+    }
+
     /// <summary>The screen-space bottom edge the attached windows hang from.</summary>
     public double AnchorBottom => Top + ExpandedHeight;
 
@@ -71,6 +433,7 @@ public partial class NotchWindow : Window
         {
             MakeToolWindow();
             PositionOverTopEdge();
+            PrimeTraceTools();
         };
 
         Closing += (_, args) =>
@@ -80,6 +443,24 @@ public partial class NotchWindow : Window
                 args.Cancel = true;
             }
         };
+    }
+
+    /// <summary>
+    /// Measures the toolbar once at startup. A collapsed panel is never laid
+    /// out, so the first time it was shown the controls could be composited
+    /// before their sizes existed — which is why the buttons appeared the first
+    /// time as bare glyphs with no chip behind them and no fixed shape. Paying
+    /// for that layout pass while nothing is on screen means the first trace
+    /// looks exactly like every one after it.
+    /// </summary>
+    private void PrimeTraceTools()
+    {
+        // Visibility only. Touching Opacity here would be one more thing that
+        // can leave the panel transparent, and the panel is collapsed for the
+        // whole of this method anyway, so nothing can be seen regardless.
+        TraceTools.Visibility = Visibility.Visible;
+        TraceTools.UpdateLayout();
+        TraceTools.Visibility = Visibility.Collapsed;
     }
 
     public void AllowClose()
@@ -97,6 +478,13 @@ public partial class NotchWindow : Window
     public void Show(MetisActivity activity)
     {
         ArgumentNullException.ThrowIfNull(activity);
+        if (IsTracing)
+        {
+            // The toolbar is in use; an activity update must not take the
+            // tools out from under the user's cursor.
+            return;
+        }
+
         _retractTimer.Stop();
 
         if (activity.Kind == MetisActivityKind.Idle || string.IsNullOrWhiteSpace(activity.Text))
@@ -142,6 +530,14 @@ public partial class NotchWindow : Window
     /// </summary>
     public void Tuck()
     {
+        if (IsTracing)
+        {
+            // The toolbar is the only way to finish a trace, so the notch stays
+            // out for as long as the user is marking something. Retracting it
+            // mid-gesture takes the controls away exactly when they are needed.
+            return;
+        }
+
         _retractTimer.Stop();
         _isShown = false;
         SetThinking(false);
@@ -159,7 +555,12 @@ public partial class NotchWindow : Window
     {
         _hovered = true;
         Animate(HoverControls, OpacityProperty, 1, Fade, null);
-        if (!_isShown)
+
+        // Never peek while the toolbar is up. The peek shrinks the notch to its
+        // resting size, and the pointer arriving here is the user reaching for a
+        // tool — so the controls were pulled out from under them at the exact
+        // moment they went to click one.
+        if (!_isShown && !IsTracing)
         {
             // Peek further out on hover so the notch invites the pull.
             Animate(NotchBody, WidthProperty, 152, Shape, new CubicEase { EasingMode = EasingMode.EaseOut });
@@ -172,7 +573,7 @@ public partial class NotchWindow : Window
         _hovered = false;
         _pressed = false;
         Animate(HoverControls, OpacityProperty, 0, Fade, null);
-        if (!_isShown)
+        if (!_isShown && !IsTracing)
         {
             Tuck();
         }
@@ -180,6 +581,15 @@ public partial class NotchWindow : Window
 
     private void Notch_OnMouseLeftButtonDown(object sender, System.Windows.Input.MouseButtonEventArgs e)
     {
+        if (IsTracing)
+        {
+            // Only while the toolbar is up, and only the element that was hit:
+            // enough to tell "the click missed the button" from "the button
+            // ignored the click", without logging every idle press.
+            DebugLog?.Invoke(
+                $"Notch press over '{(e.OriginalSource as FrameworkElement)?.Name ?? e.OriginalSource?.GetType().Name}'.");
+        }
+
         _pressed = true;
         _pressPoint = e.GetPosition(this);
     }
@@ -205,8 +615,9 @@ public partial class NotchWindow : Window
 
     private void Notch_OnMouseLeftButtonUp(object sender, System.Windows.Input.MouseButtonEventArgs e)
     {
-        if (!_pressed)
+        if (!_pressed || IsTracing)
         {
+            _pressed = false;
             return;
         }
 
@@ -366,4 +777,28 @@ public partial class NotchWindow : Window
 
     [DllImport("user32.dll")]
     private static extern int GetSystemMetrics(int index);
+
+    [DllImport("user32.dll")]
+    private static extern bool SetWindowPos(
+        nint handle, nint insertAfter, int x, int y, int width, int height, uint flags);
+
+    /// <summary>
+    /// Lifts the notch above the other topmost windows. The trace surface
+    /// covers the whole desktop, including the strip the notch sits in, so
+    /// without this it would swallow every click aimed at the toolbar.
+    /// </summary>
+    /// <summary>This window's handle, for callers that need to order z against it.</summary>
+    public nint Handle => new WindowInteropHelper(this).Handle;
+
+    public void LiftAboveOverlays()
+    {
+        const int hwndTopmost = -1;
+        const uint noMove = 0x0002, noSize = 0x0001, noActivate = 0x0010;
+
+        var handle = new WindowInteropHelper(this).Handle;
+        if (handle != nint.Zero)
+        {
+            SetWindowPos(handle, hwndTopmost, 0, 0, 0, 0, noMove | noSize | noActivate);
+        }
+    }
 }

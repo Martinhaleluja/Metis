@@ -17,6 +17,7 @@ public partial class SetupWindow : Window
     private readonly DispatcherTimer _companionSaveTimer;
     private bool _allowClose;
     private bool _loading;
+    private string _selectedCompanionColor = CompanionPalette.DefaultName;
 
     public SetupWindow(MetisRuntime runtime, Action showAssistant)
     {
@@ -108,13 +109,20 @@ public partial class SetupWindow : Window
         FullControlCheck.IsChecked = settings.FullDesktopControl;
         SpeechEnabledCheck.IsChecked = settings.SpeechEnabled;
         StartWithWindowsCheck.IsChecked = settings.StartWithWindows;
-        SelectComboItem(OperatingModeBox, settings.OperatingMode);
+        SelectComboItem(OperatingModeBox, AssistanceModes.Name(AssistanceModes.Parse(settings.OperatingMode)));
         ContextShortcutsCheck.IsChecked = settings.ContextShortcutsEnabled;
+        WakeWordBox.Text = WakeWordListener.Normalize(settings.WakeWord);
+        MoveRealCursorCheck.IsChecked = settings.MoveRealCursor;
         VisualGuidanceCheck.IsChecked = settings.VisualGuidanceEnabled;
         MemoryEnabledCheck.IsChecked = settings.MemoryEnabled;
         ActivationSoundsCheck.IsChecked = settings.ActivationSoundsEnabled;
         SpeakErrorsCheck.IsChecked = settings.SpeakErrorsAloud;
         SoundPackPathBox.Text = settings.SoundPackPath;
+        ChatMemoryCheck.IsChecked = settings.ChatMemoryEnabled;
+        UserSkillsCheck.IsChecked = settings.UserSkillsEnabled;
+        SkillsFolderBox.Text = settings.SkillsFolder;
+        SkillsStatusText.Text = DescribeLoadedSkills();
+        BuildCompanionColorSwatches(settings.CompanionColor);
         UpdateOperatingModeDescription();
         MemoryStatusText.Text = $"Stored at {_runtime.MemoryPath}";
         RefreshMicrophones(settings.PreferredMicrophoneId);
@@ -122,6 +130,60 @@ public partial class SetupWindow : Window
         DiagnosticsRuntimeText.Text = _runtime.CurrentStatus;
         UpdateCapabilityPanels();
         _loading = false;
+    }
+
+    /// <summary>
+    /// Renders the palette as swatches rather than a dropdown: the choice is
+    /// entirely visual, so showing the colours is the whole point.
+    /// </summary>
+    private void BuildCompanionColorSwatches(string selectedName)
+    {
+        _selectedCompanionColor = CompanionPalette.Normalize(selectedName);
+        CompanionColorList.Items.Clear();
+
+        foreach (var option in CompanionPalette.All)
+        {
+            var isSelected = string.Equals(option.Name, _selectedCompanionColor, StringComparison.OrdinalIgnoreCase);
+            var swatch = new System.Windows.Controls.Border
+            {
+                Width = 34,
+                Height = 34,
+                Margin = new Thickness(0, 0, 8, 8),
+                CornerRadius = new CornerRadius(17),
+                Background = new System.Windows.Media.SolidColorBrush(
+                    (System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString(option.Fill)),
+                BorderBrush = new System.Windows.Media.SolidColorBrush(
+                    (System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString(option.Glow)),
+                // The selected swatch is ringed rather than ticked, so the
+                // colour itself is never obscured by an indicator.
+                BorderThickness = new Thickness(isSelected ? 4 : 1),
+                Cursor = System.Windows.Input.Cursors.Hand,
+                ToolTip = option.Name,
+                Tag = option.Name
+            };
+
+            swatch.MouseLeftButtonUp += CompanionColorSwatch_OnClick;
+            CompanionColorList.Items.Add(swatch);
+        }
+    }
+
+    private void CompanionColorSwatch_OnClick(object sender, MouseButtonEventArgs e)
+    {
+        if (sender is not FrameworkElement { Tag: string name })
+        {
+            return;
+        }
+
+        BuildCompanionColorSwatches(name);
+        if (_loading)
+        {
+            return;
+        }
+
+        // Saved immediately so the companion changes colour as it is picked,
+        // which is the only way to judge a colour.
+        _companionSaveTimer.Stop();
+        _companionSaveTimer.Start();
     }
 
     public void AllowClose() => _allowClose = true;
@@ -316,36 +378,67 @@ public partial class SetupWindow : Window
             FullDesktopControl = FullControlCheck.IsChecked == true,
             SpeechEnabled = SpeechEnabledCheck.IsChecked == true,
             StartWithWindows = StartWithWindowsCheck.IsChecked == true,
-            OperatingMode = SelectedContent(OperatingModeBox, "Guide"),
+            OperatingMode = SelectedContent(OperatingModeBox, "Learn"),
             ContextShortcutsEnabled = ContextShortcutsCheck.IsChecked == true,
+            WakeWord = WakeWordListener.Normalize(WakeWordBox.Text),
+            MoveRealCursor = MoveRealCursorCheck.IsChecked == true,
             VisualGuidanceEnabled = VisualGuidanceCheck.IsChecked == true,
             MemoryEnabled = MemoryEnabledCheck.IsChecked == true,
             ActivationSoundsEnabled = ActivationSoundsCheck.IsChecked == true,
             SpeakErrorsAloud = SpeakErrorsCheck.IsChecked == true,
             SoundPackPath = SoundPackPathBox.Text,
+            ChatMemoryEnabled = ChatMemoryCheck.IsChecked == true,
+            UserSkillsEnabled = UserSkillsCheck.IsChecked == true,
+            SkillsFolder = SkillsFolderBox.Text,
+            CompanionColor = _selectedCompanionColor,
             PreferredMicrophoneId = MicrophoneBox.SelectedValue?.ToString()
         };
     }
 
     private void OperatingModeBox_OnSelectionChanged(object sender, SelectionChangedEventArgs e)
     {
-        if (!IsInitialized)
+        if (IsInitialized)
         {
-            return;
+            UpdateOperatingModeDescription();
         }
-
-        UpdateOperatingModeDescription();
     }
 
-    private void UpdateOperatingModeDescription()
+    private void UpdateOperatingModeDescription() =>
+        OperatingModeDescription.Text =
+            AssistanceModes.Describe(AssistanceModes.Parse(SelectedContent(OperatingModeBox, "Learn")));
+
+    /// <summary>
+    /// Names the skills that actually loaded, so a file with a typo in its
+    /// header is visibly absent rather than silently ignored.
+    /// </summary>
+    private string DescribeLoadedSkills()
     {
-        var capabilities = ModePolicy.For(ModePolicy.Parse(SelectedContent(OperatingModeBox, "Guide")));
-        var actions = capabilities.MayActUnprompted
-            ? $"Metis can perform up to {capabilities.MaxActionsPerBatch} steps per batch."
-            : capabilities.MayActWhenAsked
-                ? "Metis performs steps only when you ask it to in that request."
-                : "Metis never performs steps; it shows you how.";
-        OperatingModeDescription.Text = $"{capabilities.Summary} {actions}";
+        var skills = _runtime.UserSkills;
+        if (skills.Count == 0)
+        {
+            return "No skills loaded yet. Add a markdown file to the folder and save to reload.";
+        }
+
+        return $"{skills.Count} loaded: {string.Join(", ", skills.Select(skill => skill.Name))}";
+    }
+
+    private void OpenSkillsFolder_OnClick(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            _runtime.ReloadUserSkills();
+            var folder = _runtime.SkillsFolder;
+            if (!string.IsNullOrWhiteSpace(folder) && Directory.Exists(folder))
+            {
+                Process.Start(new ProcessStartInfo(folder) { UseShellExecute = true });
+            }
+
+            SkillsStatusText.Text = DescribeLoadedSkills();
+        }
+        catch (Exception exception)
+        {
+            SkillsStatusText.Text = exception.Message;
+        }
     }
 
     private async void ClearMemory_OnClick(object sender, RoutedEventArgs e)
@@ -425,7 +518,7 @@ public partial class SetupWindow : Window
         WhisperCppExecutablePathBox.Text = @"tools\whisper.cpp\Release\whisper-cli.exe";
         WhisperCppModelPathBox.Text = @"models\whisper\ggml-tiny.bin";
         SelectComboItem(TextToSpeechProviderBox, "Piper");
-        PiperExecutablePathBox.Text = @"tools\piper\venv\Scripts\piper.exe";
+        PiperExecutablePathBox.Text = @"tools\piper-standalone\piper\piper.exe";
         PiperVoiceModelPathBox.Text = @"models\piper\en_US-lessac-medium.onnx";
         CaptureScreenCheck.IsChecked = true;
         SpeechEnabledCheck.IsChecked = true;
@@ -541,7 +634,35 @@ public partial class SetupWindow : Window
             button.Style = (Style)FindResource(button == selectedButton ? "ActiveNavButton" : "NavButton");
         }
 
-        target.BringIntoView(new Rect(0, 0, Math.Max(1, target.ActualWidth), Math.Max(1, target.ActualHeight)));
+        ScrollSectionToTop(target);
+    }
+
+    /// <summary>
+    /// Scrolls a section to the top of the viewport. BringIntoView only scrolls
+    /// far enough to make an element visible, so a section already partly on
+    /// screen would not move at all and the nav button appeared to do nothing.
+    /// </summary>
+    private void ScrollSectionToTop(FrameworkElement section)
+    {
+        // Deferred so the offset is measured after any pending layout pass,
+        // which matters the first time a section is reached.
+        Dispatcher.BeginInvoke(
+            () =>
+            {
+                if (!section.IsLoaded || SetupScrollViewer.ExtentHeight <= 0)
+                {
+                    return;
+                }
+
+                var offset = section
+                    .TransformToAncestor(SetupScrollViewer)
+                    .Transform(new System.Windows.Point(0, 0))
+                    .Y + SetupScrollViewer.VerticalOffset;
+
+                // A small lead-in keeps the heading clear of the top edge.
+                SetupScrollViewer.ScrollToVerticalOffset(Math.Max(0, offset - 18));
+            },
+            DispatcherPriority.Loaded);
     }
 
     private async void ValidateReasoningProvider_OnClick(object sender, RoutedEventArgs e)

@@ -93,9 +93,9 @@
                               Background="{StaticResource PanelBrush}">
                 <StackPanel Margin="32,28,32,32">
                     <Border Style="{StaticResource UtilityCard}" Margin="0,0,0,16"><StackPanel>
-                    <TextBlock x:Name="ModeSection" Text="Operating Mode" Style="{StaticResource PageTitleText}" />
-                    <TextBlock Margin="0,5,0,14" TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}"
-                               Text="Decide how much Metis teaches and how much it does. The same request behaves differently in each mode, and the mode is enforced outside the AI so a reply can never widen it." />
+                    <TextBlock x:Name="ModeSection" Text="How Metis Helps" Style="{StaticResource PageTitleText}" />
+                    <TextBlock Margin="0,5,0,12" TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}"
+                               Text="This decides how much of your computer Metis may touch. Within whichever you pick, Metis still reads each request to decide whether to show you how or to do it for you." />
                     <Grid>
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="170" />
@@ -104,19 +104,53 @@
                         <TextBlock VerticalAlignment="Center" Text="Mode" FontWeight="SemiBold" />
                         <ComboBox x:Name="OperatingModeBox" Grid.Column="1" SelectionChanged="OperatingModeBox_OnSelectionChanged">
                             <ComboBoxItem Content="Learn" />
-                            <ComboBoxItem Content="Guide" />
-                            <ComboBoxItem Content="Assist" />
                             <ComboBoxItem Content="Autopilot" />
                         </ComboBox>
                     </Grid>
-                    <TextBlock x:Name="OperatingModeDescription" Margin="170,5,0,0" FontSize="11"
+                    <TextBlock x:Name="OperatingModeDescription" Margin="170,5,0,14" FontSize="11"
                                Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" />
                     <CheckBox x:Name="ContextShortcutsCheck" Margin="0,14,0,0"
                               Content="Ctrl+Alt asks about the screen, Ctrl+Alt+Shift asks about what you point at" />
+                    <Grid Margin="0,12,0,0">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="170" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock VerticalAlignment="Center" Text="Wake word" FontWeight="SemiBold" />
+                        <TextBox x:Name="WakeWordBox" Grid.Column="1" MaxLength="24" />
+                    </Grid>
+                    <TextBlock Margin="170,5,0,0" FontSize="11" Foreground="{StaticResource MutedBrush}"
+                               TextWrapping="Wrap"
+                               Text="Press Ctrl+Space and Metis listens without you holding anything. Say this word to start a request. Pick something you do not say by accident — nothing is sent anywhere until Metis hears it." />
                     <CheckBox x:Name="VisualGuidanceCheck" Margin="0,10,0,0"
                               Content="Draw highlights, arrows, and numbered steps over the screen" />
+                    <CheckBox x:Name="MoveRealCursorCheck" Margin="0,10,0,0"
+                              Content="Let Metis move the pointer when an app refuses to work in the background" />
+                    <TextBlock Margin="24,4,0,0" FontSize="11" Foreground="{StaticResource MutedBrush}"
+                               TextWrapping="Wrap"
+                               Text="Off by default. Metis works through the accessibility tree and window messages, so your cursor and typing stay yours and you can carry on with something else while it works. Some applications ignore both — turn this on to let Metis take the pointer for those, and it will say when it had to." />
                     <CheckBox x:Name="MemoryEnabledCheck" Margin="0,10,0,0"
                               Content="Remember what you have learned so guidance shrinks over time" />
+                    <CheckBox x:Name="ChatMemoryCheck" Margin="0,10,0,0"
+                              Content="Keep chats between runs and recall relevant earlier conversations" />
+                    <CheckBox x:Name="UserSkillsCheck" Margin="0,10,0,0"
+                              Content="Load the skills I have written about my software" />
+                    <Grid Margin="24,8,0,0">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="150" />
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock VerticalAlignment="Center" Text="Skills folder" FontSize="11" />
+                        <TextBox x:Name="SkillsFolderBox" Grid.Column="1" />
+                        <Button Grid.Column="2" Margin="8,0,0,0" Padding="10,6" FontSize="11"
+                                Style="{StaticResource SecondaryButton}" Content="Open"
+                                ToolTip="Open the skills folder" Click="OpenSkillsFolder_OnClick" />
+                    </Grid>
+                    <TextBlock x:Name="SkillsStatusText" Margin="24,5,0,0" FontSize="11"
+                               Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" />
+                    <TextBlock Margin="24,3,0,0" FontSize="11" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap"
+                               Text="A skill is a markdown file describing a program you use: where things live, what the jargon means, the order of steps in a workflow. Metis loads one when the window title or your request mentions anything in its applies-to line, which is how it becomes competent in software it was never taught." />
                     <CheckBox x:Name="ActivationSoundsCheck" Margin="0,10,0,0"
                               Content="Play a short pop when Metis starts listening and a woosh when the request is sent" />
                     <Grid Margin="24,8,0,0">
@@ -348,6 +382,22 @@
                     </StackPanel></Border>
                     <Border Style="{StaticResource UtilityCard}" Margin="0,0,0,16"><StackPanel>
                     <TextBlock x:Name="CompanionSection" Text="Companion Settings" Style="{StaticResource PageTitleText}" />
+                    <TextBlock Margin="0,5,0,14" TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}"
+                               Text="Choose the colour Metis rests in. The listening, thinking, and error colours stay fixed because they carry meaning." />
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="170" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock VerticalAlignment="Center" Text="Companion colour" FontWeight="SemiBold" />
+                        <ItemsControl x:Name="CompanionColorList" Grid.Column="1">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <WrapPanel />
+                                </ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                        </ItemsControl>
+                    </Grid>
                     <TextBlock Margin="0,5,0,0" TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}"
                                Text="Adjust visual presence and interaction behavior for the Metis overlay." />
                     <Grid Margin="0,13,0,0">

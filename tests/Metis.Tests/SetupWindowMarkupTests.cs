@@ -23,14 +23,18 @@ public sealed class SetupWindowMarkupTests
             ComboValues(document, "TextToSpeechProviderBox"));
     }
 
+    /// <summary>
+    /// Two modes, not the four Setup used to open with. The four asked a new
+    /// user to predict how they would want to work before they had used Metis
+    /// at all; these two ask only whether Metis may touch the computer, which
+    /// is a question anyone can answer on day one.
+    /// </summary>
     [Fact]
-    public void Setup_exposes_the_four_operating_modes()
+    public void Setup_offers_exactly_learn_and_autopilot()
     {
         var document = LoadMarkup();
 
-        Assert.Equal(
-            ["Learn", "Guide", "Assist", "Autopilot"],
-            ComboValues(document, "OperatingModeBox"));
+        Assert.Equal(["Learn", "Autopilot"], ComboValues(document, "OperatingModeBox"));
     }
 
     [Fact]

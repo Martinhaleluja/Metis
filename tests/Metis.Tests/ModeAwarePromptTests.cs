@@ -5,31 +5,44 @@ using Metis.Core.Models;
 namespace Metis.Tests;
 
 /// <summary>
-/// The operating mode has to survive all the way into the provider payload,
-/// otherwise the prompt and the action filter would disagree about what Metis
-/// is allowed to do.
+/// The intent Metis read from the user's words has to survive all the way into
+/// the provider payload, otherwise the prompt and the action filter would
+/// disagree about what Metis is allowed to do.
 /// </summary>
 public sealed class ModeAwarePromptTests
 {
     [Theory]
-    [InlineData(OperatingMode.Learn, "LEARN")]
-    [InlineData(OperatingMode.Guide, "GUIDE")]
-    [InlineData(OperatingMode.Assist, "ASSIST")]
-    [InlineData(OperatingMode.Autopilot, "AUTOPILOT")]
-    public void The_system_instruction_carries_the_selected_mode(OperatingMode mode, string expected)
+    [InlineData(OperatingMode.Learn, "TEACH")]
+    [InlineData(OperatingMode.Guide, "TEACH")]
+    [InlineData(OperatingMode.Assist, "TAKE CONTROL")]
+    [InlineData(OperatingMode.Autopilot, "TAKE CONTROL")]
+    public void The_system_instruction_carries_the_detected_intent(OperatingMode mode, string expected)
     {
         var instruction = SystemInstructionFor(new GeminiRequest("Help me", [1, 2, 3], Mode: mode));
 
-        Assert.Contains($"operating_mode: {expected}", instruction, StringComparison.Ordinal);
+        Assert.Contains($"assistance_intent: {expected}", instruction, StringComparison.Ordinal);
     }
 
     [Fact]
-    public void Learn_mode_tells_the_provider_not_to_act_even_when_asked()
+    public void Teaching_tells_the_provider_not_to_act_even_when_asked()
     {
         var instruction = SystemInstructionFor(
             new GeminiRequest("Click export for me", [1, 2, 3], Mode: OperatingMode.Learn));
 
         Assert.Contains("Do not click, type, press keys", instruction, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// The model is asked what it is pointing at and never what shape to draw.
+    /// Asking for a shape is what produced a ring around everything.
+    /// </summary>
+    [Fact]
+    public void The_instruction_asks_for_a_scope_rather_than_a_shape()
+    {
+        var instruction = SystemInstructionFor(new GeminiRequest("Where is save?", [1, 2, 3]));
+
+        Assert.Contains("\"scope\"", instruction, StringComparison.Ordinal);
+        Assert.Contains("Do not ask for a shape", instruction, StringComparison.Ordinal);
     }
 
     [Fact]

@@ -130,6 +130,26 @@ public static class ModePolicy
     /// provider how to answer; the filter above still enforces the same rules
     /// on whatever comes back.
     /// </summary>
+    /// <summary>
+    /// Shared guidance on choosing a mark. Metis picks the shape that suits
+    /// what it is pointing at, so the mark itself carries meaning rather than
+    /// every target looking identical.
+    /// </summary>
+    public const string HighlightInstruction = """
+        Choose how to mark what you point at with a "highlight" field, on the reply and on each step:
+          ring       a single control such as a button, icon, checkbox, or menu item. Use this by default.
+          box        a whole panel, dialog, toolbar, or region of the window.
+          underline  a line of text, a row, a field value, or a span you are reading out.
+          arrow      something the user is not looking at, such as a control at the far edge of the screen.
+        Pick the one that fits the target; do not use ring for everything.
+        Give w and h whenever you can see the control's extent, so the mark takes its shape rather than ringing a fixed circle.
+
+        When the user asks where something is — "show me", "where is", "which button", "where do I type" — you must
+        return a move_pointer action carrying x, y and, where visible, w and h for that control. Describing the location
+        in words is not an answer to that question: the user asked to be shown, so the reply has to put a mark on the
+        screen. Say the sentence as well, but never send the sentence on its own.
+        """;
+
     public static string BuildInstruction(OperatingMode mode) => mode switch
     {
         OperatingMode.Learn => """
@@ -139,6 +159,17 @@ public static class ModePolicy
             Do not click, type, press keys, or open apps or URLs even if the user asks; instead explain how to do it and offer to switch to Assist or Autopilot mode.
             When the screen shows a mistake, explain the cause before the correction.
             Adapt the depth of the explanation to the skills listed in user_skills; skip explanations for anything already advanced or mastered.
+
+            Teach as a sequence the user works through, not as one block of prose. Return a "steps" array, in order, each with:
+              instruction  what the user should do, one action, in plain words
+              why          why this step matters, one short sentence
+              done_when    the visible evidence on screen that proves the user finished it, so the lesson can wait and check
+              x, y         normalized 0-1000 coordinates of the centre of the control for this step, omitted when not visible
+              w, h         the control's width and height in the same 0-1000 space, so the highlight takes its shape
+              to_x, to_y   only for a movement such as a drag: where the gesture ends, so the motion can be demonstrated
+              label        two or three words naming the control
+            Keep each step to a single action the user can do without further explanation, and prefer more small steps over fewer large ones.
+            Put only the first step's explanation in spoken_text; the rest are read out as the user reaches them.
             """,
         OperatingMode.Guide => """
             operating_mode: GUIDE. The user performs the work; you direct them efficiently.
