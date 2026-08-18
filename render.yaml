@@ -58,3 +58,20 @@ services:
         sync: false
       - key: GOOGLE_API_KEY
         sync: false
+
+  # The launch site. A static bundle, so there is no runtime and nothing to
+  # keep warm. Unlike the gateway's secrets above, these two are browser-visible
+  # by design and end up inside the JavaScript bundle; they are `sync: false`
+  # only so staging and production can point at different Supabase projects.
+  - type: web
+    name: metis-site
+    runtime: static
+    rootDir: website
+    buildCommand: npm ci && npm run build
+    staticPublishPath: dist
+    branch: main
+    envVars:
+      - key: VITE_SUPABASE_URL
+        sync: false
+      - key: VITE_SUPABASE_PUBLISHABLE_KEY
+        sync: false

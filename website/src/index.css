@@ -1,0 +1,273 @@
+@import "tailwindcss";
+
+/* ---------------------------------------------------------------------------
+   Metis brand tokens.
+
+   One light palette. The site is white by decision, so there is no dark
+   variant and no `prefers-color-scheme` branch to fall out of sync with.
+
+   The neutrals are the ones the Windows app already uses (#1D1D1F, #F5F5F7),
+   and the accent is a blue in the same family as the product mark, chosen at a
+   value where white label text on a filled button clears WCAG AA at 4.7:1.
+   The lighter sky pair is lifted off the mark and is used for glow and
+   gradient only, never for text or a control.
+
+   Radius is a locked two-tier system: containers are 20px, anything the user
+   can click or type into is a full pill.
+--------------------------------------------------------------------------- */
+
+:root {
+  color-scheme: light;
+
+  --page: #ffffff;
+  --surface: #ffffff;
+  --surface-sunken: #f5f5f7;
+  --ink: #1d1d1f;
+  --ink-muted: #6e6e73;
+  --line: #d2d2d7;
+  --accent: #0071e3;
+  --accent-hover: #005bbb;
+  --accent-contrast: #ffffff;
+  --accent-wash: #eef6ff;
+  --sky: #56ccff;
+  --sky-soft: #caeeff;
+  --danger: #d70015;
+
+  /* Translucent chrome. Kept as tokens so the reduced-transparency and
+     high-contrast fallbacks below have one place to override. */
+  --material: rgb(255 255 255 / 0.72);
+  --material-blur: blur(20px) saturate(180%);
+  --material-edge: rgb(255 255 255 / 0.6);
+
+  --shadow-card: 0 1px 2px rgb(29 29 31 / 0.04), 0 12px 32px -12px rgb(29 29 31 / 0.12);
+  --shadow-float: 0 2px 6px rgb(29 29 31 / 0.06), 0 24px 60px -20px rgb(29 29 31 / 0.18);
+}
+
+@theme inline {
+  --color-page: var(--page);
+  --color-surface: var(--surface);
+  --color-surface-sunken: var(--surface-sunken);
+  --color-ink: var(--ink);
+  --color-ink-muted: var(--ink-muted);
+  --color-line: var(--line);
+  --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
+  --color-accent-contrast: var(--accent-contrast);
+  --color-accent-wash: var(--accent-wash);
+  --color-sky: var(--sky);
+  --color-sky-soft: var(--sky-soft);
+  --color-danger: var(--danger);
+
+  --font-display: "Outfit Variable", ui-sans-serif, system-ui, sans-serif;
+  --font-sans: "Work Sans Variable", ui-sans-serif, system-ui, sans-serif;
+
+  --radius-container: 20px;
+
+  --shadow-card: var(--shadow-card);
+  --shadow-float: var(--shadow-float);
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  background-color: var(--page);
+  color: var(--ink);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  font-optical-sizing: auto;
+}
+
+/* ---------------------------------------------------------------------------
+   Type scale.
+
+   Tracking is size-specific rather than one value everywhere: large text reads
+   too loose as it grows and wants negative tracking, body sits near zero, and
+   small caps-ish labels want a touch of positive. Leading moves the other way,
+   tight on display and open on body. Sizes are in rem and clamp on the
+   viewport so a larger browser text setting scales the layout with the text.
+--------------------------------------------------------------------------- */
+
+.type-display {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: clamp(2.5rem, 1.4rem + 4.6vw, 4.5rem);
+  line-height: 1.04;
+  letter-spacing: -0.028em;
+}
+
+.type-title {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: clamp(1.875rem, 1.25rem + 2.2vw, 2.75rem);
+  line-height: 1.1;
+  letter-spacing: -0.022em;
+}
+
+.type-heading {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 1.3125rem;
+  line-height: 1.28;
+  letter-spacing: -0.012em;
+}
+
+.type-body {
+  font-size: 1.0625rem;
+  line-height: 1.55;
+  letter-spacing: 0;
+}
+
+.type-caption {
+  font-size: 0.9375rem;
+  line-height: 1.5;
+  letter-spacing: 0.004em;
+}
+
+/* ---------------------------------------------------------------------------
+   Materials. Translucent chrome that content scrolls underneath, with a bright
+   top edge so it reads as light catching a real surface.
+--------------------------------------------------------------------------- */
+
+.material {
+  background: var(--material);
+  backdrop-filter: var(--material-blur);
+  -webkit-backdrop-filter: var(--material-blur);
+  border: 1px solid var(--material-edge);
+  box-shadow: var(--shadow-card);
+}
+
+/* A soft scroll edge where floating chrome overlaps content, instead of a
+   hard 1px divider under the header. */
+.scroll-edge {
+  position: fixed;
+  inset: 0 0 auto 0;
+  height: 96px;
+  z-index: 40;
+  pointer-events: none;
+  background: linear-gradient(to bottom, var(--page) 12%, rgb(255 255 255 / 0) 100%);
+}
+
+/* Keyboard focus stays visible everywhere; pointer presses stay quiet. */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+  border-radius: 4px;
+}
+
+::selection {
+  background: var(--accent);
+  color: var(--accent-contrast);
+}
+
+.grain-plate {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  pointer-events: none;
+  opacity: 0.02;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+/* Press feedback belongs on pointer-down and has to be immediate. */
+.press {
+  transition: transform 100ms ease-out;
+}
+.press:active {
+  transform: scale(0.97);
+}
+
+/* ---------------------------------------------------------------------------
+   Ambient motion. Only runs when the visitor has not asked for less of it.
+--------------------------------------------------------------------------- */
+
+@media (prefers-reduced-motion: no-preference) {
+  @keyframes metis-drift {
+    0%,
+    100% {
+      transform: translate3d(0, 0, 0) scale(1);
+    }
+    50% {
+      transform: translate3d(0, -14px, 0) scale(1.015);
+    }
+  }
+
+  @keyframes metis-halo {
+    0%,
+    100% {
+      opacity: 0.55;
+      transform: scale(1);
+    }
+    50% {
+      opacity: 0.85;
+      transform: scale(1.08);
+    }
+  }
+
+  .animate-drift {
+    animation: metis-drift 9s cubic-bezier(0.16, 1, 0.3, 1) infinite;
+  }
+  .animate-halo {
+    animation: metis-halo 7s ease-in-out infinite;
+  }
+
+  /* The track holds the logo list twice, so translating exactly half its width
+     lands on an identical frame and the loop has no seam. Transform only, so
+     it stays on the compositor. */
+  @keyframes metis-marquee {
+    from {
+      transform: translate3d(0, 0, 0);
+    }
+    to {
+      transform: translate3d(-50%, 0, 0);
+    }
+  }
+
+  .marquee-track {
+    animation: metis-marquee 56s linear infinite;
+    will-change: transform;
+  }
+
+  /* Hovering hands control back: the strip holds still so a logo can be read. */
+  .marquee:hover .marquee-track,
+  .marquee:focus-within .marquee-track {
+    animation-play-state: paused;
+  }
+}
+
+/* Reduced motion keeps the feedback, drops the travel. */
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+  .press:active {
+    transform: none;
+    opacity: 0.7;
+  }
+}
+
+/* Frostier and solid rather than translucent, when asked. */
+@media (prefers-reduced-transparency: reduce) {
+  :root {
+    --material: #ffffff;
+    --material-blur: none;
+    --material-edge: var(--line);
+  }
+  .material {
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+}
+
+/* Near-solid surfaces with a defined border at higher contrast. */
+@media (prefers-contrast: more) {
+  :root {
+    --material: #ffffff;
+    --material-blur: none;
+    --material-edge: var(--ink);
+    --ink-muted: #4a4a4f;
+    --line: #8e8e93;
+  }
+}
