@@ -93,7 +93,7 @@ body {
 .type-display {
   font-family: var(--font-display);
   font-weight: 600;
-  font-size: clamp(2.5rem, 1.4rem + 4.6vw, 4.5rem);
+  font-size: clamp(2.25rem, 1.3rem + 4.1vw, 4rem);
   line-height: 1.04;
   letter-spacing: -0.028em;
 }
@@ -136,6 +136,16 @@ body {
   backdrop-filter: var(--material-blur);
   -webkit-backdrop-filter: var(--material-blur);
   border: 1px solid var(--material-edge);
+  box-shadow: var(--shadow-card);
+}
+
+/* Small floating labels sit on top of arbitrary colour, so they carry a
+   near-opaque backing rather than trusting the blur to do the work. */
+.material-strong {
+  background: rgb(255 255 255 / 0.94);
+  backdrop-filter: var(--material-blur);
+  -webkit-backdrop-filter: var(--material-blur);
+  border: 1px solid var(--line);
   box-shadow: var(--shadow-card);
 }
 
