@@ -93,7 +93,7 @@ body {
 .type-display {
   font-family: var(--font-display);
   font-weight: 600;
-  font-size: clamp(2.25rem, 1.3rem + 4.1vw, 4rem);
+  font-size: clamp(2.25rem, 1.35rem + 3.6vw, 3.75rem);
   line-height: 1.04;
   letter-spacing: -0.028em;
 }

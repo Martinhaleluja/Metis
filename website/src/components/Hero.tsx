@@ -1,7 +1,7 @@
 import { motion, useReducedMotion } from "motion/react";
 import type { useWaitlist } from "../lib/waitlist";
 import { FloatingCards } from "./FloatingCards";
-import { MetisDemo } from "./MetisDemo";
+import { MetisVideo } from "./MetisVideo";
 import { WaitlistForm } from "./WaitlistForm";
 import { springEnter } from "../lib/motion";
 
@@ -29,8 +29,8 @@ export function Hero({ waitlist }: { waitlist: ReturnType<typeof useWaitlist> })
       <FloatingCards />
 
       <div className="relative mx-auto max-w-[1180px] px-5 text-center">
-        <motion.div {...rise(0)} className="mb-7">
-          <MetisDemo />
+        <motion.div {...rise(0)} className="mb-6">
+          <MetisVideo />
         </motion.div>
 
         <motion.h1
@@ -44,13 +44,13 @@ export function Hero({ waitlist }: { waitlist: ReturnType<typeof useWaitlist> })
 
         <motion.p
           {...rise(0.16)}
-          className="mx-auto mt-5 max-w-[58ch] type-body text-ink-muted"
+          className="mx-auto mt-4 max-w-[58ch] type-body text-ink-muted"
         >
           Metis sits in your Windows tray, sees what is on screen, and works alongside you
           instead of in another tab.
         </motion.p>
 
-        <motion.div {...rise(0.24)} id="join" className="mt-8 scroll-mt-28">
+        <motion.div {...rise(0.24)} id="join" className="mt-7 scroll-mt-28">
           <WaitlistForm waitlist={waitlist} idPrefix="hero" />
         </motion.div>
       </div>

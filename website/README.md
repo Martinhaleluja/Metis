@@ -71,3 +71,11 @@ surfaces have `prefers-reduced-transparency` and `prefers-contrast` fallbacks.
 
 The brand mark in `public/` is the icon shipped with the Windows application,
 extracted from `installer/.generated/Metis.ico`, rather than a redrawing of it.
+
+The hero clip is a real recording of Metis annotating a video editor. The
+source was 1920x1080 at 60fps and 4.7MB; what ships is 1280x720 at 30fps with
+the silent audio track stripped, which is 0.89MB. It loads behind its poster
+at `preload="none"` and only starts fetching after the window load event, so
+the largest paint is the 59kB poster rather than the video. It can be paused,
+because anything moving on its own for more than five seconds needs a control
+to stop it, and it does not autoplay at all under `prefers-reduced-motion`.

@@ -4,6 +4,9 @@
     <meta charset="UTF-8" />
     <link rel="icon" href="/favicon.ico" sizes="any" />
     <link rel="apple-touch-icon" href="/metis-mark.png" />
+    <!-- The poster is the hero visual until the recording starts, so it is
+         worth fetching early. The clip itself deliberately is not. -->
+    <link rel="preload" as="image" href="/metis-demo-poster.jpg" fetchpriority="high" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Metis - An AI companion for your computer</title>
     <meta
