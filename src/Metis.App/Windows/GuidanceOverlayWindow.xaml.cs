@@ -73,11 +73,22 @@ public partial class GuidanceOverlayWindow : Window
     {
         ArgumentNullException.ThrowIfNull(request);
         _expiryTimer.Stop();
-        MarkCanvas.Children.Clear();
+
+        // A diagram is built up over several steps, so its later marks join the
+        // earlier ones instead of replacing them. Everything else replaces, so
+        // a stale pointer never outlives the sentence it belonged to.
+        if (!request.Accumulate)
+        {
+            MarkCanvas.Children.Clear();
+        }
 
         if (request.Marks.Count == 0)
         {
-            Visibility = Visibility.Collapsed;
+            if (!request.Accumulate)
+            {
+                Visibility = Visibility.Collapsed;
+            }
+
             return;
         }
 
@@ -150,6 +161,9 @@ public partial class GuidanceOverlayWindow : Window
             case GuidanceMarkKind.Lasso:
                 AddStroke(mark, fromDevice, closed: true);
                 break;
+            case GuidanceMarkKind.Polygon:
+                AddStroke(mark, fromDevice, closed: true, smooth: !mark.StraightEdges);
+                break;
             case GuidanceMarkKind.Capsule:
                 AddCapsule(mark, fromDevice);
                 break;
@@ -211,7 +225,7 @@ public partial class GuidanceOverlayWindow : Window
     /// more are joined by a smooth curve so a sketched circle or arc reads as
     /// drawn rather than as a chain of segments.
     /// </summary>
-    private void AddStroke(GuidanceMark mark, Matrix fromDevice, bool closed = false)
+    private void AddStroke(GuidanceMark mark, Matrix fromDevice, bool closed = false, bool smooth = true)
     {
         var points = (mark.Points ?? [])
             .Select(point => ToWindowPoint(point.ScreenX, point.ScreenY, fromDevice))
@@ -233,11 +247,20 @@ public partial class GuidanceOverlayWindow : Window
         {
             figure.Segments.Add(new LineSegment(points[1], true));
         }
-        else
+        else if (smooth)
         {
             // A cardinal spline through every point: it passes through what the
             // model asked for rather than merely near it.
             figure.Segments.Add(new PolyBezierSegment(SmoothThrough(points), true));
+        }
+        else
+        {
+            // Corners, not curves. Smoothing a triangle would round off the
+            // corners, which on a geometry lesson is the part being taught.
+            for (var index = 1; index < points.Length; index++)
+            {
+                figure.Segments.Add(new LineSegment(points[index], true));
+            }
         }
 
         var geometry = new PathGeometry();
@@ -265,7 +288,7 @@ public partial class GuidanceOverlayWindow : Window
             length += (points[index] - points[index - 1]).Length;
         }
 
-        AnimateStroke(stroke, Math.Max(length, 1));
+        AnimateStroke(stroke, Math.Max(length, 1), fadeAfterHold: !mark.Persistent);
 
         if (!string.IsNullOrWhiteSpace(mark.Label))
         {
@@ -688,16 +711,34 @@ public partial class GuidanceOverlayWindow : Window
     /// </summary>
     private void AddArrow(GuidanceMark mark, Matrix fromDevice)
     {
-        var target = ToWindowPoint(mark.ScreenX, mark.ScreenY, fromDevice);
+        // Two points mean the arrow was given both ends — a force or a flow in
+        // a diagram, which runs from where it was said to run to where it was
+        // said to end. Without them the arrow is pointing at something real, so
+        // it picks its own approach instead.
+        var drawn = mark.Points is { Count: >= 2 };
+        System.Windows.Point target;
+        System.Windows.Point tail;
+        bool fromLeft;
 
-        // Approach from whichever side has room, so the arrow never runs off
-        // the desktop and never covers the control it is pointing at.
-        var fromLeft = target.X > Width / 2d;
-        var fromAbove = target.Y > Height / 2d;
-        var reach = 170d;
-        var tail = new System.Windows.Point(
-            target.X + (fromLeft ? -reach : reach),
-            target.Y + (fromAbove ? -reach * 0.62 : reach * 0.62));
+        if (drawn)
+        {
+            tail = ToWindowPoint(mark.Points![0].ScreenX, mark.Points[0].ScreenY, fromDevice);
+            target = ToWindowPoint(mark.Points[1].ScreenX, mark.Points[1].ScreenY, fromDevice);
+            fromLeft = tail.X > target.X;
+        }
+        else
+        {
+            target = ToWindowPoint(mark.ScreenX, mark.ScreenY, fromDevice);
+
+            // Approach from whichever side has room, so the arrow never runs off
+            // the desktop and never covers the control it is pointing at.
+            fromLeft = target.X > Width / 2d;
+            var fromAbove = target.Y > Height / 2d;
+            var reach = 170d;
+            tail = new System.Windows.Point(
+                target.X + (fromLeft ? -reach : reach),
+                target.Y + (fromAbove ? -reach * 0.62 : reach * 0.62));
+        }
 
         // The bow is what makes it read as drawn by hand rather than plotted.
         // Both control points sit to one side of the straight line.
@@ -710,7 +751,17 @@ public partial class GuidanceOverlayWindow : Window
             tail.Y + ((target.Y - tail.Y) * 0.86) + 10);
 
         var shaft = new PathFigure { StartPoint = tail, IsClosed = false };
-        shaft.Segments.Add(new BezierSegment(control1, control2, target, true));
+        if (drawn)
+        {
+            // A vector is straight. The hand-drawn bow belongs to an arrow that
+            // is pointing across the screen at something, not to one whose
+            // direction is the quantity being taught.
+            shaft.Segments.Add(new LineSegment(target, true));
+        }
+        else
+        {
+            shaft.Segments.Add(new BezierSegment(control1, control2, target, true));
+        }
 
         var geometry = new PathGeometry();
         geometry.Figures.Add(shaft);
@@ -721,7 +772,8 @@ public partial class GuidanceOverlayWindow : Window
         // of travel. Wider angles put the barbs ahead of the tip, which reads
         // as an arrowhead pointing the wrong way.
         const double barbAngle = 0.52;
-        var angle = Math.Atan2(target.Y - control2.Y, target.X - control2.X);
+        var approach = drawn ? tail : control2;
+        var angle = Math.Atan2(target.Y - approach.Y, target.X - approach.X);
         geometry.Figures.Add(HeadStroke(target, angle, barbAngle));
         geometry.Figures.Add(HeadStroke(target, angle, -barbAngle));
 
@@ -749,7 +801,10 @@ public partial class GuidanceOverlayWindow : Window
         // about a quarter longer than the straight line, plus the two head
         // strokes.
         var chord = Math.Sqrt(Math.Pow(target.X - tail.X, 2) + Math.Pow(target.Y - tail.Y, 2));
-        AnimateStroke(stroke, (chord * 1.25) + 52);
+        AnimateStroke(
+            stroke,
+            (chord * (drawn ? 1d : 1.25)) + 52,
+            fadeAfterHold: !mark.Persistent);
 
         if (!string.IsNullOrWhiteSpace(mark.Label))
         {
@@ -761,7 +816,10 @@ public partial class GuidanceOverlayWindow : Window
     /// Reveals the stroke by retracting its dash gap, so the line appears to be
     /// drawn from tail to tip, then holds and fades.
     /// </summary>
-    private static void AnimateStroke(System.Windows.Shapes.Path stroke, double pathLength)
+    private static void AnimateStroke(
+        System.Windows.Shapes.Path stroke,
+        double pathLength,
+        bool fadeAfterHold = true)
     {
         // Dash lengths are multiples of the stroke thickness, so the span is
         // converted before use. One dash and one gap, each as long as the whole
@@ -776,6 +834,14 @@ public partial class GuidanceOverlayWindow : Window
             EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }
         };
         stroke.BeginAnimation(System.Windows.Shapes.Shape.StrokeDashOffsetProperty, draw);
+
+        if (!fadeAfterHold)
+        {
+            // A diagram stays until the overlay clears it. The fade below runs
+            // on a fixed clock of its own, so on a stage narrated for ten
+            // seconds it would rub the shape out mid-sentence.
+            return;
+        }
 
         var fade = new DoubleAnimation(1, 0, TimeSpan.FromMilliseconds(900))
         {

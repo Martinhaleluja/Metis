@@ -171,26 +171,21 @@
                                Text="With this off, Metis can still answer questions but cannot see or point at anything." />
                 </StackPanel>
 
-                <!-- 3 · Modes -->
-                <StackPanel x:Name="Step3" Visibility="Collapsed">
+                <!-- 3 · What Metis is -->
+                <StackPanel x:Name="Step3" Visibility="Collapsed" VerticalAlignment="Center">
                     <TextBlock Style="{StaticResource DisplayText}" FontSize="26"
-                               Text="How much should Metis teach, and how much should it do?" />
-                    <TextBlock Style="{StaticResource LeadText}" Margin="0,10,0,18"
-                               Text="Start with Learn or Guide if you want the skill to stick. Switch any time from the tray icon." />
-                    <ItemsControl x:Name="ModeList" />
-                    <Border Style="{StaticResource UtilityCard}" Margin="0,6,0,0" Padding="16">
-                        <StackPanel>
-                            <CheckBox x:Name="FullControlCheck" IsChecked="True"
-                                      Content="Allow Metis to move the pointer and type" />
-                            <TextBlock Style="{StaticResource CaptionText}" Margin="48,6,0,0"
-                                       Text="The pointer returns after five seconds unless you move it yourself. F12 always stops Metis." />
-                        </StackPanel>
-                    </Border>
+                               Text="Metis teaches. It never takes over." />
+                    <TextBlock Style="{StaticResource LeadText}" Margin="0,14,0,0" MaxWidth="660"
+                               HorizontalAlignment="Left"
+                               Text="Ask how to do something and Metis shows you — it marks the screen where to look and talks you through it, one step at a time, while you do it yourself. It never clicks, types, or opens anything for you, because the point is that you learn how." />
+                    <TextBlock Style="{StaticResource LeadText}" Margin="0,12,0,0" MaxWidth="660"
+                               HorizontalAlignment="Left"
+                               Text="It teaches software the same way it teaches a subject: ask about a shape, a cell, or a force and it draws the diagram as it explains." />
                 </StackPanel>
 
                 <!-- 4 · Shortcuts. This is the taught-by-doing part of the guide. -->
                 <StackPanel x:Name="Step4" Visibility="Collapsed" VerticalAlignment="Center">
-                    <TextBlock Style="{StaticResource DisplayText}" FontSize="26" Text="Four keys to remember." />
+                    <TextBlock Style="{StaticResource DisplayText}" FontSize="26" Text="Five keys to remember." />
                     <StackPanel Margin="0,22,0,0">
                         <Grid Margin="0,0,0,12">
                             <Grid.ColumnDefinitions>
@@ -225,6 +220,17 @@
                             <TextBlock Grid.Column="1" VerticalAlignment="Center" Style="{StaticResource LeadText}"
                                        Text="Point at something under the pointer" />
                         </Grid>
+                        <Grid Margin="0,0,0,12">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="190" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <Border Style="{StaticResource KeycapChip}" HorizontalAlignment="Left">
+                                <TextBlock Style="{StaticResource KeycapText}" Text="Ctrl + Space" />
+                            </Border>
+                            <TextBlock Grid.Column="1" VerticalAlignment="Center" Style="{StaticResource LeadText}"
+                                       Text="Listen hands-free until you say the wake word" />
+                        </Grid>
                         <Grid>
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="190" />
@@ -234,7 +240,7 @@
                                 <TextBlock Style="{StaticResource KeycapText}" Text="F12" />
                             </Border>
                             <TextBlock Grid.Column="1" VerticalAlignment="Center" Style="{StaticResource LeadText}"
-                                       Text="Stop everything, immediately" />
+                                       Text="Stop the guidance and clear the screen" />
                         </Grid>
                     </StackPanel>
 
@@ -243,7 +249,7 @@
                             <CheckBox x:Name="ContextShortcutsCheck" IsChecked="True"
                                       Content="Enable the Ctrl+Alt shortcuts" />
                             <TextBlock Style="{StaticResource CaptionText}" Margin="48,6,0,0"
-                                       Text="F12 stays on either way, and while Metis is running other apps will not receive it." />
+                                       Text="Ctrl+Space needs speech to text set up before it can hear the wake word. Nothing is sent anywhere until it does. F12 stays on either way, and while Metis is running other apps will not receive it." />
                         </StackPanel>
                     </Border>
                 </StackPanel>
@@ -341,14 +347,12 @@
 
                     <TextBlock x:Name="SafetyNote" Style="{StaticResource CaptionText}" Margin="2,16,0,0" MaxWidth="640"
                                HorizontalAlignment="Left"
-                               Text="In every mode, Metis stops and asks before anything that deletes, buys, pays, sends, or submits." />
+                               Text="Metis only ever shows and explains. It never clicks, types, opens, buys, sends, or changes anything — every step is yours, which is how the skill stays with you." />
 
                     <Border Style="{StaticResource Separator}" />
                     <StackPanel Orientation="Horizontal">
                         <TextBlock Style="{StaticResource CaptionText}" Text="Metis  ·  " />
-                        <TextBlock Style="{StaticResource CaptionText}" Text="Martin Nakasole, developer" />
-                        <TextBlock Style="{StaticResource CaptionText}" Text="  ·  " />
-                        <TextBlock Style="{StaticResource CaptionText}" Text="Lamek Hidengwa, designer" />
+                        <TextBlock Style="{StaticResource CaptionText}" Text="Built by Martin Nakasole" />
                     </StackPanel>
                 </StackPanel>
             </Grid>

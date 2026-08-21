@@ -137,6 +137,34 @@ public interface IWhisperCppProvider
         CancellationToken cancellationToken = default);
 }
 
+/// <summary>
+/// The voices that ship with Windows itself.
+///
+/// This is the offline voice Metis can actually count on. Piper is offline too,
+/// but it is a separate executable and a voice model of tens of megabytes that
+/// the installer does not carry, so on an installed copy it is simply absent —
+/// which reads as the voice being broken rather than missing. Windows has had a
+/// speech synthesiser built in for years: no download, no key, no network.
+/// </summary>
+public interface IWindowsVoiceProvider
+{
+    /// <summary>
+    /// Speaks <paramref name="text"/>. An empty <paramref name="voiceName"/>
+    /// uses whichever voice Windows is set to.
+    /// </summary>
+    Task<SpeechAudio?> SynthesizeSpeechAsync(
+        string? voiceName,
+        string text,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>Every voice installed on this machine.</summary>
+    IReadOnlyList<SpeechVoiceInfo> ListVoices();
+
+    Task<ProviderTestResult> TestAsync(
+        string? voiceName,
+        CancellationToken cancellationToken = default);
+}
+
 public interface IPiperProvider
 {
     Task<SpeechAudio?> SynthesizeSpeechAsync(
@@ -202,9 +230,59 @@ public interface IAudioRecorder : IDisposable
 
 public sealed record AudioDeviceInfo(string Id, string Name);
 
+/// <summary>
+/// What a piece of audio is for, and therefore what may interrupt it.
+///
+/// Only one sound plays at a time, so this is what decides who wins when two
+/// arrive together. It exists because they are not equally important: a
+/// keypress cue is decoration, and a sentence Metis is halfway through saying
+/// is the answer the user actually asked for.
+/// </summary>
+public enum AudioPriority
+{
+    /// <summary>
+    /// Decoration — a keypress, a saved setting, a finished task. Dropped
+    /// outright when speech is already playing, rather than cutting it short.
+    /// </summary>
+    Cue,
+
+    /// <summary>
+    /// Something Metis is saying. Takes the device from a cue, and is never
+    /// displaced by one.
+    /// </summary>
+    Speech
+}
+
+/// <summary>
+/// Who wins when two sounds want the one output device.
+/// </summary>
+public static class AudioArbitration
+{
+    /// <summary>
+    /// Whether <paramref name="incoming"/> should be dropped instead of taking
+    /// the device from what is already playing.
+    ///
+    /// Exactly one case says yes: a cue arriving while speech is playing.
+    /// Truncating a sentence for the sake of a keypress sound throws away the
+    /// answer the user asked for, and the interrupted caller cannot tell it
+    /// happened — so the voice appears to go quiet for no reason at all.
+    /// </summary>
+    public static bool ShouldDrop(AudioPriority incoming, AudioPriority playing, bool isPlaying) =>
+        isPlaying && incoming == AudioPriority.Cue && playing == AudioPriority.Speech;
+}
+
 public interface IAudioPlayback : IDisposable
 {
-    Task PlayAsync(SpeechAudio audio, CancellationToken cancellationToken = default);
+    /// <summary>
+    /// Plays <paramref name="audio"/>, replacing whatever is already playing
+    /// unless doing so would cut speech short for the sake of a cue. Returns
+    /// when playback finishes, is stopped, or is dropped.
+    /// </summary>
+    Task PlayAsync(
+        SpeechAudio audio,
+        AudioPriority priority = AudioPriority.Speech,
+        CancellationToken cancellationToken = default);
+
     void Stop();
 }
 
@@ -268,19 +346,6 @@ public interface IGlobalPushToTalk : IDisposable
 
 public interface IUiAutomationService
 {
-    /// <summary>
-    /// Puts text into whichever control currently has keyboard focus, through
-    /// the accessibility tree rather than by synthesising keystrokes.
-    ///
-    /// Typed keystrokes go wherever focus happens to be at that instant, so a
-    /// user who clicks into their own document mid-task receives Metis's text
-    /// in it. Setting the value addresses the control directly and cannot land
-    /// anywhere else. It only works where the control exposes a value pattern,
-    /// which most real text fields do and most canvases do not.
-    /// </summary>
-    Task<UiAutomationResult> TrySetFocusedValueAsync(
-        string text,
-        CancellationToken cancellationToken = default);
 
     Task<string?> DescribeWindowAsync(
         ScreenCapture capture,
@@ -307,27 +372,6 @@ public interface IUiAutomationService
         string query,
         CancellationToken cancellationToken = default);
 
-    Task<UiAutomationResult> TryInvokeAsync(
-        string automationId,
-        ScreenCapture capture,
-        CancellationToken cancellationToken = default);
-
-    Task<UiAutomationResult> TryInvokeAtAsync(
-        int screenX,
-        int screenY,
-        CancellationToken cancellationToken = default);
-}
-
-public interface IDesktopAutomationPipeline : IDisposable
-{
-    bool IsEmergencyStopped { get; }
-    void StartSession();
-    Task<DesktopActionResult> EnqueueAsync(
-        DesktopAction action,
-        ScreenCapture capture,
-        CancellationToken cancellationToken = default);
-    void CancelSession();
-    void EmergencyStop();
 }
 
 public interface ICursorService
@@ -337,33 +381,58 @@ public interface ICursorService
     (int Left, int Top, int Right, int Bottom) GetMonitorArea(int x, int y);
 }
 
-public interface IDesktopAutomationService
-{
-    bool FullControlEnabled { get; set; }
-
-    /// <summary>
-    /// Whether the real Windows pointer may be moved when no background route
-    /// works. False keeps the cursor and keyboard focus with the user, at the
-    /// cost of refusing the applications that ignore accessibility and window
-    /// messages alike.
-    /// </summary>
-    bool MoveRealCursor { get; set; }
-
-    bool TryResolveTarget(
-        DesktopAction action,
-        ScreenCapture capture,
-        out int screenX,
-        out int screenY,
-        out string error);
-
-    Task<DesktopActionResult> ExecuteAsync(
-        DesktopAction action,
-        ScreenCapture capture,
-        CancellationToken cancellationToken = default);
-}
-
 public interface IStartupRegistration
 {
     bool IsEnabled { get; }
     void SetEnabled(bool enabled);
+}
+
+/// <summary>
+/// Works out where an annotation's subject really is on screen.
+///
+/// Read-only by nature: it asks Windows where a control sits so the mark can
+/// wrap it exactly, and never touches the control it finds.
+/// </summary>
+public interface IAnnotationResolver
+{
+    Task<ResolvedAnnotation?> ResolveAsync(
+        AnnotationTarget target,
+        ScreenCapture capture,
+        CancellationToken cancellationToken = default);
+}
+
+/// <summary>
+/// What Metis remembers between sessions: which skills the learner has
+/// practised, how those attempts went, and their stored preferences.
+/// </summary>
+public interface IMemoryService
+{
+    /// <summary>Where the memory file lives on disk.</summary>
+    string MemoryPath { get; }
+
+    Task<MemoryDocument> LoadAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Records that the learner worked through a skill, and whether they needed
+    /// to be shown. This is what lets Metis pitch later explanations at what
+    /// they already know rather than starting from nothing every time.
+    /// </summary>
+    Task<SkillProgress?> RecordSkillUseAsync(
+        string application,
+        string skill,
+        bool succeeded,
+        bool neededGuidance,
+        CancellationToken cancellationToken = default);
+
+    Task RecordTaskOutcomeAsync(
+        AgentTaskState state,
+        bool success,
+        string summary,
+        CancellationToken cancellationToken = default);
+
+    Task<string?> GetPreferenceAsync(string key, CancellationToken cancellationToken = default);
+
+    Task SetPreferenceAsync(string key, string value, CancellationToken cancellationToken = default);
+
+    Task ClearAsync(CancellationToken cancellationToken = default);
 }

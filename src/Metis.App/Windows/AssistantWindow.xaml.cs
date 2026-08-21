@@ -42,6 +42,14 @@ public partial class AssistantWindow : Window
 
         _runtime.ChatsChanged += (_, _) => Dispatcher.Invoke(RefreshChats);
         RefreshChats();
+
+        // The list depends on the provider, so it is rebuilt whenever settings
+        // change rather than only at startup. Usage is re-read at the same
+        // time, which is what keeps the counts from going stale while the
+        // window sits open.
+        _runtime.SettingsChanged += (_, _) => Dispatcher.Invoke(RefreshModels);
+        _runtime.MessageAdded += (_, _) => Dispatcher.Invoke(RefreshModels);
+        RefreshModels();
     }
 
     public void AllowClose() => _allowClose = true;
@@ -105,6 +113,94 @@ public partial class AssistantWindow : Window
         _messages.Clear();
         _messages.Add(new MessageItem("Metis", "New chat. What are we working on?"));
     }
+
+    /// <summary>One row of the model picker, already formatted for display.</summary>
+    private sealed record ModelRow(
+        string Id,
+        string DisplayName,
+        string TierLabel,
+        System.Windows.Media.Brush TierBrush,
+        string Detail,
+        string Usage);
+
+    private bool _loadingModels;
+
+    /// <summary>
+    /// Fills the picker from the catalogue for whichever provider is selected,
+    /// annotated with what this machine has actually used.
+    ///
+    /// Every model is listed, including the ones that run locally and the free
+    /// tiers of the online providers, because the point of the picker is to let
+    /// someone choose what a request will cost them.
+    /// </summary>
+    private void RefreshModels()
+    {
+        _loadingModels = true;
+        try
+        {
+            var provider = _runtime.Settings.AiProvider;
+            var current = CurrentModelId(provider);
+            var now = DateTimeOffset.Now;
+
+            var rows = ModelCatalog.For(provider).Select(model =>
+            {
+                var usage = _runtime.ModelUsage.For(model, now);
+                return new ModelRow(
+                    model.Id,
+                    model.DisplayName,
+                    model.Tier switch
+                    {
+                        ModelTier.Free => "FREE",
+                        ModelTier.Local => "LOCAL",
+                        _ => "PAID"
+                    },
+                    new System.Windows.Media.SolidColorBrush(model.Tier switch
+                    {
+                        // Green for free, blue for local, amber for billed. The
+                        // colour is the thing read at a glance; the word is
+                        // there because colour alone is not readable by
+                        // everyone.
+                        ModelTier.Free => System.Windows.Media.Color.FromRgb(0x30, 0xB1, 0x58),
+                        ModelTier.Local => System.Windows.Media.Color.FromRgb(0x0A, 0x7C, 0xFF),
+                        _ => System.Windows.Media.Color.FromRgb(0xC8, 0x7A, 0x0A)
+                    }),
+                    model.Note is null ? model.Summary : $"{model.Summary} — {model.Note}",
+                    usage.Describe());
+            }).ToArray();
+
+            ModelSelector.ItemsSource = rows;
+            ModelSelector.SelectedItem =
+                rows.FirstOrDefault(row => string.Equals(row.Id, current, StringComparison.OrdinalIgnoreCase))
+                ?? rows.FirstOrDefault();
+
+            ModelUsageText.Text = rows.Length == 0
+                ? string.Empty
+                : $"{provider} · {rows.Length} models · usage counted on this PC, so it may differ from the provider's own total.";
+        }
+        finally
+        {
+            _loadingModels = false;
+        }
+    }
+
+    private void ModelSelector_OnSelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_loadingModels || ModelSelector.SelectedItem is not ModelRow row)
+        {
+            return;
+        }
+
+        _ = _runtime.SetModelAsync(row.Id);
+    }
+
+    private string CurrentModelId(string provider) => provider switch
+    {
+        "OpenAI" => _runtime.Settings.OpenAiReasoningModel,
+        "Claude" => _runtime.Settings.ClaudeReasoningModel,
+        "OpenRouter" => _runtime.Settings.OpenRouterModel,
+        "Ollama" => _runtime.Settings.OllamaModel,
+        _ => _runtime.Settings.ReasoningModel
+    };
 
     private async void Send_OnClick(object sender, RoutedEventArgs e) => await SendPromptAsync();
 

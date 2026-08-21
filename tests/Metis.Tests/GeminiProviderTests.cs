@@ -40,7 +40,7 @@ public sealed class GeminiProviderTests
     public async Task Generate_returns_spoken_text_and_parsed_plan()
     {
         var handler = new StubHandler(_ => Task.FromResult(JsonResponse("""
-            {"candidates":[{"content":{"parts":[{"text":"{\"screen_observed\":true,\"spoken_text\":\"I found it.\",\"bubble_cue\":\"Press here\",\"actions\":[{\"type\":\"move_pointer\",\"x\":700,\"y\":200}]}"}]}}]}
+            {"candidates":[{"content":{"parts":[{"text":"{\"screen_observed\":true,\"spoken_text\":\"I found it.\",\"bubble_cue\":\"Press here\",\"scope\":\"control\",\"x\":700,\"y\":200,\"element\":\"Settings\"}"}]}}]}
             """)));
         using var provider = new GeminiProvider(new HttpClient(handler));
 
@@ -53,7 +53,8 @@ public sealed class GeminiProviderTests
         Assert.NotNull(result.Plan);
         Assert.Equal("Press here", result.Plan.BubbleCue);
         Assert.True(result.Plan.ScreenObserved);
-        Assert.Equal(DesktopActionKind.MovePointer, Assert.Single(result.Plan.Actions).Kind);
+        Assert.True(result.Plan.HasAnnotation);
+        Assert.Equal(700, result.Plan.NormalizedX);
     }
 
     [Fact]

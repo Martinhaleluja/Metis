@@ -423,10 +423,22 @@
                                               HorizontalAlignment="Left"
                                               SelectionChanged="SpeechProvider_OnSelectionChanged">
                                         <ComboBoxItem Content="Native" />
+                                        <ComboBoxItem Content="Windows" />
                                         <ComboBoxItem Content="Piper" />
                                         <ComboBoxItem Content="Chatterbox-Nano" />
                                         <ComboBoxItem Content="ElevenLabs" />
                                     </ComboBox>
+
+                                    <!-- Built into Windows: nothing to download,
+                                         works with no key and no network. -->
+                                    <StackPanel x:Name="WindowsVoicePanel" Margin="0,12,0,0">
+                                        <TextBlock Style="{StaticResource CaptionText}"
+                                                   Text="Windows voice (leave blank for the system default)" />
+                                        <ComboBox x:Name="WindowsVoiceBox" Margin="0,6,0,6"
+                                                  IsEditable="True" HorizontalAlignment="Left" Width="240" />
+                                        <TextBlock x:Name="WindowsVoiceStatusText" Style="{StaticResource CaptionText}"
+                                                   TextWrapping="Wrap" />
+                                    </StackPanel>
 
                                     <StackPanel x:Name="NativeTtsPanel" Margin="0,12,0,0">
                                         <TextBlock Style="{StaticResource CaptionText}" Text="Gemini speech model / voice" />
@@ -608,7 +620,7 @@
                     <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                         <TextBlock x:Name="SaveStatus" Style="{StaticResource CaptionText}" />
                         <TextBlock Style="{StaticResource CaptionText}" Margin="0,0,0,0"
-                                   Text="Metis  ·  Martin Nakasole, developer  ·  Lamek Hidengwa, designer" />
+                                   Text="Metis  ·  Built by Martin Nakasole" />
                     </StackPanel>
                     <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
                         <Button Content="Open Metis" Style="{StaticResource SecondaryButton}"

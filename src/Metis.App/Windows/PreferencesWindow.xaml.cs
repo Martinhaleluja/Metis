@@ -51,7 +51,6 @@ public partial class PreferencesWindow : System.Windows.Window
     private string _page = "Dashboard";
     private string _companionColour = CompanionPalette.DefaultName;
     private string _companionShape = CompanionShapes.DefaultName;
-    private string _operatingMode = "Guide";
 
     /// <summary>Page name, then the words that should find it from search.</summary>
     private static readonly (string Page, string Label, string Keywords)[] Sections =
@@ -59,7 +58,6 @@ public partial class PreferencesWindow : System.Windows.Window
         ("Dashboard", "Dashboard", "overview status home"),
         ("General", "General", "startup theme dark light appearance sound cue motion windows login"),
         ("Intelligence", "Intelligence", "provider model api key gemini openai claude ollama openclaw openrouter free token endpoint context reasoning"),
-        ("Modes", "Modes & autonomy", "mode learn guide assist autopilot control pointer shortcut overlay arrow"),
         ("Voice", "Voice & input", "microphone speech whisper piper elevenlabs assemblyai chatterbox transcribe voice speak"),
         ("Companion", "Companion", "colour color size cursor distance sprite"),
         ("Privacy", "Memory & privacy", "screen capture memory chat history clear erase privacy recall"),
@@ -77,7 +75,6 @@ public partial class PreferencesWindow : System.Windows.Window
         _pages["Dashboard"] = PageDashboard;
         _pages["General"] = PageGeneral;
         _pages["Intelligence"] = PageIntelligence;
-        _pages["Modes"] = PageModes;
         _pages["Voice"] = PageVoice;
         _pages["Companion"] = PageCompanion;
         _pages["Privacy"] = PagePrivacy;
@@ -187,7 +184,6 @@ public partial class PreferencesWindow : System.Windows.Window
 
             _companionColour = s.CompanionColor;
             _companionShape = s.CompanionShape;
-            _operatingMode = s.OperatingMode;
 
             StartWithWindowsCheck.IsChecked = s.StartWithWindows;
             ReduceMotionCheck.IsChecked = s.ReduceMotion;
@@ -211,7 +207,6 @@ public partial class PreferencesWindow : System.Windows.Window
 
             ContextShortcutsCheck.IsChecked = s.ContextShortcutsEnabled;
             VisualGuidanceCheck.IsChecked = s.VisualGuidanceEnabled;
-            FullControlCheck.IsChecked = s.FullDesktopControl;
 
             SelectCombo(SpeechToTextProviderBox, s.SpeechToTextProvider);
             WhisperCppExecutablePathBox.Text = s.WhisperCppExecutablePath;
@@ -220,6 +215,7 @@ public partial class PreferencesWindow : System.Windows.Window
             OpenAiTranscriptionModelBox.Text = s.OpenAiTranscriptionModel;
 
             SelectCombo(TextToSpeechProviderBox, s.TextToSpeechProvider);
+            LoadWindowsVoices(s.WindowsVoiceName);
             SpeechModelBox.Text = s.SpeechModel;
             VoiceNameBox.Text = s.VoiceName;
             OpenAiSpeechModelBox.Text = s.OpenAiSpeechModel;
@@ -246,7 +242,6 @@ public partial class PreferencesWindow : System.Windows.Window
             UserSkillsCheck.IsChecked = s.UserSkillsEnabled;
             SkillsFolderBox.Text = s.SkillsFolder;
 
-            BuildModeCards();
             BuildColourSwatches();
             BuildShapeChoices();
             LoadMicrophones(s.PreferredMicrophoneId);
@@ -290,65 +285,6 @@ public partial class PreferencesWindow : System.Windows.Window
             MicrophoneBox.ItemsSource = null;
             MicrophoneStatus.Text = exception.Message;
         }
-    }
-
-    /// <summary>
-    /// Describes the two ways Metis behaves without offering a choice between
-    /// them. These were selectable cards; they are now an explanation, because
-    /// Metis reads which one a request is asking for rather than being told in
-    /// advance.
-    /// </summary>
-    /// <summary>
-    /// The two modes, as a choice. This is a ceiling on what Metis may do
-    /// rather than a style of working, so it is worth being able to set
-    /// deliberately — and worth being able to see at a glance which one is on.
-    /// </summary>
-    private void BuildModeCards()
-    {
-        var cards = new List<RadioButton>();
-
-        foreach (var mode in new[] { AssistanceMode.Learn, AssistanceMode.Autopilot })
-        {
-            var body = new StackPanel();
-            body.Children.Add(new TextBlock
-            {
-                Text = AssistanceModes.Name(mode),
-                Style = (Style)FindResource("SubtitleText")
-            });
-            body.Children.Add(new TextBlock
-            {
-                Text = AssistanceModes.Describe(mode),
-                Style = (Style)FindResource("CaptionText"),
-                Margin = new Thickness(0, 4, 0, 0)
-            });
-            body.Children.Add(new TextBlock
-            {
-                Text = mode == AssistanceMode.Learn
-                    ? "Asking it to do something is declined; it shows you instead."
-                    : "It still reads each request to decide whether to act or explain.",
-                Style = (Style)FindResource("CaptionText"),
-                Margin = new Thickness(0, 4, 0, 0)
-            });
-
-            var card = new RadioButton
-            {
-                Style = (Style)FindResource("ChoiceCard"),
-                GroupName = "Mode",
-                Content = body,
-                Tag = AssistanceModes.Name(mode),
-                IsChecked = AssistanceModes.Parse(_operatingMode) == mode
-            };
-            card.Checked += (sender, _) =>
-            {
-                if (sender is RadioButton { Tag: string name })
-                {
-                    _operatingMode = name;
-                }
-            };
-            cards.Add(card);
-        }
-
-        ModeList.ItemsSource = cards;
     }
 
     private void BuildColourSwatches()
@@ -475,8 +411,8 @@ public partial class PreferencesWindow : System.Windows.Window
     {
         var s = _runtime.Settings;
 
-        DashModeText.Text = AssistanceModes.Name(_runtime.Mode);
-        DashModeSummary.Text = AssistanceModes.Describe(_runtime.Mode);
+        DashModeText.Text = "Learning";
+        DashModeSummary.Text = "Metis shows you how — it guides, draws, and explains, and never operates the computer itself.";
 
         DashProviderText.Text = s.AiProvider;
         DashProviderDetail.Text = s.AiProvider switch
@@ -601,10 +537,7 @@ public partial class PreferencesWindow : System.Windows.Window
             DiagnosticRow("Reasoning provider", s.AiProvider),
             DiagnosticRow("Cloud key stored",
                 _runtime.HasAnyApiKey ? "Yes" : "No — local providers do not need one"),
-            DiagnosticRow("Mode", AssistanceModes.Name(_runtime.Mode)),
-            DiagnosticRow("Last request read as", IntentPolicy.For(_runtime.LastIntent.Intent).DisplayName),
             DiagnosticRow("Screen capture", s.CaptureActiveWindow ? "Enabled" : "Disabled"),
-            DiagnosticRow("Desktop control", s.FullDesktopControl ? "Enabled" : "Disabled"),
             DiagnosticRow("Speech to text", s.SpeechToTextProvider),
             DiagnosticRow("Text to speech", s.SpeechEnabled ? s.TextToSpeechProvider : "Muted"),
             DiagnosticRow("Microphone", DescribeMicrophone()),
@@ -688,9 +621,37 @@ public partial class PreferencesWindow : System.Windows.Window
 
         var tts = SelectedText(TextToSpeechProviderBox, "Native");
         NativeTtsPanel.Visibility = Show(tts == "Native");
+        WindowsVoicePanel.Visibility = Show(tts == "Windows");
         PiperPanel.Visibility = Show(tts == "Piper");
         ChatterboxPanel.Visibility = Show(tts == "Chatterbox-Nano");
         ElevenLabsPanel.Visibility = Show(tts == "ElevenLabs");
+    }
+
+    /// <summary>
+    /// Fills the voice list from Windows itself. Read locally rather than
+    /// fetched, so it works with no key and no network — and it names what is
+    /// actually installed, instead of offering voices this machine lacks.
+    /// </summary>
+    private void LoadWindowsVoices(string selected)
+    {
+        WindowsVoiceBox.Items.Clear();
+        try
+        {
+            var voices = _runtime.GetWindowsVoices();
+            foreach (var voice in voices)
+            {
+                WindowsVoiceBox.Items.Add(voice.Name);
+            }
+
+            WindowsVoiceBox.Text = selected;
+            WindowsVoiceStatusText.Text = voices.Count == 0
+                ? "Windows has no speech voices installed. Add one under Settings > Time & language > Speech."
+                : $"{voices.Count} voice(s) already on this PC. No download, and it works offline.";
+        }
+        catch (Exception exception)
+        {
+            WindowsVoiceStatusText.Text = $"Windows voices could not be listed: {exception.Message}";
+        }
     }
 
     private void UpdateCaptureDisclosure()
@@ -781,10 +742,8 @@ public partial class PreferencesWindow : System.Windows.Window
             OllamaModel = OllamaModelBox.Text,
             LocalContextTokens = tokens,
 
-            OperatingMode = _operatingMode,
             ContextShortcutsEnabled = ContextShortcutsCheck.IsChecked == true,
             VisualGuidanceEnabled = VisualGuidanceCheck.IsChecked == true,
-            FullDesktopControl = FullControlCheck.IsChecked == true,
 
             SpeechToTextProvider = SelectedText(SpeechToTextProviderBox, "Native"),
             WhisperCppExecutablePath = WhisperCppExecutablePathBox.Text,
@@ -793,6 +752,7 @@ public partial class PreferencesWindow : System.Windows.Window
             OpenAiTranscriptionModel = OpenAiTranscriptionModelBox.Text,
 
             TextToSpeechProvider = SelectedText(TextToSpeechProviderBox, "Native"),
+            WindowsVoiceName = WindowsVoiceBox.Text?.Trim() ?? string.Empty,
             SpeechModel = SpeechModelBox.Text,
             VoiceName = VoiceNameBox.Text,
             OpenAiSpeechModel = OpenAiSpeechModelBox.Text,
@@ -912,7 +872,7 @@ public partial class PreferencesWindow : System.Windows.Window
         SelectCombo(SpeechToTextProviderBox, "Whisper.cpp");
         WhisperCppExecutablePathBox.Text = @"tools\whisper.cpp\Release\whisper-cli.exe";
         WhisperCppModelPathBox.Text = @"models\whisper\ggml-tiny.bin";
-        SelectCombo(TextToSpeechProviderBox, "Piper");
+        SelectCombo(TextToSpeechProviderBox, "Windows");
         PiperExecutablePathBox.Text = @"tools\piper-standalone\piper\piper.exe";
         PiperVoiceModelPathBox.Text = @"models\piper\en_US-lessac-medium.onnx";
         UpdateProviderPanels();

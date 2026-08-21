@@ -40,7 +40,6 @@ public partial class OnboardingWindow : System.Windows.Window
     private bool _allowClose;
     private string _companionColour = CompanionPalette.DefaultName;
     private string _themePreference = "System";
-    private string _operatingMode = "Guide";
 
     public OnboardingWindow(MetisRuntime runtime, ThemeService? theme, Action onFinished)
     {
@@ -51,7 +50,6 @@ public partial class OnboardingWindow : System.Windows.Window
 
         _steps.AddRange([Step0, Step1, Step2, Step3, Step4, Step5, Step6, Step7]);
         BuildStepDots();
-        BuildModeCards();
         BuildColourSwatches();
         LoadFromSettings();
 
@@ -80,12 +78,10 @@ public partial class OnboardingWindow : System.Windows.Window
 
         _companionColour = settings.CompanionColor;
         _themePreference = settings.ThemePreference;
-        _operatingMode = settings.OperatingMode;
 
         CompanionSizeSlider.Value = settings.CompanionSize;
         CompanionSizeValue.Text = settings.CompanionSize.ToString();
         CaptureScreenCheck.IsChecked = settings.CaptureActiveWindow;
-        FullControlCheck.IsChecked = settings.FullDesktopControl;
         ContextShortcutsCheck.IsChecked = settings.ContextShortcutsEnabled;
         SpeechEnabledCheck.IsChecked = settings.SpeechEnabled;
         StartWithWindowsCheck.IsChecked = settings.StartWithWindows;
@@ -166,60 +162,6 @@ public partial class OnboardingWindow : System.Windows.Window
         }
 
         StepDots.ItemsSource = _dots;
-    }
-
-    /// <summary>
-    /// Built from IntentPolicy rather than written out in markup, so the wizard
-    /// cannot drift from what the engine actually does. It explains rather than
-    /// asks: there was a choice of four modes here, and new users had no way of
-    /// knowing which one they wanted before they had used Metis at all.
-    /// </summary>
-    private void BuildModeCards()
-    {
-        var cards = new List<RadioButton>();
-
-        foreach (var mode in new[] { AssistanceMode.Learn, AssistanceMode.Autopilot })
-        {
-            var body = new StackPanel();
-            body.Children.Add(new TextBlock
-            {
-                Text = AssistanceModes.Name(mode),
-                Style = (Style)FindResource("SubtitleText")
-            });
-            body.Children.Add(new TextBlock
-            {
-                Text = AssistanceModes.Describe(mode),
-                Style = (Style)FindResource("CaptionText"),
-                Margin = new Thickness(0, 4, 0, 0)
-            });
-            body.Children.Add(new TextBlock
-            {
-                Text = mode == AssistanceMode.Learn
-                    ? "You can change this later, and Metis will say when it declines to act."
-                    : "It still asks first before anything destructive or security-related.",
-                Style = (Style)FindResource("CaptionText"),
-                Margin = new Thickness(0, 4, 0, 0)
-            });
-
-            var card = new RadioButton
-            {
-                Style = (Style)FindResource("ChoiceCard"),
-                GroupName = "Mode",
-                Content = body,
-                Tag = AssistanceModes.Name(mode),
-                IsChecked = AssistanceModes.Parse(_operatingMode) == mode
-            };
-            card.Checked += (sender, _) =>
-            {
-                if (sender is RadioButton { Tag: string name })
-                {
-                    _operatingMode = name;
-                }
-            };
-            cards.Add(card);
-        }
-
-        ModeList.ItemsSource = cards;
     }
 
     private void BuildColourSwatches()
@@ -486,12 +428,19 @@ public partial class OnboardingWindow : System.Windows.Window
         return _runtime.Settings with
         {
             OnboardingCompleted = completed || _runtime.Settings.OnboardingCompleted,
+
+            // Records which welcome was seen, not merely that one was. Raising
+            // the current version later brings this user back through it once,
+            // which is what stops an existing install being left believing
+            // whatever the old wizard told them.
+            OnboardingVersion = completed
+                ? OnboardingVersions.Current
+                : _runtime.Settings.OnboardingVersion,
             ThemePreference = _themePreference,
-            OperatingMode = _operatingMode,
+            OperatingMode = "Guide",
             CompanionColor = _companionColour,
             CompanionSize = (int)CompanionSizeSlider.Value,
             CaptureActiveWindow = CaptureScreenCheck.IsChecked == true,
-            FullDesktopControl = FullControlCheck.IsChecked == true,
             ContextShortcutsEnabled = ContextShortcutsCheck.IsChecked == true,
             SpeechEnabled = SpeechEnabledCheck.IsChecked == true,
             StartWithWindows = StartWithWindowsCheck.IsChecked == true,
@@ -504,7 +453,13 @@ public partial class OnboardingWindow : System.Windows.Window
             // Choosing the local brain implies the local speech stack; leaving
             // it on a cloud transcriber would quietly defeat the point.
             SpeechToTextProvider = local ? "Whisper.cpp" : _runtime.Settings.SpeechToTextProvider,
-            TextToSpeechProvider = local ? "Piper" : _runtime.Settings.TextToSpeechProvider
+
+            // The Windows voice rather than Piper. Both are offline, but Piper
+            // is a separate executable and a voice model the installer does not
+            // carry, so steering someone to it on a fresh install handed them a
+            // voice that could never speak. Windows ships with the operating
+            // system and is there on the first run.
+            TextToSpeechProvider = local ? "Windows" : _runtime.Settings.TextToSpeechProvider
         };
     }
 }

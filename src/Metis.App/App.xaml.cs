@@ -115,18 +115,12 @@ public partial class App : System.Windows.Application
             _notchWindow.TraceConfirmed += (_, _) => Dispatcher.Invoke(() => _traceWindow.CommitNow());
             _notchWindow.TraceCancelled += (_, _) => Dispatcher.Invoke(() => _traceWindow.Disarm());
             _runtime.GuidanceOverlayRequested += Runtime_OnGuidanceOverlayRequested;
-            _runtime.IntentChanged += Runtime_OnIntentChanged;
-            _runtime.PermissionRequested += Runtime_OnPermissionRequested;
             _runtime.ActivityChanged += Runtime_OnActivityChanged;
             _notchWindow.OpenRequested += (_, _) => ShowAssistant();
             _notchWindow.SettingsRequested += (_, _) => ShowSetup();
 
             // Toggling from the notch keeps the one consequential setting a
             // single click away rather than three levels into a menu.
-            _notchWindow.ModeCycleRequested += (_, _) => Dispatcher.Invoke(() => _ = ToggleModeAsync());
-            _runtime.ModeChanged += (_, mode) => Dispatcher.Invoke(() => _notchWindow.ShowMode(mode));
-            _notchWindow.ShowMode(_runtime.Mode);
-
 
             CreateTrayIcon();
             _overlayWindow.Show();
@@ -153,11 +147,18 @@ public partial class App : System.Windows.Application
             {
                 ShowSetup();
             }
-            else if (!_runtime.Settings.OnboardingCompleted)
+            else if (OnboardingVersions.ShouldShow(
+                         _runtime.Settings.OnboardingCompleted,
+                         _runtime.Settings.OnboardingVersion))
             {
                 // Deliberately not HasAnyApiKey, which only knows about the
                 // three cloud providers: a fully local user has no cloud key,
                 // so that test sent them back to Setup on every launch forever.
+                //
+                // The version check is what brings existing users back through
+                // it once. Onboarding is where the shortcuts and the two modes
+                // are explained, so someone who finished the old one has been
+                // taught things that are no longer true.
                 ShowOnboarding();
             }
             else
@@ -297,77 +298,6 @@ public partial class App : System.Windows.Application
         public void WriteSupabaseRefreshToken(string token) => _store.WriteSupabaseRefreshToken(token);
 
         public void DeleteSupabaseRefreshToken() => _store.DeleteSupabaseRefreshToken();
-    }
-
-    /// <summary>
-    /// Reflects what Metis did on the last request, so the tray tooltip
-    /// answers "is it about to touch my computer?" without the user having
-    /// set anything. There is nothing to switch: the decision is made per
-    /// request from the user's own words.
-    /// </summary>
-    private void Runtime_OnIntentChanged(object? sender, IntentDecision decision) => Dispatcher.Invoke(() =>
-    {
-        if (_trayIcon is not null && _runtime is not null)
-        {
-            _trayIcon.Text =
-                $"Metis — {AssistanceModes.Name(_runtime.Mode)} · {IntentPolicy.For(decision.Intent).DisplayName}";
-        }
-    });
-
-    /// <summary>
-    /// Puts a high-risk step to the user and waits.
-    ///
-    /// The command is shown exactly as it will run, never summarised: someone
-    /// approving "a system change" has not been told anything, and the whole
-    /// value of the prompt is that they can read the thing and recognise it as
-    /// wrong. No is the default button, so a dismissed dialog declines.
-    /// </summary>
-    private Task<bool> Runtime_OnPermissionRequested(PermissionRequest request) =>
-        Dispatcher.InvokeAsync(() =>
-        {
-            var body = request.Detail;
-            if (!string.IsNullOrWhiteSpace(request.Command))
-            {
-                body += $"\n\n{request.Command}";
-            }
-
-            if (request.NeedsElevation)
-            {
-                body += "\n\nWindows will ask for administrator rights as well.";
-            }
-
-            return System.Windows.MessageBox.Show(
-                $"{body}\n\nRun it?",
-                request.Title,
-                MessageBoxButton.YesNo,
-                MessageBoxImage.Warning,
-                MessageBoxResult.No) == MessageBoxResult.Yes;
-        }).Task;
-
-    /// <summary>
-    /// Two modes make a toggle rather than a menu, and the state the user is
-    /// switching from is already on the chip they clicked.
-    /// </summary>
-    private async Task ToggleModeAsync()
-    {
-        if (_runtime is null)
-        {
-            return;
-        }
-
-        try
-        {
-            await _runtime.SetModeAsync(
-                _runtime.Mode == AssistanceMode.Learn ? AssistanceMode.Autopilot : AssistanceMode.Learn);
-        }
-        catch (Exception exception)
-        {
-            System.Windows.MessageBox.Show(
-                $"Metis could not switch mode. {exception.Message}",
-                "Metis",
-                MessageBoxButton.OK,
-                MessageBoxImage.Warning);
-        }
     }
 
     /// <summary>
@@ -538,7 +468,6 @@ public partial class App : System.Windows.Application
         if (_runtime is not null)
         {
             _runtime.GuidanceOverlayRequested -= Runtime_OnGuidanceOverlayRequested;
-            _runtime.IntentChanged -= Runtime_OnIntentChanged;
             _runtime.ActivityChanged -= Runtime_OnActivityChanged;
         }
 

@@ -12,6 +12,11 @@
     <!-- Ships the sound pack beside the executable so the default relative
          path resolves for a published build and the installer includes it. -->
     <Content Include="..\..\sound effects\**\*.*" Link="sound effects\%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+
+    <!-- Skills that ship with Metis rather than ones the user writes. The
+         skills folder is created on first run either way; this only puts
+         files into it, so a user's own skills sit alongside these. -->
+    <Content Include="skills\**\*.md" Link="skills\%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Metis.Core\Metis.Core.csproj" />

@@ -150,221 +150,6 @@ public sealed class AnnotationDirectorTests
     }
 }
 
-/// <summary>
-/// Whether Metis teaches or takes over is decided from the user's own words,
-/// before any model sees them. These cases pin the orderings that decide it.
-/// </summary>
-public sealed class IntentDetectorTests
-{
-    [Theory]
-    [InlineData("how do I open Chrome?")]
-    [InlineData("what is this window?")]
-    [InlineData("explain what this button does")]
-    [InlineData("teach me to crop an image")]
-    [InlineData("walk me through exporting")]
-    public void A_question_is_answered_rather_than_performed(string request) =>
-        Assert.Equal(AssistanceIntent.Teach, IntentDetector.Detect(request).Intent);
-
-    /// <summary>
-    /// The ordering that matters most: every request to be taught something
-    /// also names the thing, so the action word is always present.
-    /// </summary>
-    [Theory]
-    [InlineData("show me how to open Chrome")]
-    [InlineData("how do i click the export button")]
-    [InlineData("explain how to type a command in here")]
-    public void Asking_to_be_shown_beats_the_action_word_inside_it(string request)
-    {
-        var decision = IntentDetector.Detect(request);
-
-        Assert.Equal(AssistanceIntent.Teach, decision.Intent);
-        Assert.True(decision.IsExplicit);
-    }
-
-    [Theory]
-    [InlineData("open Chrome")]
-    [InlineData("close this tab")]
-    [InlineData("type my email address")]
-    public void A_plain_instruction_is_carried_out(string request)
-    {
-        var decision = IntentDetector.Detect(request);
-
-        Assert.Equal(AssistanceIntent.TakeControl, decision.Intent);
-        Assert.True(decision.IsExplicit);
-    }
-
-    [Theory]
-    [InlineData("just do it")]
-    [InlineData("can you do it for me")]
-    [InlineData("take care of it")]
-    public void An_outright_handover_is_taken(string request)
-    {
-        var decision = IntentDetector.Detect(request);
-
-        Assert.Equal(AssistanceIntent.TakeControl, decision.Intent);
-        Assert.True(decision.IsExplicit);
-    }
-
-    [Theory]
-    [InlineData("where is the save button")]
-    [InlineData("show me the toolbar")]
-    [InlineData("which button exports")]
-    public void Asking_where_something_is_gets_a_mark_not_a_click(string request) =>
-        Assert.Equal(AssistanceIntent.Teach, IntentDetector.Detect(request).Intent);
-
-    /// <summary>
-    /// With nothing to go on, the reading that changes nothing is the only safe
-    /// one: not acting is always recoverable and acting is not.
-    /// </summary>
-    [Theory]
-    [InlineData("")]
-    [InlineData("   ")]
-    [InlineData("hello")]
-    public void Anything_unclear_teaches(string request)
-    {
-        var decision = IntentDetector.Detect(request);
-
-        Assert.Equal(AssistanceIntent.Teach, decision.Intent);
-        Assert.False(decision.IsExplicit);
-    }
-
-    [Fact]
-    public void The_reason_names_the_words_it_acted_on() =>
-        Assert.Contains("just do it", IntentDetector.Detect("ok just do it").Reason, StringComparison.Ordinal);
-
-    [Theory]
-    [InlineData("next")]
-    [InlineData("ok done")]
-    [InlineData("what's next?")]
-    [InlineData("keep going")]
-    public void A_continuation_carries_no_intent_of_its_own(string request) =>
-        Assert.True(IntentDetector.IsContinuation(request));
-
-    [Theory]
-    [InlineData("open Chrome")]
-    [InlineData("how do I do this")]
-    public void A_real_request_is_not_a_continuation(string request) =>
-        Assert.False(IntentDetector.IsContinuation(request));
-}
-
-/// <summary>
-/// Telling Metis to do something has to actually reach the mouse and keyboard.
-/// The chain from the user's words to a permitted action runs through the
-/// detector, the intent filter, and the safety engine, and a break anywhere in
-/// it leaves Metis announcing that it is doing something and then doing
-/// nothing — the worst outcome available, because the user believes it.
-/// </summary>
-public sealed class TakeControlTests
-{
-    private static readonly DesktopAction Click = new(DesktopActionKind.LeftClick, 500, 500, Label: "Save");
-    private static readonly DesktopAction Typing = new(DesktopActionKind.TypeText, Text: "hello", HasCoordinates: false);
-    private static readonly DesktopAction Launch = new(DesktopActionKind.OpenApp, Text: "Notepad", HasCoordinates: false);
-    private static readonly DesktopAction Pointing = new(DesktopActionKind.MovePointer, 400, 300, Label: "Save");
-
-    [Theory]
-    [InlineData("open notepad")]
-    [InlineData("just do it for me")]
-    [InlineData("close this tab")]
-    public void An_instruction_survives_all_the_way_to_a_permitted_action(string request)
-    {
-        var decision = IntentDetector.Detect(request);
-        var handedOver = decision is { Intent: AssistanceIntent.TakeControl, IsExplicit: true };
-        Assert.True(handedOver, $"'{request}' was not read as a handover");
-
-        var kept = IntentPolicy.Filter(decision.Intent, [Click, Typing, Launch], handedOver, out var withheld);
-
-        Assert.Equal(3, kept.Count);
-        Assert.Equal(0, withheld);
-
-        var safety = new SafetyPolicyEngine();
-        foreach (var action in kept)
-        {
-            Assert.True(
-                safety.IsPermitted(action, IntentPolicy.ToMode(decision.Intent), handedOver, out var reason),
-                $"{action.Kind} was refused: {reason}");
-        }
-    }
-
-    /// <summary>
-    /// The other half of the promise: teaching never touches the computer, but
-    /// it still points, or the user is told about a control and not shown it.
-    /// </summary>
-    [Fact]
-    public void Teaching_drops_the_actions_but_keeps_the_pointing()
-    {
-        var decision = IntentDetector.Detect("how do I save this?");
-
-        var kept = IntentPolicy.Filter(decision.Intent, [Click, Typing, Launch, Pointing], userHandedOver: false, out var withheld);
-
-        Assert.Equal([DesktopActionKind.MovePointer], kept.Select(action => action.Kind));
-        Assert.Equal(3, withheld);
-    }
-
-    /// <summary>
-    /// Defence in depth. The detector only ever reports an explicit handover
-    /// today, but the filter must not rely on that: an intent arriving without
-    /// one still may not move the mouse.
-    /// </summary>
-    [Fact]
-    public void An_intent_to_act_without_an_explicit_handover_still_cannot_act()
-    {
-        var kept = IntentPolicy.Filter(
-            AssistanceIntent.TakeControl, [Click, Typing], userHandedOver: false, out var withheld);
-
-        Assert.Empty(kept);
-        Assert.Equal(2, withheld);
-    }
-
-    /// <summary>
-    /// Metis batches its work, so a plan longer than the budget is trimmed
-    /// rather than run in one burst the user cannot follow or interrupt.
-    /// </summary>
-    [Fact]
-    public void A_long_plan_is_trimmed_to_the_batch_budget()
-    {
-        var many = Enumerable.Repeat(Click, 10).ToArray();
-
-        var kept = IntentPolicy.Filter(AssistanceIntent.TakeControl, many, userHandedOver: true, out var withheld);
-
-        Assert.Equal(IntentPolicy.For(AssistanceIntent.TakeControl).MaxActionsPerBatch, kept.Count);
-        Assert.Equal(many.Length - kept.Count, withheld);
-    }
-
-    /// <summary>
-    /// Pointing is not a computer action, so it is never withheld whatever the
-    /// user asked for.
-    /// </summary>
-    [Theory]
-    [InlineData(AssistanceIntent.Teach)]
-    [InlineData(AssistanceIntent.TakeControl)]
-    public void Pointing_is_always_allowed(AssistanceIntent intent) =>
-        Assert.True(IntentPolicy.Allows(intent, DesktopActionKind.MovePointer, userHandedOver: false));
-
-    /// <summary>
-    /// While Metis works the computer the real pointer is already crossing the
-    /// screen doing the job. Sending the companion after it, and ringing a
-    /// control that is about to be clicked anyway, gives the user two things to
-    /// follow at once. Doing the work is narrated; only showing is annotated.
-    /// </summary>
-    [Fact]
-    public void Doing_the_work_is_spoken_rather_than_drawn()
-    {
-        Assert.False(IntentPolicy.For(AssistanceIntent.TakeControl).ShowsAnnotations);
-        Assert.True(IntentPolicy.For(AssistanceIntent.Teach).ShowsAnnotations);
-    }
-
-    /// <summary>
-    /// The runtime reads this through the legacy mode it still threads around,
-    /// so the projection has to preserve it in both directions.
-    /// </summary>
-    [Theory]
-    [InlineData(OperatingMode.Learn, true)]
-    [InlineData(OperatingMode.Guide, true)]
-    [InlineData(OperatingMode.Assist, false)]
-    [InlineData(OperatingMode.Autopilot, false)]
-    public void The_annotation_rule_survives_the_legacy_mode_projection(OperatingMode mode, bool expected) =>
-        Assert.Equal(expected, IntentPolicy.For(IntentPolicy.FromMode(mode)).ShowsAnnotations);
-}
 
 /// <summary>
 /// Marks clear themselves now that Metis walks through a lesson rather than
@@ -520,21 +305,22 @@ public sealed class AnnotationParsingTests
     }
 
     [Fact]
-    public void A_pointer_move_carries_the_targets_extent()
+    public void An_annotation_carries_the_targets_extent()
     {
         var plan = AssistantPlanParser.Parse(
             """
             {
               "spoken_text": "here",
               "screen_observed": true,
-              "actions": [{ "type": "move_pointer", "x": 500, "y": 400, "w": 220, "h": 40, "label": "search box" }]
+              "scope": "control",
+              "x": 500, "y": 400, "w": 220, "h": 40, "label": "search box"
             }
             """,
             hasScreenshot: true);
 
-        var action = Assert.Single(plan.Actions);
-        Assert.Equal(220, action.NormalizedWidth);
-        Assert.Equal(40, action.NormalizedHeight);
+        Assert.True(plan.HasAnnotation);
+        Assert.Equal(220, plan.NormalizedWidth);
+        Assert.Equal(40, plan.NormalizedHeight);
     }
 
     [Fact]

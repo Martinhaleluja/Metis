@@ -241,7 +241,60 @@ public sealed partial class GeminiProvider : IGeminiProvider, IDisposable
             }
         }
 
-        return null;
+        // No audio in the response. This used to return null, which the caller
+        // could only report as "voice was unavailable" — nothing reached the
+        // log, so the voice went quiet with no way to find out why. The text
+        // path has always explained itself; now this one does too.
+        throw new GeminiProviderException(
+            GeminiErrorKind.EmptyResponse,
+            DescribeMissingSpeech(document.RootElement, normalizedModel));
+    }
+
+    /// <summary>
+    /// Why a speech response carried no audio. Three causes are worth telling
+    /// apart: the request was blocked, the chosen model is not a speech model
+    /// at all — it answers with text, which is the usual misconfiguration —
+    /// or generation stopped early.
+    /// </summary>
+    private static string DescribeMissingSpeech(JsonElement root, string model)
+    {
+        var blockReason = root.TryGetProperty("promptFeedback", out var feedback)
+            ? GetString(feedback, "blockReason")
+            : null;
+        if (!string.IsNullOrWhiteSpace(blockReason))
+        {
+            return $"Gemini blocked the speech request ({blockReason}). The written answer is still on screen.";
+        }
+
+        foreach (var part in EnumerateResponseParts(root))
+        {
+            if (!string.IsNullOrWhiteSpace(GetString(part, "text")))
+            {
+                return $"'{model}' answered with text instead of audio, so it is not a speech model. " +
+                    "Choose a text-to-speech model under Voice & input.";
+            }
+        }
+
+        string? finishReason = null;
+        if (root.TryGetProperty("candidates", out var candidates))
+        {
+            foreach (var candidate in candidates.EnumerateArray())
+            {
+                finishReason = GetString(candidate, "finishReason");
+                if (!string.IsNullOrWhiteSpace(finishReason))
+                {
+                    break;
+                }
+            }
+        }
+
+        if (!string.IsNullOrWhiteSpace(finishReason) &&
+            !string.Equals(finishReason, "STOP", StringComparison.OrdinalIgnoreCase))
+        {
+            return $"Gemini stopped before producing any audio ({finishReason}).";
+        }
+
+        return $"Gemini returned no audio for '{model}'. Check that it is a text-to-speech model under Voice & input.";
     }
 
     private async Task<string> SendGenerateContentAsync(

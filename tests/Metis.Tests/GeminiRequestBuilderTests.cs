@@ -55,9 +55,9 @@ public sealed class GeminiRequestBuilderTests
             Assert.True(stepProperties.TryGetProperty(field, out _), $"steps is missing '{field}'");
         }
 
-        var actionProperties = properties.GetProperty("actions").GetProperty("items").GetProperty("properties");
-        Assert.True(actionProperties.TryGetProperty("w", out _));
-        Assert.True(actionProperties.TryGetProperty("h", out _));
+        // Metis no longer operates the computer, so the schema carries no
+        // actions at all — only what to say, where to mark, and the steps.
+        Assert.False(properties.TryGetProperty("actions", out _));
     }
 
     [Fact]
@@ -108,12 +108,13 @@ public sealed class GeminiRequestBuilderTests
             .GetString();
         Assert.Contains("spoken_text", instruction, StringComparison.Ordinal);
         Assert.Contains("screen_observed", instruction, StringComparison.Ordinal);
-        Assert.Contains("Coordinates are mandatory", instruction, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("at most 6", instruction, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("type_text", instruction, StringComparison.Ordinal);
-        Assert.Contains("open_app", instruction, StringComparison.Ordinal);
-        Assert.Contains("no screenshot", instruction, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("Never autonomously purchase", instruction, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("steps", instruction, StringComparison.Ordinal);
+
+        // Metis is a learning tool: the instruction must never ask the model to
+        // operate the computer. If any of these reappear, control has crept back.
+        Assert.DoesNotContain("type_text", instruction, StringComparison.Ordinal);
+        Assert.DoesNotContain("open_app", instruction, StringComparison.Ordinal);
+        Assert.DoesNotContain("left_click", instruction, StringComparison.Ordinal);
     }
 
     [Fact]

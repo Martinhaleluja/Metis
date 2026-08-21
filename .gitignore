@@ -4,8 +4,8 @@ obj/
 .idea/
 TestResults/
 artifacts/
-models/
-tools/
+/models/
+/tools/
 installer/.generated/
 installer/.tools/
 installer/output/

@@ -29,6 +29,7 @@ public sealed class MetisRuntime : IDisposable
     private readonly IElevenLabsProvider _elevenLabs;
     private readonly IWhisperCppProvider _whisperCpp;
     private readonly IPiperProvider _piper;
+    private readonly IWindowsVoiceProvider _windowsVoice;
     private readonly IChatterboxNanoProvider _chatterboxNano;
     private readonly IAudioRecorder _recorder;
     private readonly IAudioPlayback _audioPlayback;
@@ -41,12 +42,9 @@ public sealed class MetisRuntime : IDisposable
     /// no state and no configuration: it is a question asked of Windows.
     /// </summary>
     private readonly IAnnotationResolver _annotations = new WindowsAnnotationResolver();
-    private readonly IDesktopAutomationService _desktopAutomation;
-    private readonly IDesktopAutomationPipeline _automationPipeline;
     private readonly IGlobalPushToTalk _pushToTalk;
     private readonly IStartupRegistration _startupRegistration;
     private readonly IMemoryService _memory;
-    private readonly ISafetyPolicyEngine _safety = new SafetyPolicyEngine();
     private readonly TaskContextTracker _taskContext = new();
     private readonly SemaphoreSlim _turnGate = new(1, 1);
     private SoundPack _soundPack = new(null);
@@ -68,6 +66,12 @@ public sealed class MetisRuntime : IDisposable
 
     public event EventHandler? ChatsChanged;
     private ScreenCapture? _lastLessonCapture;
+
+    /// <summary>
+    /// Whether this turn is teaching a subject rather than a program, from the
+    /// domain of whichever skill matched.
+    /// </summary>
+    private bool _academicTeaching;
     private CancellationTokenSource? _turnCancellation;
     private ActivationKind _pendingActivation = ActivationKind.Typed;
     private PointerContext? _pendingPointer;
@@ -86,12 +90,12 @@ public sealed class MetisRuntime : IDisposable
             new ElevenLabsProvider(),
             new WhisperCppProvider(),
             new PiperProvider(),
+            new WindowsVoiceProvider(),
             new ChatterboxNanoProvider(),
             new WaveAudioRecorder(),
             new WaveAudioPlayback(),
             new VirtualDesktopCaptureService(),
             new FlaUiAutomationService(),
-            new DesktopAutomationService(),
             new GlobalPushToTalk(),
             new CursorService(),
             new StartupRegistration(),
@@ -110,12 +114,12 @@ public sealed class MetisRuntime : IDisposable
         IElevenLabsProvider elevenLabs,
         IWhisperCppProvider whisperCpp,
         IPiperProvider piper,
+        IWindowsVoiceProvider windowsVoice,
         IChatterboxNanoProvider chatterboxNano,
         IAudioRecorder recorder,
         IAudioPlayback audioPlayback,
         IScreenCaptureService capture,
         IUiAutomationService uiAutomation,
-        IDesktopAutomationService desktopAutomation,
         IGlobalPushToTalk pushToTalk,
         ICursorService cursor,
         IStartupRegistration startupRegistration,
@@ -131,13 +135,12 @@ public sealed class MetisRuntime : IDisposable
         _elevenLabs = elevenLabs;
         _whisperCpp = whisperCpp;
         _piper = piper;
+        _windowsVoice = windowsVoice;
         _chatterboxNano = chatterboxNano;
         _recorder = recorder;
         _audioPlayback = audioPlayback;
         _capture = capture;
         _uiAutomation = uiAutomation;
-        _desktopAutomation = desktopAutomation;
-        _automationPipeline = new DesktopAutomationPipeline(desktopAutomation);
         _pushToTalk = pushToTalk;
         _startupRegistration = startupRegistration;
         _memory = memory;
@@ -151,24 +154,40 @@ public sealed class MetisRuntime : IDisposable
     public ICursorService Cursor { get; }
 
     /// <summary>
-    /// The active Learn/Guide/Assist/Autopilot mode. It is read from settings
-    /// so it survives restarts, and it gates automation independently of
-    /// whatever a reasoning provider returns.
+    /// What this machine has asked of each model. Counted locally because most
+    /// requests go straight from here to the provider on the user's own key and
+    /// never touch a Metis server, so a server-side tally would read zero for
+    /// exactly the people who want to know what is left of a free allowance.
     /// </summary>
-    /// <summary>
-    /// What Metis decided the most recent request was asking for. It is a
-    /// readout, not a setting: nothing outside a turn can change it, and each
-    /// turn recomputes it from the user's own words.
-    /// </summary>
-    public IntentDecision LastIntent { get; private set; } =
-        new(AssistanceIntent.Teach, "Nothing has been asked yet.", IsExplicit: false);
+    public ModelUsageLedger ModelUsage { get; } = new();
 
     /// <summary>
-    /// The ceiling the user chose: whether Metis may operate the computer at
-    /// all. Read from settings on every access so a change takes effect on the
-    /// next request rather than the next restart.
+    /// Points the current provider at a different model. Which setting that
+    /// writes depends on the provider, because each keeps its own.
     /// </summary>
-    public AssistanceMode Mode => AssistanceModes.Parse(Settings.OperatingMode);
+    public async Task SetModelAsync(string modelId, CancellationToken cancellationToken = default)
+    {
+        ThrowIfDisposed();
+        if (string.IsNullOrWhiteSpace(modelId))
+        {
+            return;
+        }
+
+        var updated = (Settings.AiProvider switch
+        {
+            "OpenAI" => Settings with { OpenAiReasoningModel = modelId },
+            "Claude" => Settings with { ClaudeReasoningModel = modelId },
+            "OpenRouter" => Settings with { OpenRouterModel = modelId },
+            "Ollama" => Settings with { OllamaModel = modelId },
+            _ => Settings with { ReasoningModel = modelId }
+        }).Normalize();
+
+        await _settingsStore.SaveAsync(updated, cancellationToken);
+        Settings = updated;
+        SettingsChanged?.Invoke(this, Settings);
+        SetStatus($"Answering with {modelId}");
+        _log.Info($"Model set to {modelId} for {Settings.AiProvider}.");
+    }
 
     /// <summary>
     /// Who is signed in, or <see cref="MetisAccount.SignedOut"/>. Metis works
@@ -222,8 +241,6 @@ public sealed class MetisRuntime : IDisposable
     public event EventHandler<float>? AudioLevelChanged;
     public event EventHandler<CompanionGuidance>? CompanionGuidanceRequested;
     public event EventHandler<GuidanceOverlayRequest>? GuidanceOverlayRequested;
-    public event EventHandler<IntentDecision>? IntentChanged;
-    public event EventHandler<AssistanceMode>? ModeChanged;
 
     /// <summary>
     /// Asks the user to approve a high-risk action before it runs. The handler
@@ -235,7 +252,6 @@ public sealed class MetisRuntime : IDisposable
     /// answer automatically: an approval nobody saw is worse than no approval,
     /// because it looks like one.
     /// </summary>
-    public event Func<PermissionRequest, Task<bool>>? PermissionRequested;
     public event EventHandler<MetisActivity>? ActivityChanged;
 
     /// <summary>
@@ -259,8 +275,6 @@ public sealed class MetisRuntime : IDisposable
     public async Task InitializeAsync(CancellationToken cancellationToken = default)
     {
         Settings = (await _settingsStore.LoadAsync(cancellationToken)).Normalize();
-        _desktopAutomation.FullControlEnabled = Settings.FullDesktopControl;
-        _desktopAutomation.MoveRealCursor = Settings.MoveRealCursor;
         ReloadSoundPack();
         ReloadUserSkills();
         _chatSessions = _chatStore.LoadAll().ToList();
@@ -318,8 +332,6 @@ public sealed class MetisRuntime : IDisposable
         var modeChanged = !string.Equals(normalized.OperatingMode, Settings.OperatingMode, StringComparison.Ordinal);
         await _settingsStore.SaveAsync(normalized, cancellationToken);
         Settings = normalized;
-        _desktopAutomation.FullControlEnabled = Settings.FullDesktopControl;
-        _desktopAutomation.MoveRealCursor = Settings.MoveRealCursor;
         _pushToTalk.ContextShortcutsEnabled = Settings.ContextShortcutsEnabled;
         ReloadSoundPack();
         ReloadUserSkills();
@@ -443,6 +455,21 @@ public sealed class MetisRuntime : IDisposable
         return result;
     }
 
+    public async Task<ProviderTestResult> TestWindowsVoiceAsync(
+        CancellationToken cancellationToken = default)
+    {
+        SetStatus("Testing the built-in Windows voice…");
+        var result = await _windowsVoice.TestAsync(Settings.WindowsVoiceName, cancellationToken);
+        SetStatus(result.Message);
+        return result;
+    }
+
+    /// <summary>
+    /// The voices Windows already has. Read straight from the system rather
+    /// than fetched, so this works with no key and no network.
+    /// </summary>
+    public IReadOnlyList<SpeechVoiceInfo> GetWindowsVoices() => _windowsVoice.ListVoices();
+
     public async Task<ProviderTestResult> TestChatterboxNanoAsync(
         CancellationToken cancellationToken = default)
     {
@@ -546,94 +573,6 @@ public sealed class MetisRuntime : IDisposable
         _pendingPointer = null;
         MessageAdded?.Invoke(this, new AssistantMessage(AssistantRole.User, normalizedPrompt, DateTimeOffset.Now));
         return RunTurnAsync(normalizedPrompt, null, cancellationToken);
-    }
-
-    /// <summary>
-    /// Switches the operating mode and persists it. The mode is a user decision,
-    /// so it is never changed by anything a reasoning provider returns.
-    /// </summary>
-    /// <summary>
-    /// Records what this turn was read as, and tells the interface so the notch
-    /// and tray can show it. Called from inside a turn only — there is no way
-    /// for the user or a provider to set it directly, which is what keeps a
-    /// persuasive reply from granting itself permission to act.
-    /// </summary>
-    /// <summary>
-    /// Switches between Learn and Autopilot. This is the one setting a user
-    /// changes often enough to want one click away, because it is the answer to
-    /// "may Metis touch my computer right now".
-    /// </summary>
-    public async Task SetModeAsync(AssistanceMode mode, CancellationToken cancellationToken = default)
-    {
-        ThrowIfDisposed();
-        if (mode == Mode)
-        {
-            return;
-        }
-
-        var updated = (Settings with { OperatingMode = AssistanceModes.Name(mode) }).Normalize();
-        await _settingsStore.SaveAsync(updated, cancellationToken);
-        Settings = updated;
-        SettingsChanged?.Invoke(this, Settings);
-        ModeChanged?.Invoke(this, mode);
-        SetStatus($"{AssistanceModes.Name(mode)} — {AssistanceModes.Describe(mode)}");
-        _log.Info($"Mode set to {mode}.");
-    }
-
-    /// <summary>
-    /// Puts a high-risk action to the user and waits for an answer. Anything
-    /// the safety engine does not flag runs without interruption, because a
-    /// prompt on every click would train the user to dismiss them unread.
-    ///
-    /// With no handler attached the answer is no. An unattended Metis declining
-    /// to run a command is a stalled task; one that runs it because nobody was
-    /// listening is a machine changed without consent.
-    /// </summary>
-    private async Task<bool> ConfirmIfRequiredAsync(
-        DesktopAction action,
-        OperatingMode mode,
-        CancellationToken cancellationToken)
-    {
-        if (!_safety.RequiresUserConfirmation(action, mode))
-        {
-            return true;
-        }
-
-        var handler = PermissionRequested;
-        if (handler is null)
-        {
-            _log.Error($"No confirmation is possible, so Metis refused {action.Kind}.", null);
-            return false;
-        }
-
-        var review = action.Kind == DesktopActionKind.RunCommand
-            ? SystemCommandPolicy.Review(action.Text)
-            : null;
-
-        var request = new PermissionRequest(
-            action,
-            action.Kind == DesktopActionKind.RunCommand
-                ? "Metis wants to run a system command"
-                : $"Metis wants to {DescribeAction(action)}",
-            review?.Summary ?? "This step was judged high risk, so Metis is checking first.",
-            review?.Command,
-            review?.NeedsElevation ?? false);
-
-        SetActivity(MetisActivityKind.Verifying, "Waiting for you to confirm");
-
-        try
-        {
-            return await handler(request).WaitAsync(cancellationToken);
-        }
-        catch (OperationCanceledException)
-        {
-            return false;
-        }
-        catch (Exception exception)
-        {
-            _log.Error("Metis could not ask for confirmation, so the step was refused.", exception);
-            return false;
-        }
     }
 
     private CancellationTokenSource? _activeListening;
@@ -847,13 +786,6 @@ public sealed class MetisRuntime : IDisposable
         return whisper.Text;
     }
 
-    private void ApplyIntent(IntentDecision decision)
-    {
-        LastIntent = decision;
-        IntentChanged?.Invoke(this, decision);
-        _log.Info($"Intent: {decision.Intent} — {decision.Reason}");
-    }
-
     public async Task ClearMemoryAsync(CancellationToken cancellationToken = default)
     {
         ThrowIfDisposed();
@@ -866,7 +798,6 @@ public sealed class MetisRuntime : IDisposable
     public void CancelCurrentTurn()
     {
         _turnCancellation?.Cancel();
-        _automationPipeline.CancelSession();
         _recorder.Cancel();
         _audioPlayback.Stop();
         GuidanceOverlayRequested?.Invoke(this, GuidanceOverlayRequest.Clear);
@@ -1096,7 +1027,6 @@ public sealed class MetisRuntime : IDisposable
     {
         // Keep the low-level hook callback extremely short: cancel and drain
         // the action path immediately, then perform UI/audio cleanup off-hook.
-        _automationPipeline.EmergencyStop();
         _turnCancellation?.Cancel();
         ThreadPool.QueueUserWorkItem(_ =>
         {
@@ -1132,7 +1062,7 @@ public sealed class MetisRuntime : IDisposable
                     $"Voice request ({recording.Duration.TotalSeconds:0.0}s)",
                     DateTimeOffset.Now));
             await RunTurnAsync(
-                "Listen to the attached recording and answer the user's request directly.",
+                SpokenRequest.Placeholder,
                 recording,
                 CancellationToken.None);
         }
@@ -1161,14 +1091,12 @@ public sealed class MetisRuntime : IDisposable
         var pendingTrace = _pendingTrace;
         _pendingTrace = null;
 
-        // A first reading of what the user wants, used to shape the request.
-        // For typed input this is the final answer; for speech the words are
-        // not known until transcription, so it is re-read once they are.
-        var mode = IntentPolicy.ToMode(IntentPolicy.Clamp(Mode, IntentDetector.Detect(prompt)).Intent);
+        // Metis only ever teaches now. The mode is a vestige the task and
+        // memory records still carry, pinned to its one remaining value.
+        const OperatingMode mode = OperatingMode.Guide;
 
         try
         {
-            _automationPipeline.StartSession();
             State.Force(AssistantState.Thinking);
             SetStatus(recording is null ? "Thinking…" : "Understanding your voice and screen…");
 
@@ -1295,8 +1223,14 @@ public sealed class MetisRuntime : IDisposable
                 // of the image tokens of a full desktop.
                 screenshot = ScreenCaptureCropper.Crop(screenshot, region, _log.Info);
             }
-            var taughtSkills = SkillLibrary.Describe(
-                SkillLibrary.Select(_userSkills, screenshot?.WindowTitle, effectivePrompt));
+            var selectedSkills = SkillLibrary.Select(_userSkills, screenshot?.WindowTitle, effectivePrompt);
+            var taughtSkills = SkillLibrary.Describe(selectedSkills);
+
+            // Whether this is a subject to explain or a program to drive is
+            // decided by the skill that matched, not by scanning the request for
+            // subject words. A new subject is then a new file rather than
+            // another branch in a list nobody remembers to update.
+            _academicTeaching = selectedSkills.Any(skill => skill.Domain == SkillDomain.Academic);
             var recall = Settings.ChatMemoryEnabled
                 ? ChatRecall.Describe(_chatSessions, _currentChat.Id, effectivePrompt, screenshot?.WindowTitle)
                 : null;
@@ -1321,7 +1255,8 @@ public sealed class MetisRuntime : IDisposable
                 skillContext,
                 taughtSkills,
                 recall,
-                region);
+                region,
+                _academicTeaching);
             SetActivity(MetisActivityKind.Thinking, "Thinking");
             var response = await GenerateWithSelectedProviderAsync(request, cancellationToken);
 
@@ -1331,39 +1266,39 @@ public sealed class MetisRuntime : IDisposable
             RecordChatTurn("metis", response.Text, screenshot?.WindowTitle);
 
             var finalStatus = $"Answered with {response.Provider} {response.Model}";
+
+            // Counted here rather than at each provider call site, so every
+            // path lands in the same ledger whichever one answered.
+            ModelUsage.Record(response.Model, DateTimeOffset.Now);
+
             var rawPlan = response.Plan ?? AssistantPlan.SpeechOnly(response.Text);
-            // The intent is read again from the words Metis finally heard.
-            // Speech is transcribed after the request was built, so the reading
-            // taken up front was a guess at the shape of the answer; this one
-            // decides what Metis is allowed to do, and must be based on what
-            // the user actually said.
-            var detectedIntent = IntentDetector.Detect(effectivePrompt);
 
-            // The mode is a ceiling. In Learn this turns a request to act into
-            // a request to be shown, whatever the words were.
-            var finalIntent = IntentPolicy.Clamp(Mode, detectedIntent);
-            if (IntentPolicy.WasClampedByMode(Mode, detectedIntent))
+            // On the direct-audio path effectivePrompt is still Metis's own
+            // stand-in — the real words only exist in what the model reported
+            // hearing. Everything Metis does is teaching now, so these words no
+            // longer decide what it is allowed to do; they still decide whether
+            // the honest answer is a mark on the screen or a sentence about it.
+            var spokenRequest = (SpokenRequest.IsPlaceholder(effectivePrompt)
+                ? rawPlan.HeardText
+                : effectivePrompt) ?? string.Empty;
+
+            if (SpokenRequest.IsPlaceholder(effectivePrompt))
             {
-                // Said out loud, because a refusal nobody notices reads as
-                // Metis having ignored them.
-                finalStatus += " — Learn mode, so Metis showed you instead of doing it";
-                _log.Info("Learn mode declined to act and taught instead.");
+                _log.Info(string.IsNullOrWhiteSpace(spokenRequest)
+                    ? "No heard_text came back for a spoken request, so Metis has only the recording to go on."
+                    : $"Spoken request heard as: \"{spokenRequest}\"");
             }
 
-            var userAskedForAction = finalIntent is
-                { Intent: AssistanceIntent.TakeControl, IsExplicit: true };
-            ApplyIntent(finalIntent);
-            mode = IntentPolicy.ToMode(finalIntent.Intent);
+            var plan = rawPlan;
 
-            var plan = ApplyModeAndSafety(rawPlan, mode, userAskedForAction, out var withheldNotice);
-            if (withheldNotice is not null)
-            {
-                finalStatus += $" — {withheldNotice}";
-            }
-
-            var screenGroundingRequired = RequiresScreenObservation(effectivePrompt) ||
-                                          userAskedForAction ||
-                                          plan.Actions.Any(action => action.Kind != DesktopActionKind.Wait);
+            // A screen answer has to be grounded in a real screenshot. Either
+            // the request needs the screen, or the reply put a mark on it, or a
+            // lesson step points somewhere — any of those and Metis must have
+            // actually looked, and the model must confirm it did.
+            var pointsAtScreen = plan.HasAnnotation ||
+                                 plan.LessonSteps.Any(step => step.HasTarget);
+            var screenGroundingRequired = RequestIntent.RequiresScreenObservation(spokenRequest) ||
+                                          pointsAtScreen;
             if (screenGroundingRequired && screenshot is null)
             {
                 throw new InvalidOperationException(
@@ -1373,43 +1308,23 @@ public sealed class MetisRuntime : IDisposable
             if (screenGroundingRequired && !plan.ScreenObserved)
             {
                 throw new InvalidOperationException(
-                    "The AI did not confirm that it inspected Metis's current screenshot. No screen answer or companion action was trusted.");
-            }
-
-            // A mode that deliberately withheld the steps has not failed, so the
-            // "no usable steps" error only applies when the mode would have run them.
-            if (userAskedForAction &&
-                !IsHighImpactRequest(effectivePrompt) &&
-                withheldNotice is null &&
-                !plan.Actions.Any(action => action.Kind != DesktopActionKind.Wait))
-            {
-                throw new AutomationExecutionException(
-                    "The AI returned no usable execution steps. Metis did not guess or invent a computer command.");
-            }
-            // "Show me where X is" is answered by a mark on the screen, not by
-            // prose. When the model replies without a target — which it often
-            // does — Metis finds the control itself through the accessibility
-            // tree, so the user still gets pointed at the thing they asked about.
-            if (RequestIntent.IsPointingRequest(effectivePrompt) &&
-                plan.Actions.Count == 0 &&
-                plan.LessonSteps.Count == 0)
-            {
-                await PointAtNamedControlAsync(effectivePrompt, plan, cancellationToken);
+                    "The AI did not confirm that it inspected Metis's current screenshot, so no screen answer was trusted.");
             }
 
             var bubbleCue = string.IsNullOrWhiteSpace(plan.BubbleCue) ? string.Empty : plan.BubbleCue.Trim();
-            var guidanceOwnsCue = plan.Actions.Any(action => action.Kind != DesktopActionKind.Wait);
-            _log.Info($"Assistant plan received: {plan.Actions.Count} desktop action(s), " +
+            _log.Info($"Assistant reply received: {plan.LessonSteps.Count} lesson step(s), " +
+                      $"{(plan.HasAnnotation ? "an annotation" : "no annotation")}, " +
                       $"screen context {(screenshot is null ? "unavailable" : "available")}.");
-            // Teaching runs as a sequence the user works through, so any answer
-            // carrying steps becomes a lesson Metis follows along with rather
-            // than a single reply that is said once and forgotten.
-            if (finalIntent.Teaches && plan.LessonSteps.Count > 0)
+
+            // An answer carrying steps becomes a lesson Metis walks through,
+            // marking the screen for each one, rather than a single reply said
+            // once and forgotten.
+            if (plan.LessonSteps.Count > 0)
             {
                 _lastLessonCapture = screenshot;
-                await RecordTurnMemoryAsync(task, plan, mode, screenshot?.WindowTitle, true, CancellationToken.None);
+                await RecordTurnMemoryAsync(task, plan, screenshot?.WindowTitle, true, CancellationToken.None);
                 await RunLessonAsync(
-                    new LessonState(plan.Goal ?? effectivePrompt, plan.LessonSteps),
+                    new LessonState(plan.Goal ?? spokenRequest, plan.LessonSteps),
                     cancellationToken);
 
                 SetActivity(MetisActivityKind.Idle, string.Empty);
@@ -1417,19 +1332,16 @@ public sealed class MetisRuntime : IDisposable
                 return;
             }
 
-            var actionTask = ExecuteClosedLoopPlanAsync(
-                plan,
-                screenshot,
-                effectivePrompt,
-                mode,
-                userAskedForAction,
-                cancellationToken);
+            // "Show me where X is" is answered by a mark, not by prose. When the
+            // reply named a spot, or the model answered in words and the request
+            // was asking where something is, Metis finds the control itself and
+            // points at it.
             var companionResponseStarted = false;
+            var willPoint = plan.HasAnnotation ||
+                            (RequestIntent.IsPointingRequest(spokenRequest) && screenshot is not null);
 
             // Answer in the way you were asked. A typed question gets a written
             // reply beside the cursor; speaking to Metis gets speech back.
-            // Reading a typed answer aloud is intrusive when the user is
-            // already looking at the screen and chose not to talk.
             var speakReply = Settings.SpeechEnabled && activation != ActivationKind.Typed;
             if (speakReply)
             {
@@ -1442,20 +1354,20 @@ public sealed class MetisRuntime : IDisposable
                         State.Force(AssistantState.Speaking);
                         SetActivity(MetisActivityKind.Speaking, "Speaking");
                         SetStatus("Speaking…");
-                        // Write out what is being said, paced to the audio, but
-                        // only when it is short enough to read at a glance. A
-                        // long explanation stays in the chat window rather than
-                        // covering the user's work.
                         var spokenLine = CompanionSpeech.ChooseLine(plan.SpokenText, bubbleCue);
                         if (spokenLine is not null)
                         {
                             StartCompanionResponse(spokenLine, GetAudioDuration(audio), showBubble: true);
                             companionResponseStarted = true;
                         }
-                        await _audioPlayback.PlayAsync(audio, cancellationToken);
+
+                        await _audioPlayback.PlayAsync(audio, AudioPriority.Speech, cancellationToken);
                     }
                     else
                     {
+                        _log.Info(
+                            $"No speech audio came back for the reply (voice '{Settings.TextToSpeechProvider}', " +
+                            $"provider '{response.Provider}'), so the answer was shown but not spoken.");
                         finalStatus += " — voice was unavailable";
                     }
                 }
@@ -1468,26 +1380,20 @@ public sealed class MetisRuntime : IDisposable
                     _log.Error("Speech output failed; the text answer remains available.", speechError);
                     finalStatus += " — speech failed, text still works";
                 }
-
-                // Desktop execution starts before speech synthesis so movement can
-                // accompany Metis's voice, but it is awaited separately. This keeps
-                // automation failures from being mislabeled as audio failures.
-                await actionTask;
-            }
-            else
-            {
-                await actionTask;
             }
 
-            // A typed turn always gets its answer written beside the cursor,
-            // even when there are controls to point at: with no voice, the text
-            // is the answer, and the pointing cues follow it a moment later.
-            if (!companionResponseStarted && (!guidanceOwnsCue || activation == ActivationKind.Typed))
+            // Point at what the reply was about, after the sentence rather than
+            // over it. This is the whole of what Metis does to the screen now:
+            // it marks, and the user acts.
+            if (screenshot is not null && willPoint)
             {
-                // Nothing was spoken, so the bar carries the answer itself. A
-                // typed question gets the whole reply beside the cursor, paced
-                // as if it were being spoken — the user may be somewhere they
-                // cannot listen, and a written answer is all they will get.
+                await PointAtAnswerAsync(spokenRequest, plan, cancellationToken);
+            }
+
+            // With no voice, the written answer is the answer. A typed turn
+            // always gets it beside the cursor, paced as if it were being read.
+            if (!companionResponseStarted && !willPoint)
+            {
                 var writtenLine = CompanionSpeech.ChooseWrittenLine(plan.SpokenText, bubbleCue);
                 StartCompanionResponse(
                     writtenLine ?? string.Empty,
@@ -1495,7 +1401,7 @@ public sealed class MetisRuntime : IDisposable
                     writtenLine is not null);
             }
 
-            await RecordTurnMemoryAsync(task, plan, mode, screenshot?.WindowTitle, true, CancellationToken.None);
+            await RecordTurnMemoryAsync(task, plan, screenshot?.WindowTitle, true, CancellationToken.None);
 
             State.Force(AssistantState.Success);
             SetActivity(MetisActivityKind.Complete, "Done");
@@ -1507,16 +1413,8 @@ public sealed class MetisRuntime : IDisposable
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
-            if (_automationPipeline.IsEmergencyStopped)
-            {
-                State.Force(AssistantState.Paused);
-                SetStatus("Emergency stop — automation queue cleared. Start a new request to resume.");
-            }
-            else
-            {
-                State.Force(AssistantState.Idle);
-                SetStatus("Request stopped or timed out");
-            }
+            State.Force(AssistantState.Idle);
+            SetStatus("Request stopped or timed out");
         }
         catch (Exception exception)
         {
@@ -1537,445 +1435,6 @@ public sealed class MetisRuntime : IDisposable
         }
 
         return key;
-    }
-
-    private async Task ExecuteClosedLoopPlanAsync(
-        AssistantPlan plan,
-        ScreenCapture? capture,
-        string originalPrompt,
-        OperatingMode mode,
-        bool userAskedForAction,
-        CancellationToken cancellationToken)
-    {
-        if (plan.Actions.Count == 0)
-        {
-            return;
-        }
-
-        if (capture is null)
-        {
-            _log.Info("The model proposed desktop actions without a current screenshot; Metis ignored them.");
-            return;
-        }
-
-        var currentPlan = plan;
-        var currentCapture = capture;
-        const int maxReplans = 8;
-        for (var replan = 0; replan <= maxReplans; replan++)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            if (string.Equals(currentPlan.Status, "blocked", StringComparison.OrdinalIgnoreCase))
-            {
-                throw new AutomationExecutionException(
-                    string.IsNullOrWhiteSpace(currentPlan.SpokenText)
-                        ? "Metis could not safely continue this task."
-                        : currentPlan.SpokenText);
-            }
-
-            var outcome = await ExecutePlanBatchAsync(
-                currentPlan,
-                currentCapture,
-                originalPrompt,
-                mode,
-                cancellationToken);
-            if (outcome.Finished ||
-                !outcome.NeedsObservation &&
-                !string.Equals(currentPlan.Status, "continue", StringComparison.OrdinalIgnoreCase))
-            {
-                return;
-            }
-
-            if (replan == maxReplans)
-            {
-                throw new AutomationExecutionException(
-                    "Metis reached its safe replanning limit before it could verify the result.");
-            }
-
-            SetStatus("Checking the updated screen and planning the next stepâ€¦");
-            if (outcome.WaitBeforeObservation > TimeSpan.Zero)
-            {
-                await Task.Delay(outcome.WaitBeforeObservation, cancellationToken);
-            }
-
-            var freshCapture = await _capture.CaptureActiveWindowAsync(cancellationToken);
-            if (freshCapture is null)
-            {
-                throw new AutomationExecutionException(
-                    "Metis could not capture the updated desktop, so it stopped instead of guessing the next step.");
-            }
-
-            string? automationContext = null;
-            try
-            {
-                automationContext = await _uiAutomation.DescribeWindowAsync(freshCapture, cancellationToken);
-            }
-            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-            {
-                throw;
-            }
-            catch (Exception automationContextError)
-            {
-                _log.Error("Fresh UI Automation context was unavailable; replanning with vision only.", automationContextError);
-            }
-
-            var replanPrompt = BuildClosedLoopReplanPrompt(
-                originalPrompt,
-                currentPlan,
-                outcome,
-                replan + 1);
-            var nextResponse = await GenerateWithSelectedProviderAsync(
-                new GeminiRequest(
-                    replanPrompt,
-                    freshCapture.ImageBytes,
-                    null,
-                    freshCapture.WindowTitle,
-                    automationContext,
-                    freshCapture.ImageMimeType,
-                    freshCapture.Width,
-                    freshCapture.Height,
-                    freshCapture.ScreenLeft,
-                    freshCapture.ScreenTop,
-                    freshCapture.SourceWidth,
-                    freshCapture.SourceHeight,
-                    mode,
-                    ActivationKind.Typed,
-                    null,
-                    _taskContext.Describe(),
-                    null),
-                cancellationToken);
-            var rawNextPlan = nextResponse.Plan ?? AssistantPlan.SpeechOnly(nextResponse.Text);
-            if (!rawNextPlan.ScreenObserved)
-            {
-                // Stopping beats throwing. The steps already executed were
-                // grounded and verified, and discarding only the unconfirmed
-                // next batch keeps that work while still refusing to act on a
-                // screen the provider will not say it looked at. Throwing here
-                // reported the whole task as failed and lost the completed
-                // steps with it.
-                _log.Info(
-                    $"Closed-loop replan {replan + 1} did not confirm it inspected the fresh screenshot; " +
-                    "Metis kept the verified steps and stopped there.");
-                SetStatus(string.IsNullOrWhiteSpace(rawNextPlan.SpokenText)
-                    ? "Metis completed the verified steps and stopped before an unconfirmed one."
-                    : rawNextPlan.SpokenText);
-                return;
-            }
-
-            // Each replan is re-checked against the mode. A long task can never
-            // drift into performing steps the current mode does not allow.
-            var nextPlan = ApplyModeAndSafety(rawNextPlan, mode, userAskedForAction, out _);
-
-            _log.Info(
-                $"Closed-loop replan {replan + 1}: received {nextPlan.Actions.Count} action(s) " +
-                $"with status '{nextPlan.Status}'.");
-            currentPlan = nextPlan;
-            currentCapture = freshCapture;
-        }
-    }
-
-    private async Task<PlanExecutionOutcome> ExecutePlanBatchAsync(
-        AssistantPlan plan,
-        ScreenCapture capture,
-        string originalPrompt,
-        OperatingMode mode,
-        CancellationToken cancellationToken)
-    {
-        if (plan.Actions.Count == 0)
-        {
-            return new PlanExecutionOutcome(
-                [],
-                NeedsObservation: string.Equals(plan.Status, "continue", StringComparison.OrdinalIgnoreCase),
-                Finished: string.Equals(plan.Status, "done", StringComparison.OrdinalIgnoreCase),
-                Checkpoint: "The provider returned no executable actions.",
-                PendingActionIds: [],
-                WaitBeforeObservation: TimeSpan.Zero);
-        }
-
-        var highImpact = IsHighImpactRequest($"{originalPrompt} {plan.SpokenText}");
-        var actions = plan.Actions
-            .Take(6)
-            .Where(action => !highImpact || IsNonMutatingAction(action.Kind))
-            .ToArray();
-        if (actions.Length == 0)
-        {
-            SetStatus("Metis found the control but left this high-impact click for you to confirm manually.");
-            return new PlanExecutionOutcome(
-                [],
-                NeedsObservation: false,
-                Finished: true,
-                Checkpoint: "High-impact actions were withheld for manual confirmation.",
-                PendingActionIds: [],
-                WaitBeforeObservation: TimeSpan.Zero);
-        }
-
-        var actionLabels = actions
-            .Select(action => string.IsNullOrWhiteSpace(action.Label) ? DescribeAction(action) : action.Label!)
-            .ToArray();
-        SetStatus(actions.Length == 1
-            ? $"Metis is {actionLabels[0].ToLowerInvariant()}…"
-            : $"Metis is carrying out {actions.Length} ordered steps…");
-
-        var feedback = new List<ActionExecutionFeedback>(actions.Length);
-
-        for (var index = 0; index < actions.Length; index++)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            var action = actions[index];
-            var actionId = action.Id ?? $"step-{index + 1}";
-            SetActivity(MetisActivityKind.Acting, actionLabels[index], index + 1, actions.Length);
-            var pendingActionIds = actions
-                .Skip(index + 1)
-                .Select((pending, pendingIndex) => pending.Id ?? $"step-{index + pendingIndex + 2}")
-                .ToArray();
-
-            if (action.Kind == DesktopActionKind.Finish)
-            {
-                if (feedback.Any(result => result.Success && IsDesktopMutation(result.Kind)))
-                {
-                    return new PlanExecutionOutcome(
-                        feedback,
-                        NeedsObservation: true,
-                        Finished: false,
-                        Checkpoint: "The desktop changed in this batch. Capture a fresh screen and verify it before finishing.",
-                        PendingActionIds: new[] { actionId }.Concat(pendingActionIds).ToArray(),
-                        WaitBeforeObservation: TimeSpan.FromMilliseconds(250));
-                }
-
-                feedback.Add(new ActionExecutionFeedback(actionId, action.Kind, true, "The provider marked the verified goal complete."));
-                return new PlanExecutionOutcome(
-                    feedback,
-                    NeedsObservation: false,
-                    Finished: true,
-                    Checkpoint: action.ExpectedState ?? "Goal complete.",
-                    PendingActionIds: pendingActionIds,
-                    WaitBeforeObservation: TimeSpan.Zero);
-            }
-
-            if (action.Kind is DesktopActionKind.Observe or DesktopActionKind.Verify or
-                DesktopActionKind.WaitForWindow or DesktopActionKind.WaitForElement or
-                DesktopActionKind.WaitForText)
-            {
-                var checkpoint = action.Kind switch
-                {
-                    DesktopActionKind.Verify => $"Verify expected state: {action.ExpectedState ?? action.Text ?? action.Label ?? "requested result"}.",
-                    DesktopActionKind.WaitForWindow => $"Wait for window: {action.Text}.",
-                    DesktopActionKind.WaitForElement => $"Wait for element: {action.AutomationId ?? action.Text}.",
-                    DesktopActionKind.WaitForText => $"Wait for visible text: {action.Text}.",
-                    _ => "Observe the updated desktop."
-                };
-                feedback.Add(new ActionExecutionFeedback(actionId, action.Kind, true, checkpoint));
-                var waitMilliseconds = action.Kind is DesktopActionKind.WaitForWindow or
-                    DesktopActionKind.WaitForElement or DesktopActionKind.WaitForText
-                    ? Math.Clamp(action.TimeoutMilliseconds, 250, 1_000)
-                    : 0;
-                return new PlanExecutionOutcome(
-                    feedback,
-                    NeedsObservation: true,
-                    Finished: false,
-                    Checkpoint: checkpoint,
-                    PendingActionIds: pendingActionIds,
-                    WaitBeforeObservation: TimeSpan.FromMilliseconds(waitMilliseconds));
-            }
-
-            try
-            {
-                var hasTarget = _desktopAutomation.TryResolveTarget(
-                    action,
-                    capture,
-                    out var targetX,
-                    out var targetY,
-                    out var targetError);
-                // While Metis is working the computer itself, the companion
-                // stays where it is and only talks. The real pointer is already
-                // crossing the screen doing the job, and sending the companion
-                // chasing after it gives the user two things to follow at once
-                // and a mark on a control that is about to be clicked anyway.
-                // Marks and flights are how Metis shows; speech is how it
-                // narrates, and narration is all that is wanted here.
-                if (hasTarget && IntentPolicy.For(IntentPolicy.FromMode(mode)).ShowsAnnotations)
-                {
-                    var cue = CreateGuidanceCue(plan.BubbleCue, action);
-                    CompanionGuidanceRequested?.Invoke(
-                        this,
-                        new CompanionGuidance(targetX, targetY, cue, TimeSpan.FromSeconds(5)));
-
-                    // The action carries the target's extent when the model
-                    // could see it, which is what lets the mark take the
-                    // control's shape instead of ringing its middle.
-                    var (markWidth, markHeight) = action.NormalizedWidth > 0 && action.NormalizedHeight > 0
-                        ? CaptureProjection.ToScreenSize(action.NormalizedWidth, action.NormalizedHeight, capture)
-                        : (0, 0);
-                    ShowGuidanceOverlay(
-                        mode, targetX, targetY, cue, index + 1, action, plan.Scope, markWidth, markHeight);
-                }
-                else if (action.Kind != DesktopActionKind.Wait)
-                {
-                    _log.Info($"Could not preview desktop target: {targetError}");
-                }
-
-                // High-risk actions stop here and wait for a person. The safety
-                // engine has always been able to say one needs confirming;
-                // until now nothing asked, so it was classified and then run.
-                if (!await ConfirmIfRequiredAsync(action, mode, cancellationToken))
-                {
-                    _log.Info($"Declined by the user: {action.Kind} {Shorten(action.Text ?? string.Empty, 80)}");
-                    feedback.Add(new ActionExecutionFeedback(
-                        actionId, action.Kind, false, "You declined this step, so Metis stopped."));
-                    SetStatus("Stopped — you declined that step.");
-                    break;
-                }
-
-                var queuedAction = action.Kind == DesktopActionKind.Wait
-                    ? action
-                    : action with { DelayMilliseconds = Math.Max(action.DelayMilliseconds, 260) };
-                var result = await _automationPipeline.EnqueueAsync(queuedAction, capture, cancellationToken);
-                _log.Info($"Desktop action {index + 1}/{actions.Length}: {result.Message}");
-                feedback.Add(new ActionExecutionFeedback(actionId, action.Kind, result.Success, result.Message));
-                if (!result.Success)
-                {
-                    return new PlanExecutionOutcome(
-                        feedback,
-                        NeedsObservation: true,
-                        Finished: false,
-                        Checkpoint: $"Action '{actionId}' failed. Inspect the fresh screen before choosing a recovery step.",
-                        PendingActionIds: pendingActionIds,
-                        WaitBeforeObservation: TimeSpan.FromMilliseconds(250));
-                }
-
-                if (result.ScreenX is { } completedX && result.ScreenY is { } completedY)
-                {
-                    // Restart the five-second hold after the command completes.
-                    CompanionGuidanceRequested?.Invoke(
-                        this,
-                        new CompanionGuidance(
-                            completedX,
-                            completedY,
-                            CreateGuidanceCue(plan.BubbleCue, action),
-                            TimeSpan.FromSeconds(5)));
-                }
-
-                if (RequiresFreshObservationAfter(action))
-                {
-                    return new PlanExecutionOutcome(
-                        feedback,
-                        NeedsObservation: true,
-                        Finished: false,
-                        Checkpoint: $"Action '{actionId}' may have changed the desktop. Reobserve before continuing.",
-                        PendingActionIds: pendingActionIds,
-                        WaitBeforeObservation: TimeSpan.FromMilliseconds(350));
-                }
-            }
-            catch (OperationCanceledException)
-            {
-                throw;
-            }
-            catch (Exception exception)
-            {
-                var message = $"Metis could not complete '{actionLabels[index]}'. {exception.Message}";
-                _log.Error(message, exception);
-                feedback.Add(new ActionExecutionFeedback(actionId, action.Kind, false, message));
-                return new PlanExecutionOutcome(
-                    feedback,
-                    NeedsObservation: true,
-                    Finished: false,
-                    Checkpoint: $"Action '{actionId}' threw an error. Inspect the fresh screen and recover safely.",
-                    PendingActionIds: pendingActionIds,
-                    WaitBeforeObservation: TimeSpan.FromMilliseconds(250));
-            }
-        }
-
-        var needsPostBatchVerification = feedback.Any(result => result.Success && IsDesktopMutation(result.Kind));
-        return new PlanExecutionOutcome(
-            feedback,
-            NeedsObservation: needsPostBatchVerification ||
-                              string.Equals(plan.Status, "continue", StringComparison.OrdinalIgnoreCase),
-            Finished: !needsPostBatchVerification &&
-                      string.Equals(plan.Status, "done", StringComparison.OrdinalIgnoreCase),
-            Checkpoint: needsPostBatchVerification
-                ? "The current batch changed the desktop. Verify the fresh screen before finishing."
-                : "The current action batch completed.",
-            PendingActionIds: [],
-            WaitBeforeObservation: TimeSpan.Zero);
-    }
-
-    private static string BuildClosedLoopReplanPrompt(
-        string originalPrompt,
-        AssistantPlan previousPlan,
-        PlanExecutionOutcome outcome,
-        int replanNumber)
-    {
-        var state = JsonSerializer.Serialize(new
-        {
-            protocol = "metis.closed_loop.v1",
-            original_goal = originalPrompt,
-            plan_id = previousPlan.PlanId,
-            replan_number = replanNumber,
-            previous_status = previousPlan.Status,
-            checkpoint = outcome.Checkpoint,
-            execution_results = outcome.Feedback.Select(result => new
-            {
-                action_id = result.ActionId,
-                action_type = ToProtocolActionName(result.Kind),
-                success = result.Success,
-                message = result.Message
-            }),
-            discarded_unexecuted_action_ids = outcome.PendingActionIds
-        });
-
-        return $"""
-            closed_loop_replan: yes
-            screen_capture_attached: yes
-            A new screenshot of the current desktop is attached to this request. Inspect it before answering.
-            Because you are inspecting that fresh screenshot, screen_observed must be true in your reply. Returning false here discards the work already completed.
-            Continue the original desktop goal using the fresh attached screenshot and the trusted execution feedback below.
-            Do not assume that an unexecuted action occurred. Reissue it only if the new screen proves it is still appropriate.
-            Return only the next small reliable action batch. Observe again after any screen-changing action and finish only after visible verification.
-            If the goal already looks complete in the attached screenshot, return a finish action with status done rather than no actions at all.
-
-            closed_loop_state_json:
-            {state}
-            """;
-    }
-
-    /// <summary>
-    /// Applies the operating mode and the safety engine to a plan the provider
-    /// returned. Non-mutating steps such as pointing survive in every mode, so
-    /// Learn and Guide still show the user where to go.
-    /// </summary>
-    private AssistantPlan ApplyModeAndSafety(
-        AssistantPlan plan,
-        OperatingMode mode,
-        bool userAskedForAction,
-        out string? withheldNotice)
-    {
-        withheldNotice = null;
-        if (plan.Actions.Count == 0)
-        {
-            return plan;
-        }
-
-        var permitted = new List<DesktopAction>(plan.Actions.Count);
-        string? firstRefusal = null;
-        foreach (var action in plan.Actions)
-        {
-            if (_safety.IsPermitted(action, mode, userAskedForAction, out var reason))
-            {
-                permitted.Add(action);
-                continue;
-            }
-
-            firstRefusal ??= reason;
-            _log.Info($"Withheld {action.Kind} in {mode} mode: {reason}");
-        }
-
-        var capabilities = ModePolicy.For(mode);
-        var trimmed = permitted.Take(capabilities.MaxActionsPerBatch).ToArray();
-        if (firstRefusal is not null)
-        {
-            withheldNotice = firstRefusal;
-        }
-
-        return plan with { Actions = trimmed };
     }
 
     /// <summary>
@@ -2042,9 +1501,7 @@ public sealed class MetisRuntime : IDisposable
 
     private async Task<string?> DescribeSkillsAsync(string? application, CancellationToken cancellationToken)
     {
-        // Skills are only worth tracking while Metis is teaching; when it does
-        // the work itself the user practised nothing.
-        if (!Settings.MemoryEnabled || !IntentPolicy.For(LastIntent.Intent).TrackSkills)
+        if (!Settings.MemoryEnabled)
         {
             return null;
         }
@@ -2070,7 +1527,6 @@ public sealed class MetisRuntime : IDisposable
     private async Task RecordTurnMemoryAsync(
         AgentTaskState task,
         AssistantPlan plan,
-        OperatingMode mode,
         string? application,
         bool success,
         CancellationToken cancellationToken)
@@ -2083,7 +1539,7 @@ public sealed class MetisRuntime : IDisposable
         try
         {
             _taskContext.RecordProgress(
-                plan.Actions.Count == 0 ? null : $"{plan.Actions.Count} step(s) in {mode} mode",
+                plan.LessonSteps.Count == 0 ? null : $"{plan.LessonSteps.Count} step lesson",
                 plan.BubbleCue ?? plan.Goal);
 
             await _memory.RecordTaskOutcomeAsync(
@@ -2092,10 +1548,10 @@ public sealed class MetisRuntime : IDisposable
                 plan.SpokenText,
                 cancellationToken);
 
-            if (ModePolicy.For(mode).TrackSkills && !string.IsNullOrWhiteSpace(plan.Goal))
+            if (!string.IsNullOrWhiteSpace(plan.Goal))
             {
-                // In Learn and Guide the user performed the step themselves, so
-                // the guidance flag records whether Metis had to show them.
+                // The user performed the step themselves, so the guidance flag
+                // records that Metis had to show them.
                 var progress = await _memory.RecordSkillUseAsync(
                     application ?? "Windows",
                     plan.Goal!,
@@ -2201,9 +1657,17 @@ public sealed class MetisRuntime : IDisposable
     {
         SetActivity(MetisActivityKind.Verifying, step.Instruction, lesson.StepNumber, lesson.Steps.Count);
 
+        // A drawn step goes nowhere near the annotation resolver. That resolver
+        // finds real controls, and it would succeed at that even here — marking
+        // whatever the user happens to have open underneath an invented shape.
+        if (step.HasDiagram)
+        {
+            return await PresentDiagramStepAsync(lesson, step, cancellationToken);
+        }
+
         var hold = AnnotationDuration.Standard;
 
-        if (step.HasTarget && _lastLessonCapture is { } capture)
+        if (LessonStepRouting.RequiresRealScreenAnnotation(step) && _lastLessonCapture is { } capture)
         {
             // The hold is decided from the target once it has been resolved, so
             // it reflects the control's real size rather than the model's guess
@@ -2266,6 +1730,73 @@ public sealed class MetisRuntime : IDisposable
         return remaining > TimeSpan.Zero ? remaining : TimeSpan.Zero;
     }
 
+    /// <summary>
+    /// Shows one stage of a drawn explanation: adds a shape to the canvas and
+    /// says the sentence that goes with it.
+    ///
+    /// The counterpart to <see cref="PresentLessonStepAsync"/>'s annotation
+    /// branch, and deliberately sharing none of it. There is no screenshot to
+    /// resolve against, no control to snap to, and no ghost cursor to fly —
+    /// there is a blank canvas and a shape to put on it.
+    /// </summary>
+    private async Task<TimeSpan> PresentDiagramStepAsync(
+        LessonState lesson,
+        LessonStep step,
+        CancellationToken cancellationToken)
+    {
+        var hold = DiagramStepDuration.For(step);
+
+        if (Settings.VisualGuidanceEnabled)
+        {
+            var canvas = CurrentDiagramCanvas();
+            var mark = DiagramMarkBuilder.Build(step, canvas);
+            if (mark is not null)
+            {
+                // The first shape replaces whatever was on screen; the ones
+                // after it join what the earlier steps drew, which is what makes
+                // a diagram build up rather than flicker between stages.
+                var accumulate = lesson.CurrentIndex > 0 &&
+                                 lesson.Steps[lesson.CurrentIndex - 1].HasDiagram;
+
+                GuidanceOverlayRequested?.Invoke(
+                    this,
+                    new GuidanceOverlayRequest([mark], DimBackground: false, hold, accumulate));
+
+                _log.Info(
+                    $"Diagram step {lesson.StepNumber}: drew {DiagramShapeKinds.Name(step.Diagram)} " +
+                    $"at {mark.ScreenX},{mark.ScreenY} on a {canvas.Side}px canvas, " +
+                    $"{(accumulate ? "added to" : "replacing")} the canvas, held {hold.TotalSeconds:0.0}s.");
+            }
+        }
+
+        var line = string.IsNullOrWhiteSpace(step.Why) ? step.Instruction : $"{step.Instruction} {step.Why}";
+        MessageAdded?.Invoke(
+            this,
+            new AssistantMessage(AssistantRole.Metis, $"Step {lesson.StepNumber}. {line}", DateTimeOffset.Now));
+
+        var spokenFrom = DateTimeOffset.UtcNow;
+        await SpeakLessonLineAsync(line, cancellationToken);
+        var spent = DateTimeOffset.UtcNow - spokenFrom;
+
+        var remaining = hold - spent;
+        return remaining > TimeSpan.Zero ? remaining : TimeSpan.Zero;
+    }
+
+    /// <summary>
+    /// Where a diagram is drawn: a square on the primary monitor.
+    ///
+    /// Square so shapes keep their proportions, and one monitor so a shape
+    /// never straddles the gap between two screens. Deliberately unrelated to
+    /// whatever window was last captured — a diagram has nothing to do with the
+    /// app the user happens to have open.
+    /// </summary>
+    private static DiagramCanvas CurrentDiagramCanvas() => DiagramCanvas.Centred(
+        0,
+        0,
+        (int)System.Windows.SystemParameters.PrimaryScreenWidth,
+        (int)System.Windows.SystemParameters.PrimaryScreenHeight,
+        0.6);
+
     private async Task SpeakLessonLineAsync(string line, CancellationToken cancellationToken)
     {
         StartCompanionResponse(line, null, showBubble: true);
@@ -2276,14 +1807,17 @@ public sealed class MetisRuntime : IDisposable
 
         try
         {
-            var audio = await _piper.SynthesizeSpeechAsync(
-                ResolveLocalPath(Settings.PiperExecutablePath),
-                ResolveLocalPath(Settings.PiperVoiceModelPath),
-                line,
-                cancellationToken);
+            // Through the chosen voice, not Piper. Every step of a walkthrough
+            // comes through here, so hardcoding one engine silenced the whole
+            // feature on any machine set to a different one.
+            var audio = await SynthesizeTextAsync(line, null, cancellationToken);
             if (audio is not null)
             {
-                await _audioPlayback.PlayAsync(audio, cancellationToken);
+                await _audioPlayback.PlayAsync(audio, AudioPriority.Speech, cancellationToken);
+            }
+            else
+            {
+                _log.Info($"No speech audio came back for a lesson step, so it was shown but not spoken: \"{line}\"");
             }
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
@@ -2387,72 +1921,6 @@ public sealed class MetisRuntime : IDisposable
             capture.ScreenTop + (int)Math.Round(normalizedY / 1000d * height));
     }
 
-    /// <summary>
-    /// Locates the control the user asked about and marks it with its real
-    /// bounds. Windows knows exactly where its own controls are, so this is
-    /// both more reliable than a model's coordinate guess and exact enough for
-    /// the highlight to take the control's shape.
-    /// </summary>
-    private async Task PointAtNamedControlAsync(
-        string request,
-        AssistantPlan plan,
-        CancellationToken cancellationToken)
-    {
-        if (!Settings.VisualGuidanceEnabled)
-        {
-            return;
-        }
-
-        UiElementHit? hit;
-        try
-        {
-            // The model's own words usually name the control better than the
-            // raw request does, so both are searched.
-            hit = await _uiAutomation.FindElementAsync(request, cancellationToken)
-                  ?? await _uiAutomation.FindElementAsync(plan.SpokenText, cancellationToken);
-        }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-        {
-            throw;
-        }
-        catch (Exception exception)
-        {
-            _log.Error("Metis could not search the screen for that control.", exception);
-            return;
-        }
-
-        if (hit is null)
-        {
-            _log.Info($"No control on screen matched '{Shorten(request, 80)}', so nothing was highlighted.");
-            return;
-        }
-
-        _log.Info($"Pointing at '{hit.Name}' ({hit.ControlType}) at {hit.ScreenX},{hit.ScreenY}.");
-
-        // These bounds came from Windows, so the mark can be chosen from the
-        // control's true proportions rather than from anybody's estimate.
-        var annotation = AnnotationDirector.Resolve(
-            plan.Scope,
-            hit.ScreenX,
-            hit.ScreenY,
-            hit.Width,
-            hit.Height,
-            hit.Name,
-            AnnotationSource.Element,
-            VirtualScreenArea());
-
-        GuidanceOverlayRequested?.Invoke(
-            this,
-            new GuidanceOverlayRequest(
-                [annotation.ToMark()],
-                DimBackground: false,
-                TimeSpan.FromSeconds(8)));
-
-        CompanionGuidanceRequested?.Invoke(
-            this,
-            new CompanionGuidance(hit.ScreenX, hit.ScreenY, hit.Name, TimeSpan.FromSeconds(8)));
-    }
-
     private static string Shorten(string text, int limit) =>
         text.Length <= limit ? text : text[..limit] + "…";
 
@@ -2507,51 +1975,6 @@ public sealed class MetisRuntime : IDisposable
             new CompanionGuidance(screenX, screenY, label ?? "Look here", TimeSpan.FromSeconds(4)));
     }
 
-    private void ShowGuidanceOverlay(
-        OperatingMode mode,
-        int screenX,
-        int screenY,
-        string? label,
-        int stepNumber,
-        DesktopAction? action,
-        AnnotationScope scope = AnnotationScope.Control,
-        int width = 0,
-        int height = 0)
-    {
-        if (!Settings.VisualGuidanceEnabled ||
-            !IntentPolicy.For(IntentPolicy.FromMode(mode)).ShowsAnnotations)
-        {
-            return;
-        }
-
-        // Fall back to a modest square only when the model gave no extent. The
-        // director then has something to choose a shape from either way.
-        var annotation = AnnotationDirector.Resolve(
-            scope,
-            screenX,
-            screenY,
-            width > 0 ? width : 56,
-            height > 0 ? height : 56,
-            label,
-            AnnotationSource.Estimated,
-            VirtualScreenArea());
-
-        var marks = new List<GuidanceMark> { annotation.ToMark(stepNumber) };
-
-        // An arrow as well as the mark, but only when the mark is small enough
-        // to be missed. Sweeping an arrow at a bracketed window points at
-        // something the user cannot fail to see and clutters the screen doing it.
-        if (action?.Kind == DesktopActionKind.MovePointer &&
-            annotation.Mark is GuidanceMarkKind.FocusRing or GuidanceMarkKind.Capsule)
-        {
-            marks.Add(new GuidanceMark(GuidanceMarkKind.Arrow, screenX, screenY));
-        }
-
-        GuidanceOverlayRequested?.Invoke(
-            this,
-            new GuidanceOverlayRequest(marks, IntentPolicy.FromMode(mode) == AssistanceIntent.Teach, TimeSpan.FromSeconds(5)));
-    }
-
     /// <summary>
     /// The area of the whole virtual desktop, for the director's "is this
     /// large?" tests. Marks are drawn in virtual-desktop pixels, so this is the
@@ -2560,6 +1983,86 @@ public sealed class MetisRuntime : IDisposable
     private static long VirtualScreenArea() =>
         (long)Math.Max(1d, System.Windows.SystemParameters.VirtualScreenWidth) *
         (long)Math.Max(1d, System.Windows.SystemParameters.VirtualScreenHeight);
+
+    /// <summary>
+    /// Marks what a single-reply answer was pointing at, and rests the
+    /// companion beside it.
+    ///
+    /// The reply either named a spot itself, or it answered in prose about
+    /// something the user asked to be shown — in which case Metis searches the
+    /// accessibility tree for the control the words describe, so a mark still
+    /// lands on the real thing rather than nowhere. This is the whole of what a
+    /// non-lesson turn does to the screen: it points, and the user acts.
+    /// </summary>
+    private async Task PointAtAnswerAsync(
+        string request,
+        AssistantPlan plan,
+        CancellationToken cancellationToken)
+    {
+        if (!Settings.VisualGuidanceEnabled || _lastLessonCapture is null && !plan.HasAnnotation)
+        {
+            // No capture was kept from this turn and the reply named no spot;
+            // there is nothing to resolve a mark against.
+        }
+
+        var capture = _lastLessonCapture;
+        if (capture is null)
+        {
+            return;
+        }
+
+        ResolvedAnnotation? resolved = null;
+        if (plan.HasAnnotation)
+        {
+            resolved = await AnnotateAsync(plan.ToAnnotationTarget(), capture, 0, cancellationToken);
+        }
+
+        // The model answered in words without a spot. Find the control its
+        // words describe and point at that, so "where is save?" still gets a
+        // mark rather than only a sentence.
+        if (resolved is null)
+        {
+            UiElementHit? hit;
+            try
+            {
+                hit = await _uiAutomation.FindElementAsync(request, cancellationToken)
+                      ?? await _uiAutomation.FindElementAsync(plan.SpokenText, cancellationToken);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception exception)
+            {
+                _log.Error("Metis could not search the screen for that control.", exception);
+                return;
+            }
+
+            if (hit is null)
+            {
+                return;
+            }
+
+            var target = new AnnotationTarget(
+                AnnotationScope.Control,
+                Label: hit.Name,
+                ElementName: hit.Name);
+            resolved = await AnnotateAsync(target, capture, 0, cancellationToken);
+            if (resolved is null)
+            {
+                ShowPointerArrow(hit.ScreenX, hit.ScreenY, hit.Name);
+                return;
+            }
+        }
+
+        CompanionGuidanceRequested?.Invoke(
+            this,
+            new CompanionGuidance(
+                resolved.ScreenX,
+                resolved.ScreenY,
+                plan.Label ?? "Here",
+                AnnotationDuration.For(resolved, VirtualScreenArea())));
+    }
 
     /// <summary>
     /// Resolves an annotation against the real screen and draws it.
@@ -2616,96 +2119,8 @@ public sealed class MetisRuntime : IDisposable
         return resolved;
     }
 
-    private static bool RequiresFreshObservationAfter(DesktopAction action) => action.Kind switch
-    {
-        DesktopActionKind.LeftClick or DesktopActionKind.DoubleClick or DesktopActionKind.RightClick or
-        DesktopActionKind.OpenApp or DesktopActionKind.OpenUrl => true,
-        DesktopActionKind.KeyPress when action.Key is not null =>
-            action.Key.Equals("enter", StringComparison.OrdinalIgnoreCase) ||
-            action.Key.Equals("return", StringComparison.OrdinalIgnoreCase) ||
-            action.Key.StartsWith("alt+", StringComparison.OrdinalIgnoreCase) ||
-            action.Key.StartsWith("win+", StringComparison.OrdinalIgnoreCase),
-        _ => false
-    };
-
-    private static bool IsNonMutatingAction(DesktopActionKind kind) => kind is
-        DesktopActionKind.MovePointer or DesktopActionKind.Wait or DesktopActionKind.WaitForWindow or
-        DesktopActionKind.WaitForElement or DesktopActionKind.WaitForText or DesktopActionKind.Observe or
-        DesktopActionKind.Verify or DesktopActionKind.Finish;
-
-    private static bool IsDesktopMutation(DesktopActionKind kind) => kind is
-        DesktopActionKind.LeftClick or DesktopActionKind.DoubleClick or DesktopActionKind.RightClick or
-        DesktopActionKind.TypeText or DesktopActionKind.KeyPress or DesktopActionKind.OpenApp or
-        DesktopActionKind.OpenUrl;
-
-    private static string ToProtocolActionName(DesktopActionKind kind) => kind switch
-    {
-        DesktopActionKind.MovePointer => "move_pointer",
-        DesktopActionKind.LeftClick => "left_click",
-        DesktopActionKind.DoubleClick => "double_click",
-        DesktopActionKind.RightClick => "right_click",
-        DesktopActionKind.TypeText => "type_text",
-        DesktopActionKind.KeyPress => "key_press",
-        DesktopActionKind.OpenApp => "open_app",
-        DesktopActionKind.OpenUrl => "open_url",
-        DesktopActionKind.Wait => "wait",
-        DesktopActionKind.WaitForWindow => "wait_for_window",
-        DesktopActionKind.WaitForElement => "wait_for_element",
-        DesktopActionKind.WaitForText => "wait_for_text",
-        DesktopActionKind.Observe => "observe",
-        DesktopActionKind.Verify => "verify",
-        DesktopActionKind.Finish => "finish",
-        _ => kind.ToString().ToLowerInvariant()
-    };
-
-    private static bool IsHighImpactRequest(string text)
-    {
-        string[] blockedTerms =
-        [
-            "buy", "purchase", "pay", "order", "delete", "remove", "submit", "send",
-            "password", "security", "permission", "authorize", "admin", "install", "uninstall", "download",
-            "sign in", "log in", "bank", "transfer", "confirm payment"
-        ];
-        return blockedTerms.Any(term => text.Contains(term, StringComparison.OrdinalIgnoreCase));
-    }
-
     private static bool RequiresScreenObservation(string text) =>
         RequestIntent.RequiresScreenObservation(text);
-
-    private static bool IsDesktopActionRequest(string text) =>
-        RequestIntent.IsComputerActionRequest(text);
-
-    private static string DescribeAction(DesktopAction action) => action.Kind switch
-    {
-        DesktopActionKind.MovePointer => "Moving Metis to the control",
-        DesktopActionKind.LeftClick => "Clicking the control",
-        DesktopActionKind.DoubleClick => "Opening the control",
-        DesktopActionKind.RightClick => "Opening the context menu",
-        DesktopActionKind.TypeText => "Typing the requested text",
-        DesktopActionKind.KeyPress => "Pressing the navigation key",
-        DesktopActionKind.OpenApp => "Opening the requested app",
-        DesktopActionKind.OpenUrl => "Opening the requested page",
-        DesktopActionKind.Wait => "Waiting for the screen",
-        DesktopActionKind.WaitForWindow => "Waiting for the requested window",
-        DesktopActionKind.WaitForElement => "Waiting for the requested control",
-        DesktopActionKind.WaitForText => "Waiting for the requested text",
-        DesktopActionKind.Observe => "Checking the updated screen",
-        DesktopActionKind.Verify => "Verifying the result",
-        DesktopActionKind.Finish => "Finishing the task",
-        _ => "Working"
-    };
-
-    private static string CreateGuidanceCue(string? bubbleCue, DesktopAction action)
-    {
-        var cue = !string.IsNullOrWhiteSpace(bubbleCue)
-            ? bubbleCue.Trim()
-            : !string.IsNullOrWhiteSpace(action.Label)
-                ? action.Label.Trim()
-                : action.Kind == DesktopActionKind.MovePointer
-                    ? "Press here"
-                    : "Working here";
-        return cue.Length <= 32 ? cue : cue[..32];
-    }
 
     private string RequireOpenAiApiKey()
     {
@@ -2952,10 +2367,41 @@ public sealed class MetisRuntime : IDisposable
         }
     }
 
-    private async Task<SpeechAudio?> SynthesizeWithProviderAsync(
+    private Task<SpeechAudio?> SynthesizeWithProviderAsync(
         ProviderTurnResult response,
+        CancellationToken cancellationToken) =>
+        SynthesizeTextAsync(response.Text, response.Provider, cancellationToken);
+
+    /// <summary>
+    /// Speaks any line through whichever voice the user chose.
+    ///
+    /// This used to exist only for the main reply. Lesson steps and spoken
+    /// errors called Piper directly, so on a machine set to any other voice —
+    /// which is most machines, since Piper needs a separate download — every
+    /// step of a walkthrough and every spoken error was silent, and the log
+    /// filled with "the Piper executable was not found". The reply worked, so
+    /// it read as the voice cutting out rather than as a setting being ignored.
+    /// </summary>
+    private async Task<SpeechAudio?> SynthesizeTextAsync(
+        string text,
+        string? answeringProvider,
         CancellationToken cancellationToken)
     {
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return null;
+        }
+
+        var response = new ProviderTurnResult(answeringProvider ?? Settings.AiProvider, string.Empty, text);
+
+        if (Settings.TextToSpeechProvider == "Windows")
+        {
+            return await _windowsVoice.SynthesizeSpeechAsync(
+                Settings.WindowsVoiceName,
+                response.Text,
+                cancellationToken);
+        }
+
         if (Settings.TextToSpeechProvider == "Piper")
         {
             return await _piper.SynthesizeSpeechAsync(
@@ -3015,6 +2461,12 @@ public sealed class MetisRuntime : IDisposable
                 cancellationToken);
         }
 
+        // Nothing matched: no offline voice selected, and no cloud key to fall
+        // back on. Silent by necessity, but no longer silent about being
+        // silent — this path produced no audio and no explanation anywhere.
+        _log.Info(
+            $"No voice is available: text-to-speech is set to '{Settings.TextToSpeechProvider}' and no usable " +
+            $"provider key was found for '{response.Provider}'. Nothing was spoken.");
         return null;
     }
 
@@ -3153,6 +2605,15 @@ public sealed class MetisRuntime : IDisposable
     /// provider is unreachable, unauthorised, or out of quota, and a cloud
     /// voice would fail for the same reason.
     /// </summary>
+    /// <summary>
+    /// Whether the offline voice is actually present. Checked rather than
+    /// assumed, because Piper ships separately and its absence is the normal
+    /// case rather than a fault.
+    /// </summary>
+    private bool HasPiperInstalled() =>
+        File.Exists(ResolveLocalPath(Settings.PiperExecutablePath)) &&
+        File.Exists(ResolveLocalPath(Settings.PiperVoiceModelPath));
+
     private void SpeakErrorAloud(string message)
     {
         if (_disposed)
@@ -3176,7 +2637,7 @@ public sealed class MetisRuntime : IDisposable
                 // truncated the sentence explaining what actually went wrong.
                 if (cue is not null)
                 {
-                    await _audioPlayback.PlayAsync(cue, CancellationToken.None);
+                    await _audioPlayback.PlayAsync(cue, AudioPriority.Cue, CancellationToken.None);
                 }
 
                 if (spoken.Length == 0)
@@ -3184,14 +2645,30 @@ public sealed class MetisRuntime : IDisposable
                     return;
                 }
 
-                var audio = await _piper.SynthesizeSpeechAsync(
-                    ResolveLocalPath(Settings.PiperExecutablePath),
-                    ResolveLocalPath(Settings.PiperVoiceModelPath),
-                    spoken,
-                    CancellationToken.None);
+                // Offline first, for the reason above. But Piper is a separate
+                // download most machines do not have, and calling it anyway
+                // meant every error logged a second error about the missing
+                // executable — noise that buried the fault worth reading.
+                // Offline first, for the reason above — and now with a voice
+                // that is actually there. Piper when it has been installed,
+                // otherwise the one built into Windows, which needs no download
+                // and no network. That matters most here: the errors worth
+                // hearing aloud are the ones where the cloud is what failed, so
+                // a cloud voice would fail the same way and say nothing.
+                var audio = HasPiperInstalled()
+                    ? await _piper.SynthesizeSpeechAsync(
+                        ResolveLocalPath(Settings.PiperExecutablePath),
+                        ResolveLocalPath(Settings.PiperVoiceModelPath),
+                        spoken,
+                        CancellationToken.None)
+                    : await _windowsVoice.SynthesizeSpeechAsync(
+                        Settings.WindowsVoiceName,
+                        spoken,
+                        CancellationToken.None);
+
                 if (audio is not null)
                 {
-                    await _audioPlayback.PlayAsync(audio, CancellationToken.None);
+                    await _audioPlayback.PlayAsync(audio, AudioPriority.Speech, CancellationToken.None);
                 }
             }
             catch (Exception exception)
@@ -3225,7 +2702,7 @@ public sealed class MetisRuntime : IDisposable
         {
             try
             {
-                await _audioPlayback.PlayAsync(audio, CancellationToken.None);
+                await _audioPlayback.PlayAsync(audio, AudioPriority.Cue, CancellationToken.None);
             }
             catch
             {
@@ -3401,7 +2878,6 @@ public sealed class MetisRuntime : IDisposable
 
     private static AssistantState ClassifyErrorState(Exception exception) => exception switch
     {
-        AutomationExecutionException => AssistantState.AutomationError,
         GeminiProviderException { Kind: GeminiErrorKind.Network or GeminiErrorKind.ServiceUnavailable } =>
             AssistantState.NetworkError,
         OpenAiProviderException { Kind: OpenAiErrorKind.Network or OpenAiErrorKind.ServiceUnavailable } =>
@@ -3468,7 +2944,6 @@ public sealed class MetisRuntime : IDisposable
         _pushToTalk.ContextActivationUpgraded -= OnContextActivationUpgraded;
         _recorder.LevelChanged -= OnAudioLevelChanged;
         _pushToTalk.Dispose();
-        _automationPipeline.Dispose();
         _recorder.Dispose();
         _audioPlayback.Dispose();
         (_gemini as IDisposable)?.Dispose();
@@ -3490,7 +2965,6 @@ public enum AssistantRole
     Error
 }
 
-
 public sealed record AssistantMessage(AssistantRole Role, string Text, DateTimeOffset CreatedAt);
 
 public sealed record CompanionResponse(string Text, TimeSpan? SpeechDuration, bool ShowBubble = true);
@@ -3501,18 +2975,3 @@ internal sealed record ProviderTurnResult(
     string Text,
     AssistantPlan? Plan = null);
 
-internal sealed record PlanExecutionOutcome(
-    IReadOnlyList<ActionExecutionFeedback> Feedback,
-    bool NeedsObservation,
-    bool Finished,
-    string Checkpoint,
-    IReadOnlyList<string> PendingActionIds,
-    TimeSpan WaitBeforeObservation);
-
-internal sealed class AutomationExecutionException : Exception
-{
-    public AutomationExecutionException(string message, Exception? innerException = null)
-        : base(message, innerException)
-    {
-    }
-}

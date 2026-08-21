@@ -114,11 +114,11 @@ public sealed class TruncatedPlanTests
     }
 
     [Fact]
-    public void A_truncated_reply_leaves_no_actions_behind()
+    public void A_truncated_reply_leaves_no_steps_behind()
     {
         var plan = AssistantPlanParser.Parse(TruncatedBeforeSpokenText, hasScreenshot: true);
 
-        Assert.Empty(plan.Actions);
+        Assert.False(plan.HasAnnotation);
         Assert.Empty(plan.LessonSteps);
     }
 

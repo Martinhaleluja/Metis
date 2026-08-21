@@ -18,8 +18,12 @@ public sealed class SetupWindowMarkupTests
         Assert.Equal(
             ["Native", "Whisper.cpp", "AssemblyAI"],
             ComboValues(document, "SpeechToTextProviderBox"));
+        // "Windows" sits second because it is the offline voice that is always
+        // present. Piper is offline too, but ships as a separate executable and
+        // a voice model the installer does not carry, so it is unavailable on a
+        // fresh install and cannot be the offline option a user is steered to.
         Assert.Equal(
-            ["Native", "Piper", "Chatterbox-Nano", "ElevenLabs"],
+            ["Native", "Windows", "Piper", "Chatterbox-Nano", "ElevenLabs"],
             ComboValues(document, "TextToSpeechProviderBox"));
     }
 
@@ -30,11 +34,13 @@ public sealed class SetupWindowMarkupTests
     /// is a question anyone can answer on day one.
     /// </summary>
     [Fact]
-    public void Setup_offers_exactly_learn_and_autopilot()
+    public void Setup_no_longer_offers_a_mode_choice()
     {
         var document = LoadMarkup();
 
-        Assert.Equal(["Learn", "Autopilot"], ComboValues(document, "OperatingModeBox"));
+        // Metis is a learning tool now: there is no Autopilot, and no mode to
+        // pick. The mode picker is gone from Setup entirely.
+        Assert.DoesNotContain(document.Descendants(), element => NameOf(element) == "OperatingModeBox");
     }
 
     [Fact]

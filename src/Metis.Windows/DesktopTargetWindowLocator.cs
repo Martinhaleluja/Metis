@@ -43,6 +43,29 @@ internal static class DesktopTargetWindowLocator
         return nint.Zero;
     }
 
+    /// <summary>
+    /// The window the user is actually working in.
+    ///
+    /// Needed because a lesson's coordinates age: they were estimated from the
+    /// screen as it looked when the walkthrough was planned, so once a step has
+    /// opened something the point no longer lands in the right window. Where
+    /// the target is named, the window in front is a far better place to look
+    /// for it than wherever a stale coordinate happens to fall. Metis's own
+    /// windows are skipped for the same reason they are skipped above — the
+    /// overlay and the companion sit on top of everything.
+    /// </summary>
+    internal static nint Foreground()
+    {
+        var window = GetForegroundWindow();
+        if (window == nint.Zero || !IsWindowVisible(window) || IsIconic(window))
+        {
+            return nint.Zero;
+        }
+
+        _ = GetWindowThreadProcessId(window, out var processId);
+        return processId == 0 || processId == (uint)Environment.ProcessId ? nint.Zero : window;
+    }
+
     [StructLayout(LayoutKind.Sequential)]
     private struct NativeRect
     {
@@ -51,6 +74,9 @@ internal static class DesktopTargetWindowLocator
         public int Right;
         public int Bottom;
     }
+
+    [DllImport("user32.dll")]
+    private static extern nint GetForegroundWindow();
 
     [DllImport("user32.dll")]
     private static extern nint GetTopWindow(nint window);

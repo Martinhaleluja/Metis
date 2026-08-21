@@ -203,15 +203,6 @@
                      Only shown on hover so the resting notch stays quiet. -->
                 <StackPanel x:Name="HoverControls" Orientation="Horizontal" Opacity="0"
                             HorizontalAlignment="Right" VerticalAlignment="Center" Margin="0,0,10,0">
-                    <!-- The mode decides how much Metis does, so it belongs
-                         one click away rather than buried in the tray menu. -->
-                    <Border x:Name="ModeChip" CornerRadius="5" Padding="7,2" Margin="0,0,10,0"
-                            Background="#26FFFFFF" Cursor="Hand" VerticalAlignment="Center"
-                            ToolTip="Click to change how much Metis does"
-                            MouseLeftButtonUp="ModeChip_OnClick">
-                        <TextBlock x:Name="ModeChipText" Text="GUIDE" FontSize="9.5" FontWeight="Bold"
-                                   Foreground="{DynamicResource NotchTextBrush}" />
-                    </Border>
                     <TextBlock x:Name="Chevron" Text="⌄" FontSize="15" Foreground="{DynamicResource NotchChromeBrush}"
                                Margin="0,-3,10,0" VerticalAlignment="Center" />
                     <TextBlock Text="⚙" FontSize="13" Foreground="{DynamicResource NotchChromeBrush}" VerticalAlignment="Center"

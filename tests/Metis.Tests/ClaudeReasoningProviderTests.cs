@@ -22,7 +22,7 @@ public sealed class ClaudeReasoningProviderTests
             observedVersion = request.Headers.GetValues("anthropic-version").Single();
             observedBody = await request.Content!.ReadAsStringAsync();
             return JsonResponse(MessageResponse("""
-                {"screen_observed":true,"spoken_text":"I found it.","bubble_cue":"Press here","actions":[{"type":"move_pointer","x":250,"y":400}]}
+                {"screen_observed":true,"spoken_text":"I found it.","bubble_cue":"Press here","scope":"control","x":250,"y":400,"element":"Settings"}
                 """));
         });
         using var provider = new ClaudeReasoningProvider(new HttpClient(handler));
@@ -47,7 +47,8 @@ public sealed class ClaudeReasoningProviderTests
         Assert.Equal("I found it.", result.Text);
         Assert.Equal("Press here", result.Plan.BubbleCue);
         Assert.True(result.Plan.ScreenObserved);
-        Assert.Equal(DesktopActionKind.MovePointer, Assert.Single(result.Plan.Actions).Kind);
+        Assert.True(result.Plan.HasAnnotation);
+        Assert.Equal(250, result.Plan.NormalizedX);
     }
 
     [Fact]

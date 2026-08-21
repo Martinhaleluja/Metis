@@ -13,7 +13,7 @@
 #define AppName "Metis"
 ; Credited on the setup wizard, in Add/Remove Programs, and in the file
 ; properties of both the installer and the application.
-#define AppPublisher "Martin Nakasole (developer) and Lamek Hidengwa (designer)"
+#define AppPublisher "Martin Nakasole"
 #define AppExeName "Metis.exe"
 #define AppUrl "https://github.com/Martinhaleluja/Metis"
 

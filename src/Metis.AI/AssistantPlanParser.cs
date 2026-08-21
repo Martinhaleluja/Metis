@@ -9,19 +9,9 @@ namespace Metis.AI;
 /// </summary>
 public static class AssistantPlanParser
 {
-    private const int MaxActions = 6;
-    private const int MaxWaitMilliseconds = 10_000;
     private const int MaxBubbleCueLength = 80;
     private const int MaxLabelLength = 80;
-    private const int MaxAutomationIdLength = 160;
-    private const int MaxTypedTextLength = 4_000;
-    private const int MaxAppNameLength = 100;
-    private const int MaxUrlLength = 2_048;
-    private const int MaxKeyLength = 32;
-    private const int MaxActionIdLength = 80;
-    private const int MaxPlanIdLength = 120;
     private const int MaxGoalLength = 2_000;
-    private const int MaxExpectedStateLength = 500;
 
     /// <summary>
     /// A run of text to underline is a phrase, not a paragraph. Long enough for
@@ -63,10 +53,13 @@ public static class AssistantPlanParser
             var spokenText = ReadString(root, "spoken_text", "spokenText") ?? string.Empty;
             var bubbleCue = Shorten(ReadString(root, "bubble_cue", "bubbleCue"), MaxBubbleCueLength);
             var screenObserved = ReadBoolean(root, "screen_observed", "screenObserved") && hasScreenshot;
-            var planId = Shorten(ReadString(root, "plan_id", "planId"), MaxPlanIdLength);
-            var replanNumber = Math.Clamp(ReadInt(root, "replan_number", "replanNumber") ?? 0, 0, 20);
-            var status = NormalizeStatus(ReadString(root, "status"));
             var goal = Shorten(ReadString(root, "goal"), MaxGoalLength);
+
+            // What the user said, when they said it rather than typed it. Metis
+            // reads the intent from these words itself; the model is only
+            // reporting what was on the recording.
+            var heardText = Shorten(
+                ReadString(root, "heard_text", "heardText", "transcript"), MaxGoalLength);
             // The annotation may arrive nested under "annotation" or flattened
             // onto the reply. Both are accepted because both are natural things
             // for a model to produce, and rejecting one costs a mark on screen.
@@ -89,9 +82,20 @@ public static class AssistantPlanParser
             // Check both the originating request and the returned plan. Gemini can
             // receive voice directly, so the generated text may be the only local
             // representation of a spoken sensitive request.
-            var blockRestrictedClicks = ContainsRestrictedClickIntent(userRequest) ||
-                                        ContainsRestrictedClickIntent(json);
-            var actions = ReadActions(root, hasScreenshot, blockRestrictedClicks);
+            // Where the mark goes. These used to ride on a pointer action;
+            // with no actions left they belong to the annotation itself.
+            var markX = ReadInt(annotationRoot, "x", "cx") ?? -1;
+            var markY = ReadInt(annotationRoot, "y", "cy") ?? -1;
+            if (!hasScreenshot || markX is < 0 or > 1000 || markY is < 0 or > 1000)
+            {
+                markX = -1;
+                markY = -1;
+            }
+
+            var markWidth = hasScreenshot ? Math.Clamp(ReadInt(annotationRoot, "w", "width") ?? 0, 0, 1000) : 0;
+            var markHeight = hasScreenshot ? Math.Clamp(ReadInt(annotationRoot, "h", "height") ?? 0, 0, 1000) : 0;
+            var markLabel = Shorten(ReadString(annotationRoot, "label", "target"), MaxLabelLength);
+
             var steps = ReadLessonSteps(root, hasScreenshot);
 
             // A malformed structured response should still produce useful speech, but
@@ -104,16 +108,18 @@ public static class AssistantPlanParser
             return new AssistantPlan(
                 spokenText,
                 bubbleCue,
-                actions,
                 screenObserved,
-                planId,
-                replanNumber,
-                status,
                 goal,
                 steps,
                 scopeName,
                 elementName,
-                annotationText);
+                annotationText,
+                markX,
+                markY,
+                markWidth,
+                markHeight,
+                markLabel,
+                heardText);
         }
         catch (JsonException)
         {
@@ -140,7 +146,7 @@ public static class AssistantPlanParser
         "\"bubble_cue\"", "\"bubbleCue\"",
         "\"plan_id\"", "\"planId\"",
         "\"screen_observed\"", "\"screenObserved\"",
-        "\"actions\"", "\"lesson_steps\"", "\"lessonSteps\""
+        "\"lesson_steps\"", "\"lessonSteps\""
     ];
 
     private static readonly string[] SpokenTextKeys = ["\"spoken_text\"", "\"spokenText\""];
@@ -250,248 +256,6 @@ public static class AssistantPlanParser
         return false;
     }
 
-    private static IReadOnlyList<DesktopAction> ReadActions(
-        JsonElement root,
-        bool hasScreenshot,
-        bool blockRestrictedClicks)
-    {
-        if (!TryGetProperty(root, out var actionsElement, "actions") ||
-            actionsElement.ValueKind != JsonValueKind.Array)
-        {
-            return [];
-        }
-
-        var actions = new List<DesktopAction>(MaxActions);
-        foreach (var element in actionsElement.EnumerateArray())
-        {
-            if (actions.Count >= MaxActions)
-            {
-                break;
-            }
-
-            if (element.ValueKind != JsonValueKind.Object ||
-                !TryReadActionKind(element, out var kind))
-            {
-                continue;
-            }
-
-            var actionId = Shorten(ReadString(element, "id", "action_id", "actionId"), MaxActionIdLength)
-                           ?? $"step-{actions.Count + 1}";
-
-            if (kind == DesktopActionKind.Wait)
-            {
-                var delay = ReadInt(element, "delay_ms", "delayMilliseconds", "delay") ?? 500;
-                actions.Add(new DesktopAction(
-                    kind,
-                    DelayMilliseconds: Math.Clamp(delay, 0, MaxWaitMilliseconds),
-                    Label: Shorten(ReadString(element, "label"), MaxLabelLength),
-                    HasCoordinates: false,
-                    Id: actionId));
-                continue;
-            }
-
-            if (kind is DesktopActionKind.WaitForWindow or DesktopActionKind.WaitForElement or
-                DesktopActionKind.WaitForText or DesktopActionKind.Observe or
-                DesktopActionKind.Verify or DesktopActionKind.Finish)
-            {
-                if (!hasScreenshot && kind != DesktopActionKind.Finish)
-                {
-                    continue;
-                }
-
-                var timeout = Math.Clamp(
-                    ReadInt(element, "timeout_ms", "timeoutMilliseconds", "timeout") ?? 2_000,
-                    0,
-                    MaxWaitMilliseconds);
-                var text = Shorten(ReadString(element, "text", "value"), MaxTypedTextLength);
-                var checkpointAutomationId = Shorten(
-                    ReadString(element, "automation_id", "automationId"),
-                    MaxAutomationIdLength);
-                if (kind == DesktopActionKind.WaitForWindow && string.IsNullOrWhiteSpace(text) ||
-                    kind == DesktopActionKind.WaitForText && string.IsNullOrWhiteSpace(text) ||
-                    kind == DesktopActionKind.WaitForElement &&
-                    string.IsNullOrWhiteSpace(text) && string.IsNullOrWhiteSpace(checkpointAutomationId))
-                {
-                    continue;
-                }
-
-                actions.Add(new DesktopAction(
-                    kind,
-                    Label: Shorten(ReadString(element, "label"), MaxLabelLength),
-                    AutomationId: checkpointAutomationId,
-                    HasCoordinates: false,
-                    Text: text,
-                    Id: actionId,
-                    TimeoutMilliseconds: timeout,
-                    ExpectedState: Shorten(
-                        ReadString(element, "expected_state", "expectedState"),
-                        MaxExpectedStateLength)));
-                continue;
-            }
-
-            if (kind == DesktopActionKind.RunCommand)
-            {
-                // Reviewed here as well as at execution: a command the policy
-                // refuses outright should never reach a confirmation prompt,
-                // because showing the user something they must decline teaches
-                // them to click through the ones that matter.
-                var command = ReadString(element, "command", "text", "value");
-                var review = Metis.Core.Services.SystemCommandPolicy.Review(command);
-                if (!hasScreenshot || blockRestrictedClicks || review.IsRefused)
-                {
-                    continue;
-                }
-
-                actions.Add(new DesktopAction(
-                    kind,
-                    Label: Shorten(ReadString(element, "label"), MaxLabelLength),
-                    HasCoordinates: false,
-                    Text: review.Command,
-                    Id: actionId));
-                continue;
-            }
-
-            if (kind is DesktopActionKind.TypeText or DesktopActionKind.KeyPress or
-                DesktopActionKind.OpenApp or DesktopActionKind.OpenUrl)
-            {
-                if (!hasScreenshot || blockRestrictedClicks)
-                {
-                    continue;
-                }
-
-                var text = kind switch
-                {
-                    DesktopActionKind.TypeText => Shorten(ReadString(element, "text", "value"), MaxTypedTextLength),
-                    DesktopActionKind.OpenApp => Shorten(ReadString(element, "text", "app", "value"), MaxAppNameLength),
-                    DesktopActionKind.OpenUrl => Shorten(ReadString(element, "text", "url", "value"), MaxUrlLength),
-                    _ => null
-                };
-                var key = kind == DesktopActionKind.KeyPress
-                    ? Shorten(ReadString(element, "key", "value"), MaxKeyLength)
-                    : null;
-                if ((kind == DesktopActionKind.TypeText && string.IsNullOrEmpty(text)) ||
-                    (kind == DesktopActionKind.OpenApp && !IsSafeAppName(text)) ||
-                    (kind == DesktopActionKind.OpenUrl && !IsSafeWebUrl(text)) ||
-                    (kind == DesktopActionKind.KeyPress && !IsSupportedKey(key)))
-                {
-                    continue;
-                }
-
-                actions.Add(new DesktopAction(
-                    kind,
-                    Label: Shorten(ReadString(element, "label"), MaxLabelLength),
-                    HasCoordinates: false,
-                    Text: text,
-                    Key: key,
-                    Id: actionId));
-                continue;
-            }
-
-            var automationId = Shorten(
-                ReadString(element, "automation_id", "automationId"),
-                MaxAutomationIdLength);
-            var x = 0;
-            var y = 0;
-            var hasCoordinates = TryReadCoordinate(element, "x", out x) &&
-                                 TryReadCoordinate(element, "y", out y);
-            if (!hasScreenshot ||
-                (blockRestrictedClicks && kind != DesktopActionKind.MovePointer) ||
-                !hasCoordinates)
-            {
-                continue;
-            }
-
-            // The extent is optional. Without it a mark can only be a ring;
-            // with it the mark takes the target's real proportions.
-            actions.Add(new DesktopAction(
-                kind,
-                Math.Clamp(x, 0, 1000),
-                Math.Clamp(y, 0, 1000),
-                Label: Shorten(ReadString(element, "label"), MaxLabelLength),
-                AutomationId: automationId,
-                HasCoordinates: true,
-                Id: actionId,
-                NormalizedWidth: Math.Clamp(ReadInt(element, "w", "width") ?? 0, 0, 1000),
-                NormalizedHeight: Math.Clamp(ReadInt(element, "h", "height") ?? 0, 0, 1000)));
-        }
-
-        return actions;
-    }
-
-    private static bool TryReadActionKind(JsonElement element, out DesktopActionKind kind)
-    {
-        var value = ReadString(element, "type", "action", "kind")?
-            .Trim()
-            .Replace('-', '_')
-            .Replace(' ', '_')
-            .ToLowerInvariant();
-
-        kind = value switch
-        {
-            "move_pointer" or "move" or "point" or "hover" => DesktopActionKind.MovePointer,
-            "left_click" or "leftclick" or "click" => DesktopActionKind.LeftClick,
-            "double_click" or "doubleclick" => DesktopActionKind.DoubleClick,
-            "right_click" or "rightclick" => DesktopActionKind.RightClick,
-            "type_text" or "type" or "write" => DesktopActionKind.TypeText,
-            "key_press" or "keypress" or "press_key" => DesktopActionKind.KeyPress,
-            "open_app" or "launch_app" => DesktopActionKind.OpenApp,
-            "open_url" or "navigate_url" or "navigate_to" => DesktopActionKind.OpenUrl,
-            "wait" => DesktopActionKind.Wait,
-            "wait_for_window" => DesktopActionKind.WaitForWindow,
-            "wait_for_element" => DesktopActionKind.WaitForElement,
-            "wait_for_text" => DesktopActionKind.WaitForText,
-            "observe" or "reobserve" => DesktopActionKind.Observe,
-            "verify" => DesktopActionKind.Verify,
-            "finish" or "done" => DesktopActionKind.Finish,
-            "run_command" or "runcommand" or "command" or "shell" => DesktopActionKind.RunCommand,
-            _ => default
-        };
-
-        return value is "move_pointer" or "move" or "point" or "hover"
-            or "left_click" or "leftclick" or "click"
-            or "double_click" or "doubleclick"
-            or "right_click" or "rightclick"
-            or "type_text" or "type" or "write"
-            or "key_press" or "keypress" or "press_key"
-            or "open_app" or "launch_app"
-            or "open_url" or "navigate_url" or "navigate_to" or "wait"
-            or "wait_for_window" or "wait_for_element" or "wait_for_text"
-            or "observe" or "reobserve" or "verify" or "finish" or "done"
-            or "run_command" or "runcommand" or "command" or "shell";
-    }
-
-    private static bool IsSafeAppName(string? value) =>
-        !string.IsNullOrWhiteSpace(value) &&
-        !value.Any(character => char.IsControl(character));
-
-    private static bool IsSafeWebUrl(string? value) =>
-        Uri.TryCreate(value, UriKind.Absolute, out var uri) &&
-        (uri.Scheme == Uri.UriSchemeHttps || uri.Scheme == Uri.UriSchemeHttp);
-
-    private static bool IsSupportedKey(string? value)
-    {
-        if (string.IsNullOrWhiteSpace(value))
-        {
-            return false;
-        }
-
-        var parts = value.Trim().ToLowerInvariant()
-            .Split('+', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-        if (parts.Length == 0 || parts.Length > 4 ||
-            parts[..^1].Any(part => part is not ("ctrl" or "control" or "shift" or "alt" or "win" or "windows")))
-        {
-            return false;
-        }
-
-        var key = parts[^1];
-        return key.Length == 1 && char.IsLetterOrDigit(key[0]) ||
-            key.Length is 2 or 3 && key[0] == 'f' && int.TryParse(key[1..], out var function) && function is >= 1 and <= 12 || key is
-            "backspace" or "tab" or "enter" or "return" or "escape" or "esc" or "space" or
-            "pageup" or "page_up" or "pagedown" or "page_down" or "end" or "home" or
-            "left" or "up" or "right" or "down" or "delete" or "del" or
-            "ctrl" or "control" or "shift" or "alt" or "win" or "windows";
-    }
-
     private static bool TryReadCoordinate(JsonElement element, string name, out int value)
     {
         value = 0;
@@ -589,6 +353,20 @@ public static class AssistantPlanParser
                 dragToY = -1;
             }
 
+            // Not gated on hasScreenshot, unlike x/y/to_x above. Those describe
+            // something inside the screenshot, so without one they mean nothing.
+            // A diagram describes nothing on screen at all — gating it would
+            // silently switch the feature off for anyone with screen capture
+            // turned off, and buy nothing.
+            var diagramShape = Shorten(ReadString(element, "diagram_shape", "diagramShape", "shape"), 24);
+            var diagramCentreX = Math.Clamp(ReadInt(element, "diagram_cx", "diagramCx") ?? -1, -1, 1000);
+            var diagramCentreY = Math.Clamp(ReadInt(element, "diagram_cy", "diagramCy") ?? -1, -1, 1000);
+            var diagramEndX = Math.Clamp(ReadInt(element, "diagram_ex", "diagramEx") ?? -1, -1, 1000);
+            var diagramEndY = Math.Clamp(ReadInt(element, "diagram_ey", "diagramEy") ?? -1, -1, 1000);
+            var diagramSize = Math.Clamp(ReadInt(element, "diagram_size", "diagramSize") ?? 0, 0, 1000);
+            var diagramSides = Math.Clamp(ReadInt(element, "diagram_sides", "diagramSides") ?? 0, 0, 40);
+            var diagramRotation = Math.Clamp(ReadInt(element, "diagram_rotation", "diagramRotation") ?? 0, 0, 359);
+
             steps.Add(new LessonStep(
                 instruction!,
                 Shorten(ReadString(element, "why", "reason"), 240),
@@ -602,7 +380,15 @@ public static class AssistantPlanParser
                 dragToX,
                 dragToY,
                 Shorten(ReadString(element, "element", "element_name", "control"), MaxLabelLength),
-                Shorten(ReadString(element, "text", "annotation_text"), MaxAnnotationTextLength)));
+                Shorten(ReadString(element, "text", "annotation_text"), MaxAnnotationTextLength),
+                diagramShape,
+                diagramCentreX,
+                diagramCentreY,
+                diagramEndX,
+                diagramEndY,
+                diagramSize,
+                diagramSides,
+                diagramRotation));
 
             if (steps.Count >= MaxLessonSteps)
             {

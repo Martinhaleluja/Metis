@@ -21,7 +21,7 @@ public sealed class OpenClawReasoningProviderTests
             observedAuth = request.Headers.Authorization;
             observedBody = await request.Content!.ReadAsStringAsync();
             return JsonResponse(ResponseBody("""
-                {"screen_observed":true,"spoken_text":"Moving there.","bubble_cue":null,"actions":[{"type":"move_pointer","x":700,"y":200}]}
+                {"screen_observed":true,"spoken_text":"Moving there.","bubble_cue":null,"scope":"control","x":700,"y":200,"element":"Settings"}
                 """));
         });
         using var provider = new OpenClawReasoningProvider(
@@ -42,7 +42,8 @@ public sealed class OpenClawReasoningProviderTests
         Assert.Contains("data:image/jpeg;base64", observedBody, StringComparison.Ordinal);
         Assert.Contains("\"type\":\"json_schema\"", observedBody, StringComparison.Ordinal);
         Assert.Equal("openclaw", result.Model);
-        Assert.Equal(DesktopActionKind.MovePointer, Assert.Single(result.Plan.Actions).Kind);
+        Assert.True(result.Plan.HasAnnotation);
+        Assert.Equal(700, result.Plan.NormalizedX);
     }
 
     [Fact]

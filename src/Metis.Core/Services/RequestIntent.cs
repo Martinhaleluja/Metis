@@ -63,6 +63,42 @@ public static class RequestIntent
     }
 
     /// <summary>
+    /// Ways of asking someone to do something without using the imperative.
+    /// English politeness turns instructions into questions, so these are the
+    /// forms a request actually arrives in.
+    /// </summary>
+    private static readonly string[] PoliteRequestForms =
+    [
+        "can you", "can u", "could you", "would you", "will you", "would you mind",
+        "please", "are you able to", "is it possible to", "any chance you can",
+        "i need you to", "i want you to", "i'd like you to", "id like you to",
+        "do me a favour", "do me a favor", "help me out and"
+    ];
+
+    /// <summary>
+    /// True when the user asked Metis to do something in the polite form that
+    /// happens to be grammatically a question.
+    ///
+    /// "Can you open YouTube for me?" is a question only on paper — the user is
+    /// telling Metis to do something, and reading the question mark literally
+    /// is the single most common way Metis answers a request with a lesson
+    /// nobody asked for. Real questions about how to do a thing are caught
+    /// before this by the teaching phrases, which is what makes it safe to read
+    /// what is left as an instruction: "can you show me how to open YouTube"
+    /// has already been settled by then.
+    ///
+    /// An action word is still required, so "can you see my screen?" stays a
+    /// question and only a named action turns a polite form into a handover.
+    /// </summary>
+    public static bool IsPoliteInstruction(string? text)
+    {
+        var trimmed = (text ?? string.Empty).Trim();
+        return trimmed.Length != 0 &&
+               PoliteRequestForms.Any(form => trimmed.Contains(form, StringComparison.OrdinalIgnoreCase)) &&
+               ActionTerms.Any(term => trimmed.Contains(term, StringComparison.OrdinalIgnoreCase));
+    }
+
+    /// <summary>
     /// A question about the screen is not an instruction to act on it. Without
     /// this, "how do I close this tab?" would be treated as "close this tab"
     /// and Metis would do the very thing the user asked to be taught.

@@ -30,64 +30,6 @@ public sealed class FlaUiAutomationService : IUiAutomationService
         CancellationToken cancellationToken = default) =>
         Task.Run(() => FindElement(query, cancellationToken), cancellationToken);
 
-    public Task<UiAutomationResult> TryInvokeAsync(
-        string automationId,
-        ScreenCapture capture,
-        CancellationToken cancellationToken = default) =>
-        Task.Run(() => TryInvoke(automationId, capture, cancellationToken), cancellationToken);
-
-    public Task<UiAutomationResult> TryInvokeAtAsync(
-        int screenX,
-        int screenY,
-        CancellationToken cancellationToken = default) =>
-        Task.Run(() => TryInvokeAt(screenX, screenY, cancellationToken), cancellationToken);
-
-    public Task<UiAutomationResult> TrySetFocusedValueAsync(
-        string text,
-        CancellationToken cancellationToken = default) =>
-        Task.Run(() => TrySetFocusedValue(text, cancellationToken), cancellationToken);
-
-    /// <summary>
-    /// Writes into the focused control through its value pattern. Appends to
-    /// what is already there rather than replacing it, because the user asked
-    /// Metis to type something, not to clear the field first.
-    /// </summary>
-    private static UiAutomationResult TrySetFocusedValue(string text, CancellationToken cancellationToken)
-    {
-        try
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            using var automation = new UIA3Automation();
-            var focused = automation.FocusedElement();
-            if (focused is null)
-            {
-                return new UiAutomationResult(false, "Nothing on screen has keyboard focus.");
-            }
-
-            var value = focused.Patterns.Value.PatternOrDefault;
-            if (value is null || value.IsReadOnly.ValueOrDefault)
-            {
-                return new UiAutomationResult(
-                    false,
-                    "The focused control does not accept text through the accessibility tree.");
-            }
-
-            var existing = value.Value.ValueOrDefault ?? string.Empty;
-            value.SetValue(existing + text);
-
-            var name = DescribeSingleElement(focused) ?? "the focused control";
-            return new UiAutomationResult(true, $"Typed {text.Length} character(s) into {name} in the background.");
-        }
-        catch (OperationCanceledException)
-        {
-            throw;
-        }
-        catch (Exception exception)
-        {
-            return new UiAutomationResult(false, $"The accessibility tree refused the text: {exception.Message}");
-        }
-    }
-
     private static string? DescribeWindow(ScreenCapture capture, CancellationToken cancellationToken)
     {
         try
@@ -380,94 +322,6 @@ public sealed class FlaUiAutomationService : IUiAutomationService
         }
     }
 
-    private static UiAutomationResult TryInvoke(
-        string automationId,
-        ScreenCapture capture,
-        CancellationToken cancellationToken)
-    {
-        if (string.IsNullOrWhiteSpace(automationId))
-        {
-            return new UiAutomationResult(false, "No usable AutomationElement ID was supplied.");
-        }
-
-        try
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            using var automation = new UIA3Automation();
-            var root = capture.WindowHandle == 0
-                ? automation.GetDesktop()
-                : automation.FromHandle(new nint(capture.WindowHandle));
-            var normalizedId = automationId.Trim();
-            var element = string.Equals(SafeAutomationId(root), normalizedId, StringComparison.Ordinal)
-                ? root
-                : root.FindFirstDescendant(condition => condition.ByAutomationId(normalizedId));
-            if (element is null)
-            {
-                return new UiAutomationResult(false, $"UI Automation could not find '{normalizedId}'.");
-            }
-
-            cancellationToken.ThrowIfCancellationRequested();
-            return TryPerformDefaultAction(element, $"AutomationElement '{normalizedId}'");
-        }
-        catch (OperationCanceledException)
-        {
-            throw;
-        }
-        catch (Exception exception)
-        {
-            return new UiAutomationResult(
-                false,
-                $"UI Automation could not invoke '{automationId.Trim()}': {exception.Message}");
-        }
-    }
-
-    private static UiAutomationResult TryInvokeAt(
-        int screenX,
-        int screenY,
-        CancellationToken cancellationToken)
-    {
-        try
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            var window = DesktopTargetWindowLocator.FindAt(screenX, screenY);
-            if (window == nint.Zero)
-            {
-                return new UiAutomationResult(false, "No non-Metis application exists at that desktop coordinate.");
-            }
-
-            using var automation = new UIA3Automation();
-            var root = automation.FromHandle(window);
-            var chain = FindElementChain(root, new System.Drawing.Point(screenX, screenY), cancellationToken);
-            for (var index = chain.Count - 1; index >= 0; index--)
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-                var result = TryPerformDefaultAction(chain[index], "the control at the requested coordinate");
-                if (result.Success)
-                {
-                    return result with { ScreenX = screenX, ScreenY = screenY };
-                }
-            }
-
-            return new UiAutomationResult(
-                false,
-                "The control at that coordinate does not expose a cursorless UI Automation action.",
-                screenX,
-                screenY);
-        }
-        catch (OperationCanceledException)
-        {
-            throw;
-        }
-        catch (Exception exception)
-        {
-            return new UiAutomationResult(
-                false,
-                $"UI Automation could not invoke the control at ({screenX}, {screenY}): {exception.Message}",
-                screenX,
-                screenY);
-        }
-    }
-
     private static IReadOnlyList<AutomationElement> FindElementChain(
         AutomationElement root,
         System.Drawing.Point point,
@@ -513,43 +367,6 @@ public sealed class FlaUiAutomationService : IUiAutomationService
         }
 
         return chain;
-    }
-
-    private static UiAutomationResult TryPerformDefaultAction(AutomationElement element, string description)
-    {
-        var (screenX, screenY) = GetCenter(element);
-        try
-        {
-            if (element.Patterns.Invoke.TryGetPattern(out var invokePattern))
-            {
-                invokePattern.Invoke();
-                return new UiAutomationResult(true, $"Invoked {description} without moving the Windows pointer.", screenX, screenY);
-            }
-
-            if (element.Patterns.SelectionItem.TryGetPattern(out var selectionPattern))
-            {
-                selectionPattern.Select();
-                return new UiAutomationResult(true, $"Selected {description} without moving the Windows pointer.", screenX, screenY);
-            }
-
-            if (element.Patterns.Toggle.TryGetPattern(out var togglePattern))
-            {
-                togglePattern.Toggle();
-                return new UiAutomationResult(true, $"Toggled {description} without moving the Windows pointer.", screenX, screenY);
-            }
-
-            if (element.Patterns.ExpandCollapse.TryGetPattern(out var expandPattern))
-            {
-                expandPattern.Expand();
-                return new UiAutomationResult(true, $"Expanded {description} without moving the Windows pointer.", screenX, screenY);
-            }
-        }
-        catch
-        {
-            // The caller may try an ancestor or the background-message fallback.
-        }
-
-        return new UiAutomationResult(false, $"{description} has no usable cursorless action.", screenX, screenY);
     }
 
     private static void AddDescriptor(

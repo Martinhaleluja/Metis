@@ -61,41 +61,6 @@ public partial class NotchWindow : Window
     /// <summary>Raised when the user clicks the gear on the notch.</summary>
     public event EventHandler? SettingsRequested;
 
-    /// <summary>Raised when the user switches mode from the notch.</summary>
-    public event EventHandler? ModeCycleRequested;
-
-    /// <summary>
-    /// Shows which mode is active — the one thing worth knowing at a glance,
-    /// because it decides whether Metis is able to touch the computer at all.
-    /// Green while it only shows, amber while it may act.
-    /// </summary>
-    public void ShowMode(AssistanceMode mode)
-    {
-        ModeChipText.Text = AssistanceModes.Name(mode).ToUpperInvariant();
-        ModeChip.Background = new SolidColorBrush(mode == AssistanceMode.Autopilot
-            ? MediaColor.FromArgb(0x66, 0xFF, 0x9F, 0x0A)
-            : MediaColor.FromArgb(0x66, 0x30, 0xD1, 0x58));
-
-        // A brief pulse, because changing mode changes what Metis is allowed
-        // to do and that deserves to be noticed.
-        ModeChip.BeginAnimation(
-            OpacityProperty,
-            new DoubleAnimation(0.35, 1, TimeSpan.FromMilliseconds(260))
-            {
-                EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }
-            });
-    }
-
-    /// <summary>
-    /// With two modes a click is a toggle, which is the whole interaction —
-    /// no menu, no list, and the state is already on the chip being clicked.
-    /// </summary>
-    private void ModeChip_OnClick(object sender, System.Windows.Input.MouseButtonEventArgs e)
-    {
-        e.Handled = true;
-        _pressed = false;
-        ModeCycleRequested?.Invoke(this, EventArgs.Empty);
-    }
 
     /// <summary>Raised when a trace tool is chosen from the notch toolbar.</summary>
     public event EventHandler<TraceTool>? TraceToolPicked;

@@ -247,20 +247,47 @@ public sealed class WindowsAnnotationResolver : IAnnotationResolver
         long screenArea,
         CancellationToken cancellationToken)
     {
-        var window = DesktopTargetWindowLocator.FindAt(screenX, screenY);
-        if (window == nint.Zero)
+        var pointWindow = DesktopTargetWindowLocator.FindAt(screenX, screenY);
+        var foregroundWindow = DesktopTargetWindowLocator.Foreground();
+        if (pointWindow == nint.Zero && foregroundWindow == nint.Zero)
         {
             return null;
         }
 
         using var automation = new UIA3Automation();
-        var root = automation.FromHandle(window);
 
-        var named = string.IsNullOrWhiteSpace(target.ElementName)
-            ? null
-            : FindByName(root, target.ElementName!, cancellationToken);
+        // The coordinate is only ever an estimate, and during a walkthrough it
+        // is an estimate of where things were when the lesson was planned. Once
+        // a step has opened an application the point lands in the wrong window
+        // entirely, so a named target is looked for in the window the user is
+        // actually working in as well. Without this, refreshing the screenshot
+        // between steps changed nothing: every later mark was still anchored to
+        // the layout of the first one.
+        AutomationElement? named = null;
+        if (!string.IsNullOrWhiteSpace(target.ElementName))
+        {
+            foreach (var handle in Candidates(pointWindow, foregroundWindow))
+            {
+                named = FindByName(automation.FromHandle(handle), target.ElementName!, cancellationToken);
+                if (named is not null)
+                {
+                    break;
+                }
+            }
+        }
 
-        var element = named ?? SmallestContaining(root, screenX, screenY, cancellationToken);
+        var element = named;
+        if (element is null)
+        {
+            if (pointWindow == nint.Zero)
+            {
+                return null;
+            }
+
+            element = SmallestContaining(
+                automation.FromHandle(pointWindow), screenX, screenY, cancellationToken);
+        }
+
         if (element is null)
         {
             return null;
@@ -279,6 +306,22 @@ public sealed class WindowsAnnotationResolver : IAnnotationResolver
         if (bounds.Width <= 0 || bounds.Height <= 0)
         {
             return null;
+        }
+
+        // These size tests exist to catch the descent landing in a container
+        // instead of on the control, so they only apply to the descent. A
+        // target found by its own name has been identified, not guessed at, and
+        // measuring it against a stale estimate of its size is how a correctly
+        // re-found control gets thrown away — which is exactly the case this
+        // needs to keep.
+        if (named is not null)
+        {
+            return new Located(
+                bounds.Left + (bounds.Width / 2),
+                bounds.Top + (bounds.Height / 2),
+                bounds.Width,
+                bounds.Height,
+                AnnotationSource.Element);
         }
 
         // Reject a snap that disagrees wildly with what the model described,
@@ -314,6 +357,23 @@ public sealed class WindowsAnnotationResolver : IAnnotationResolver
             bounds.Width,
             bounds.Height,
             AnnotationSource.Element);
+    }
+
+    /// <summary>
+    /// The windows worth searching for a named target, nearest guess first: the
+    /// one under the estimated point, then the one the user is working in.
+    /// </summary>
+    private static IEnumerable<nint> Candidates(nint pointWindow, nint foregroundWindow)
+    {
+        if (pointWindow != nint.Zero)
+        {
+            yield return pointWindow;
+        }
+
+        if (foregroundWindow != nint.Zero && foregroundWindow != pointWindow)
+        {
+            yield return foregroundWindow;
+        }
     }
 
     /// <summary>

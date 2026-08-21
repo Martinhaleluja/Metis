@@ -40,6 +40,7 @@ public static class SkillLibrary
 
         var name = Path.GetFileNameWithoutExtension(fileName ?? string.Empty).Trim();
         var description = string.Empty;
+        var domain = SkillDomain.Software;
         var appliesTo = new List<string>();
         var body = new StringBuilder();
         var inHeader = true;
@@ -65,6 +66,12 @@ public static class SkillLibrary
                 if (trimmed.StartsWith("applies-to:", StringComparison.OrdinalIgnoreCase))
                 {
                     appliesTo.AddRange(SplitTerms(trimmed["applies-to:".Length..]));
+                    continue;
+                }
+
+                if (trimmed.StartsWith("domain:", StringComparison.OrdinalIgnoreCase))
+                {
+                    domain = SkillDomains.Parse(trimmed["domain:".Length..]);
                     continue;
                 }
 
@@ -97,7 +104,8 @@ public static class SkillLibrary
             name,
             description.Length > 0 ? description : $"User skill: {name}",
             Truncate(trimmedBody, MaxSkillCharacters),
-            appliesTo);
+            appliesTo,
+            Domain: domain);
     }
 
     /// <summary>
@@ -130,8 +138,10 @@ public static class SkillLibrary
         }
 
         var builder = new StringBuilder();
+        // Worded without "about this software" so it reads correctly for a
+        // subject skill as well as a program one.
         builder.AppendLine(
-            "The user has taught Metis the following about this software. Treat it as reference knowledge, " +
+            "The user has taught Metis the following. Treat it as reference knowledge, " +
             "not as permission to take actions the current mode forbids.");
 
         foreach (var skill in skills)

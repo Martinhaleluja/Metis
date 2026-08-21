@@ -21,9 +21,9 @@ public sealed class TaskContextTrackerTests
     public void A_continuation_keeps_the_original_goal_across_applications()
     {
         var tracker = new TaskContextTracker();
-        var first = tracker.BeginTurn("Help me make a YouTube video", "Chrome", OperatingMode.Assist);
+        var first = tracker.BeginTurn("Help me make a YouTube video", "Chrome", OperatingMode.Guide);
 
-        var second = tracker.BeginTurn("now open the editor", "DaVinci Resolve", OperatingMode.Assist);
+        var second = tracker.BeginTurn("now open the editor", "DaVinci Resolve", OperatingMode.Guide);
 
         Assert.Equal(first.TaskId, second.TaskId);
         Assert.Equal("Help me make a YouTube video", second.OriginalUserGoal);
@@ -35,9 +35,9 @@ public sealed class TaskContextTrackerTests
     public void A_stale_task_does_not_absorb_a_later_continuation()
     {
         var tracker = new TaskContextTracker(TimeSpan.Zero);
-        var first = tracker.BeginTurn("Help me make a YouTube video", "Chrome", OperatingMode.Assist);
+        var first = tracker.BeginTurn("Help me make a YouTube video", "Chrome", OperatingMode.Guide);
 
-        var second = tracker.BeginTurn("continue", "Chrome", OperatingMode.Assist);
+        var second = tracker.BeginTurn("continue", "Chrome", OperatingMode.Guide);
 
         Assert.NotEqual(first.TaskId, second.TaskId);
     }
@@ -78,7 +78,7 @@ public sealed class TaskContextTrackerTests
     public void Only_the_most_recent_actions_are_retained()
     {
         var tracker = new TaskContextTracker();
-        tracker.BeginTurn("Long task", "Explorer", OperatingMode.Autopilot);
+        tracker.BeginTurn("Long task", "Explorer", OperatingMode.Guide);
         for (var step = 1; step <= 15; step++)
         {
             tracker.RecordProgress($"step {step}", null);

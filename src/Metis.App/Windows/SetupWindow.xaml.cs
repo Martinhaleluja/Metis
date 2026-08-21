@@ -106,13 +106,10 @@ public partial class SetupWindow : Window
         CompanionSizeValue.Text = $"{settings.CompanionSize}px";
         CursorDistanceValue.Text = $"{settings.CursorDistance}px";
         CaptureScreenCheck.IsChecked = settings.CaptureActiveWindow;
-        FullControlCheck.IsChecked = settings.FullDesktopControl;
         SpeechEnabledCheck.IsChecked = settings.SpeechEnabled;
         StartWithWindowsCheck.IsChecked = settings.StartWithWindows;
-        SelectComboItem(OperatingModeBox, AssistanceModes.Name(AssistanceModes.Parse(settings.OperatingMode)));
         ContextShortcutsCheck.IsChecked = settings.ContextShortcutsEnabled;
         WakeWordBox.Text = WakeWordListener.Normalize(settings.WakeWord);
-        MoveRealCursorCheck.IsChecked = settings.MoveRealCursor;
         SupabaseUrlBox.Text = settings.SupabaseUrl;
         SupabaseAnonKeyBox.Text = settings.SupabaseAnonKey;
         // Read back through the parser rather than off the raw string, so a
@@ -130,7 +127,6 @@ public partial class SetupWindow : Window
         SkillsFolderBox.Text = settings.SkillsFolder;
         SkillsStatusText.Text = DescribeLoadedSkills();
         BuildCompanionColorSwatches(settings.CompanionColor);
-        UpdateOperatingModeDescription();
         MemoryStatusText.Text = $"Stored at {_runtime.MemoryPath}";
         RefreshMicrophones(settings.PreferredMicrophoneId);
         InlineStatusText.Text = _runtime.CurrentStatus;
@@ -382,13 +378,10 @@ public partial class SetupWindow : Window
             CompanionSize = (int)Math.Round(CompanionSizeSlider.Value),
             CursorDistance = (int)Math.Round(CursorDistanceSlider.Value),
             CaptureActiveWindow = CaptureScreenCheck.IsChecked == true,
-            FullDesktopControl = FullControlCheck.IsChecked == true,
             SpeechEnabled = SpeechEnabledCheck.IsChecked == true,
             StartWithWindows = StartWithWindowsCheck.IsChecked == true,
-            OperatingMode = SelectedContent(OperatingModeBox, "Learn"),
             ContextShortcutsEnabled = ContextShortcutsCheck.IsChecked == true,
             WakeWord = WakeWordListener.Normalize(WakeWordBox.Text),
-            MoveRealCursor = MoveRealCursorCheck.IsChecked == true,
             SupabaseUrl = SupabaseUrlBox.Text.Trim(),
             SupabaseAnonKey = SupabaseAnonKeyBox.Text.Trim(),
             MetisEnvironment = SelectedContent(MetisEnvironmentBox, "Production").ToLowerInvariant(),
@@ -405,17 +398,6 @@ public partial class SetupWindow : Window
         };
     }
 
-    private void OperatingModeBox_OnSelectionChanged(object sender, SelectionChangedEventArgs e)
-    {
-        if (IsInitialized)
-        {
-            UpdateOperatingModeDescription();
-        }
-    }
-
-    private void UpdateOperatingModeDescription() =>
-        OperatingModeDescription.Text =
-            AssistanceModes.Describe(AssistanceModes.Parse(SelectedContent(OperatingModeBox, "Learn")));
 
     /// <summary>
     /// Names the skills that actually loaded, so a file with a typo in its
@@ -527,7 +509,7 @@ public partial class SetupWindow : Window
         SelectComboItem(SpeechToTextProviderBox, "Whisper.cpp");
         WhisperCppExecutablePathBox.Text = @"tools\whisper.cpp\Release\whisper-cli.exe";
         WhisperCppModelPathBox.Text = @"models\whisper\ggml-tiny.bin";
-        SelectComboItem(TextToSpeechProviderBox, "Piper");
+        SelectComboItem(TextToSpeechProviderBox, "Windows");
         PiperExecutablePathBox.Text = @"tools\piper-standalone\piper\piper.exe";
         PiperVoiceModelPathBox.Text = @"models\piper\en_US-lessac-medium.onnx";
         CaptureScreenCheck.IsChecked = true;
@@ -588,7 +570,36 @@ public partial class SetupWindow : Window
         var usesElevenLabs = textToSpeech.Equals("ElevenLabs", StringComparison.OrdinalIgnoreCase);
         var usesPiper = textToSpeech.Equals("Piper", StringComparison.OrdinalIgnoreCase);
         var usesChatterbox = textToSpeech.Equals("Chatterbox-Nano", StringComparison.OrdinalIgnoreCase);
-        var usesLocalVoice = usesPiper || usesChatterbox;
+
+        // Windows counts as a local voice: it needs no key and no network, so
+        // the cloud voice card would only be misleading next to it.
+        var usesWindowsVoice = textToSpeech.Equals("Windows", StringComparison.OrdinalIgnoreCase);
+        WindowsVoiceCard.Visibility = usesWindowsVoice ? Visibility.Visible : Visibility.Collapsed;
+        if (usesWindowsVoice)
+        {
+            // Guarded: this runs on every panel refresh, and a speech stack
+            // that cannot be queried must not take the Setup window down with
+            // it — the user would be left unable to reach any other setting.
+            try
+            {
+                var voices = _runtime.GetWindowsVoices();
+                WindowsVoiceStatusText.Text = voices.Count switch
+                {
+                    0 => "Windows has no speech voices installed. Add one under " +
+                         "Settings > Time & language > Speech.",
+                    1 => $"Speaks with {voices[0].Name}, already on this PC. " +
+                         "Nothing to download, and it works with no key and no internet.",
+                    _ => $"Speaks with {voices[0].Name}, one of {voices.Count} voices already on this PC. " +
+                         "Nothing to download, and it works with no key and no internet."
+                };
+            }
+            catch (Exception exception)
+            {
+                WindowsVoiceStatusText.Text = $"Windows voices could not be listed: {exception.Message}";
+            }
+        }
+
+        var usesLocalVoice = usesPiper || usesChatterbox || usesWindowsVoice;
         NativeTextToSpeechCard.Visibility = usesElevenLabs || usesLocalVoice ? Visibility.Collapsed : Visibility.Visible;
         PiperCard.Visibility = usesPiper ? Visibility.Visible : Visibility.Collapsed;
         ChatterboxNanoCard.Visibility = usesChatterbox ? Visibility.Visible : Visibility.Collapsed;
