@@ -237,7 +237,8 @@ try {
         -p:AssemblyVersion=$assemblyVersion `
         -p:FileVersion=$assemblyVersion `
         -p:InformationalVersion=$Version `
-        -p:ApplicationIcon=$iconPath
+        -p:ApplicationIcon=$iconPath `
+        -p:NuGetAudit=false
     if ($LASTEXITCODE -ne 0) { throw 'dotnet publish failed.' }
 } finally {
     Pop-Location

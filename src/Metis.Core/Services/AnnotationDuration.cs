@@ -19,14 +19,14 @@ public static class AnnotationDuration
     /// The standard hold: long enough to follow a sentence to the thing it is
     /// about and still be looking when the next one starts.
     /// </summary>
-    public static readonly TimeSpan Standard = TimeSpan.FromSeconds(7);
+    public static readonly TimeSpan Standard = GuidanceTuning.Scale(TimeSpan.FromSeconds(7));
 
     /// <summary>
     /// Small targets clear sooner. A ring around one button is read at a
     /// glance, and leaving it up past that turns a pointer into clutter over
     /// the control the user is trying to use.
     /// </summary>
-    public static readonly TimeSpan Small = TimeSpan.FromSeconds(5);
+    public static readonly TimeSpan Small = GuidanceTuning.Scale(TimeSpan.FromSeconds(5));
 
     /// <summary>
     /// The share of the screen below which a target counts as small. A control

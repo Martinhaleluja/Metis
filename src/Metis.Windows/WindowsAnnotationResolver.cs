@@ -64,6 +64,28 @@ public sealed class WindowsAnnotationResolver : IAnnotationResolver
         var (estimateX, estimateY, estimateWidth, estimateHeight) =
             CaptureProjection.ToScreenRect(target, capture);
 
+        // A target that names something but gives no coordinates is still
+        // findable: the name is the better evidence anyway, because it is read
+        // off the screen as it is now rather than remembered from a screenshot
+        // taken minutes ago. This is what lets each step of a lesson land on its
+        // own control instead of every step repeating one place.
+        if (!target.HasPoint && target.Scope != AnnotationScope.Offscreen)
+        {
+            var byName = LocateByNameOnly(target, cancellationToken);
+            if (byName is { } namedHit)
+            {
+                return AnnotationDirector.Resolve(
+                    target.Scope,
+                    namedHit.X,
+                    namedHit.Y,
+                    namedHit.Width,
+                    namedHit.Height,
+                    target.Label,
+                    namedHit.Source,
+                    screenArea);
+            }
+        }
+
         // Nothing was located and nothing can be: an offscreen target is marked
         // with a direction from the estimate, which is all it ever had.
         if (target.Scope == AnnotationScope.Offscreen || !target.HasPoint)
@@ -238,6 +260,65 @@ public sealed class WindowsAnnotationResolver : IAnnotationResolver
     /// is telling Metis something it can verify, whereas its coordinates are
     /// only ever an estimate.
     /// </summary>
+    /// <summary>
+    /// Finds a target by the name the model gave it, with no coordinate to
+    /// start from — searching the window the user is actually working in.
+    ///
+    /// This is the honest way to place a mark during a lesson. Coordinates age
+    /// the moment the screen changes, but the name of the thing being taught
+    /// does not, so a step that says which control it means can be placed
+    /// against the screen as it is now rather than as it was when the lesson
+    /// was planned.
+    /// </summary>
+    private static Located? LocateByNameOnly(AnnotationTarget target, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(target.ElementName))
+        {
+            return null;
+        }
+
+        var foreground = DesktopTargetWindowLocator.Foreground();
+        if (foreground == nint.Zero)
+        {
+            return null;
+        }
+
+        try
+        {
+            using var automation = new UIA3Automation();
+            var found = FindByName(automation.FromHandle(foreground), target.ElementName!, cancellationToken);
+            if (found is null)
+            {
+                return null;
+            }
+
+            var bounds = found.BoundingRectangle;
+            if (bounds.Width <= 0 || bounds.Height <= 0)
+            {
+                return null;
+            }
+
+            var centreX = bounds.Left + (bounds.Width / 2);
+            var centreY = bounds.Top + (bounds.Height / 2);
+
+            // The same guard the coordinate path uses: a control that resolves
+            // off every screen is the wrong control, whatever it is called.
+            return IsOnAnyMonitor(centreX, centreY)
+                ? new Located(centreX, centreY, bounds.Width, bounds.Height, AnnotationSource.Element)
+                : null;
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch
+        {
+            // An accessibility tree that cannot be read is a reason to fall back
+            // to the estimate, not to fail the whole mark.
+            return null;
+        }
+    }
+
     private static Located? LocateElement(
         AnnotationTarget target,
         int screenX,
@@ -316,9 +397,22 @@ public sealed class WindowsAnnotationResolver : IAnnotationResolver
         // needs to keep.
         if (named is not null)
         {
+            // The one check a named hit still has to pass: it must be on a real
+            // screen. A control matched purely by name can be one that scrolled
+            // off, sits on a monitor that is now disconnected, or is a same-named
+            // twin somewhere the user cannot see — and snapping there draws a
+            // mark nobody can find. When that happens, fall back to the estimate,
+            // which is at least where the model was actually pointing.
+            var namedCentreX = bounds.Left + (bounds.Width / 2);
+            var namedCentreY = bounds.Top + (bounds.Height / 2);
+            if (!IsOnAnyMonitor(namedCentreX, namedCentreY))
+            {
+                return null;
+            }
+
             return new Located(
-                bounds.Left + (bounds.Width / 2),
-                bounds.Top + (bounds.Height / 2),
+                namedCentreX,
+                namedCentreY,
                 bounds.Width,
                 bounds.Height,
                 AnnotationSource.Element);
@@ -572,4 +666,24 @@ public sealed class WindowsAnnotationResolver : IAnnotationResolver
         int attribute,
         out Rect value,
         int size);
+
+    private const uint MonitorDefaultToNull = 0;
+
+    [DllImport("user32.dll")]
+    private static extern nint MonitorFromPoint(NativePoint point, uint flags);
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct NativePoint
+    {
+        public int X;
+        public int Y;
+    }
+
+    /// <summary>
+    /// True when a screen point falls on a real, connected monitor. Uses
+    /// MONITOR_DEFAULTTONULL so a point in a gap or off every screen returns
+    /// nothing rather than being snapped to the nearest one.
+    /// </summary>
+    private static bool IsOnAnyMonitor(int x, int y) =>
+        MonitorFromPoint(new NativePoint { X = x, Y = y }, MonitorDefaultToNull) != nint.Zero;
 }

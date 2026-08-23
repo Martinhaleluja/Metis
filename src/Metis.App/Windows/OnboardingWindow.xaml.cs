@@ -437,7 +437,6 @@ public partial class OnboardingWindow : System.Windows.Window
                 ? OnboardingVersions.Current
                 : _runtime.Settings.OnboardingVersion,
             ThemePreference = _themePreference,
-            OperatingMode = "Guide",
             CompanionColor = _companionColour,
             CompanionSize = (int)CompanionSizeSlider.Value,
             CaptureActiveWindow = CaptureScreenCheck.IsChecked == true,

@@ -68,6 +68,18 @@ public sealed class MetisRuntime : IDisposable
     private ScreenCapture? _lastLessonCapture;
 
     /// <summary>
+    /// Where the reply said it was talking about, kept for the steps that do
+    /// not say for themselves.
+    ///
+    /// A model often names the spot once, at the top of its answer, and then
+    /// writes steps that read as prose without repeating the coordinates. The
+    /// lesson used to drop that annotation on the floor and mark nothing at
+    /// all, which is how a reply that knew exactly where to point ended up
+    /// pointing nowhere.
+    /// </summary>
+    private AnnotationTarget? _lessonFallbackTarget;
+
+    /// <summary>
     /// Whether this turn is teaching a subject rather than a program, from the
     /// domain of whichever skill matched.
     /// </summary>
@@ -329,7 +341,6 @@ public sealed class MetisRuntime : IDisposable
             _startupRegistration.SetEnabled(normalized.StartWithWindows);
         }
 
-        var modeChanged = !string.Equals(normalized.OperatingMode, Settings.OperatingMode, StringComparison.Ordinal);
         await _settingsStore.SaveAsync(normalized, cancellationToken);
         Settings = normalized;
         _pushToTalk.ContextShortcutsEnabled = Settings.ContextShortcutsEnabled;
@@ -1226,11 +1237,32 @@ public sealed class MetisRuntime : IDisposable
             var selectedSkills = SkillLibrary.Select(_userSkills, screenshot?.WindowTitle, effectivePrompt);
             var taughtSkills = SkillLibrary.Describe(selectedSkills);
 
-            // Whether this is a subject to explain or a program to drive is
-            // decided by the skill that matched, not by scanning the request for
-            // subject words. A new subject is then a new file rather than
-            // another branch in a list nobody remembers to update.
-            _academicTeaching = selectedSkills.Any(skill => skill.Domain == SkillDomain.Academic);
+            // Drawing an idea on a blank canvas and pointing at something on the
+            // real screen are opposite jobs, and the canvas one tells the model
+            // to ignore the screen entirely. So it has to be the rarer, narrower
+            // case, or it swallows every question the user asks about what is in
+            // front of them.
+            //
+            // Two things are required before Metis abandons the screen. The
+            // subject has to come from the user's own words, not from whatever
+            // window happens to be open — a video about triangles must not turn
+            // "what is this button" into a geometry lesson. And the request must
+            // not be about the screen at all, because a request that is has an
+            // answer on the screen, and that answer is a mark on it.
+            var academicByRequest = SkillLibrary
+                .Select(_userSkills, application: null, effectivePrompt)
+                .Any(skill => skill.Domain == SkillDomain.Academic);
+
+            _academicTeaching = LessonStepRouting.ShouldIllustrateSubject(
+                academicByRequest,
+                RequiresScreenObservation(effectivePrompt));
+
+            if (academicByRequest && !_academicTeaching)
+            {
+                _log.Info(
+                    "The request names a subject Metis can draw, but it also asks about the screen, " +
+                    "so it is answered by marking the screen rather than by drawing a diagram.");
+            }
             var recall = Settings.ChatMemoryEnabled
                 ? ChatRecall.Describe(_chatSessions, _currentChat.Id, effectivePrompt, screenshot?.WindowTitle)
                 : null;
@@ -1322,6 +1354,7 @@ public sealed class MetisRuntime : IDisposable
             if (plan.LessonSteps.Count > 0)
             {
                 _lastLessonCapture = screenshot;
+                _lessonFallbackTarget = plan.HasAnnotation ? plan.ToAnnotationTarget() : null;
                 await RecordTurnMemoryAsync(task, plan, screenshot?.WindowTitle, true, CancellationToken.None);
                 await RunLessonAsync(
                     new LessonState(plan.Goal ?? spokenRequest, plan.LessonSteps),
@@ -1387,7 +1420,7 @@ public sealed class MetisRuntime : IDisposable
             // it marks, and the user acts.
             if (screenshot is not null && willPoint)
             {
-                await PointAtAnswerAsync(spokenRequest, plan, cancellationToken);
+                await PointAtAnswerAsync(spokenRequest, plan, screenshot, cancellationToken);
             }
 
             // With no voice, the written answer is the answer. A typed turn
@@ -1407,7 +1440,7 @@ public sealed class MetisRuntime : IDisposable
             SetActivity(MetisActivityKind.Complete, "Done");
             PlayCue(MetisSound.TaskComplete);
             SetStatus(finalStatus);
-            await Task.Delay(TimeSpan.FromSeconds(1.2), cancellationToken);
+            await Task.Delay(GuidanceTuning.Scale(TimeSpan.FromSeconds(1.2)), cancellationToken);
             SetActivity(MetisActivityKind.Idle, string.Empty);
             State.Force(AssistantState.Idle);
         }
@@ -1568,14 +1601,9 @@ public sealed class MetisRuntime : IDisposable
     }
 
     /// <summary>
-    /// Draws the overlay for one step. Learn mode dims the rest of the screen
-    /// because attention matters more than context while learning.
-    /// </summary>
-    /// <summary>
     /// Runs a lesson: show one step, wait for the learner to do it, confirm it
-    /// on screen, then move on. This is the inverse of the Autopilot loop —
-    /// Metis performs nothing, and the screen is watched for the learner's work
-    /// rather than for its own.
+    /// on screen, then move on. Metis performs nothing itself — the screen is
+    /// watched for the learner's work rather than for its own.
     /// </summary>
     private async Task RunLessonAsync(LessonState lesson, CancellationToken cancellationToken)
     {
@@ -1660,24 +1688,48 @@ public sealed class MetisRuntime : IDisposable
         // A drawn step goes nowhere near the annotation resolver. That resolver
         // finds real controls, and it would succeed at that even here — marking
         // whatever the user happens to have open underneath an invented shape.
-        if (step.HasDiagram)
+        //
+        // A step carrying both is pointing at something real and illustrating it
+        // as well, and the real thing wins: a mark on the actual control is the
+        // answer the user asked for, where an invented shape drawn over their
+        // work is not.
+        if (LessonStepRouting.ShouldDrawOnCanvas(step, _academicTeaching))
         {
             return await PresentDiagramStepAsync(lesson, step, cancellationToken);
         }
 
         var hold = AnnotationDuration.Standard;
 
-        if (LessonStepRouting.RequiresRealScreenAnnotation(step) && _lastLessonCapture is { } capture)
+        // A step that names its own target uses it. One that does not falls back
+        // to the spot the reply named, so a lesson still points at the thing it
+        // is describing instead of silently marking nothing.
+        var stepTarget = LessonStepRouting.RequiresRealScreenAnnotation(step)
+            ? step.ToAnnotationTarget() with
+            {
+                Label = step.TargetLabel ?? ShortenForLabel(step.Instruction)
+            }
+            : _lessonFallbackTarget is { } fallback
+                ? fallback with { Label = step.TargetLabel ?? ShortenForLabel(step.Instruction) }
+                : null;
+
+        if (stepTarget is null || _lastLessonCapture is null)
+        {
+            // The one path that used to produce no mark, no movement and no
+            // trace in the log, which made a step that pointed at nothing look
+            // identical to one that was never drawn.
+            _log.Info(
+                $"Step {lesson.StepNumber} marked nothing (named={step.HasNamedTarget}, coords={step.HasTarget}): " +
+                $"{(stepTarget is null ? "the step named no target and the reply named no spot" : "no screen capture was kept for this lesson")}.");
+        }
+
+        if (stepTarget is not null && _lastLessonCapture is { } capture)
         {
             // The hold is decided from the target once it has been resolved, so
             // it reflects the control's real size rather than the model's guess
             // at it. Marked first with the standard hold and corrected below,
             // because the overlay needs a duration at the moment it draws.
             var annotation = await AnnotateAsync(
-                step.ToAnnotationTarget() with
-                {
-                    Label = step.TargetLabel ?? ShortenForLabel(step.Instruction)
-                },
+                stepTarget,
                 capture,
                 lesson.StepNumber,
                 cancellationToken);
@@ -1691,7 +1743,7 @@ public sealed class MetisRuntime : IDisposable
             // where the model guessed. When the two differ, the mark is right
             // and following the guess would send the cursor beside it.
             var (screenX, screenY) = annotation is null
-                ? ToScreenPoint(step.TargetX, step.TargetY, capture)
+                ? ToScreenPoint(stepTarget.NormalizedX, stepTarget.NormalizedY, capture)
                 : (annotation.ScreenX, annotation.ScreenY);
 
             if (step.HasGesture)
@@ -1739,6 +1791,58 @@ public sealed class MetisRuntime : IDisposable
     /// resolve against, no control to snap to, and no ghost cursor to fly —
     /// there is a blank canvas and a shape to put on it.
     /// </summary>
+    /// <summary>
+    /// Walks the companion along a shape that has just been drawn, or sends it
+    /// to the shape when there is no line to follow.
+    ///
+    /// A traced path is the point of this: explaining a vector while the pointer
+    /// travels its length reads as being shown something, where a pointer that
+    /// teleports to the middle and stops reads as a label. Long point lists are
+    /// thinned first — the companion glides between each pair in turn, so
+    /// walking all forty points of a circle would crawl.
+    /// </summary>
+    private void SendCompanionAlong(GuidanceMark mark, string? label, TimeSpan hold)
+    {
+        var path = TraceablePath(mark.Points);
+        if (path is { Count: >= 2 })
+        {
+            CompanionDemoRequested?.Invoke(this, new CompanionDemo(path, label, HoldAtEnd: true));
+            return;
+        }
+
+        CompanionGuidanceRequested?.Invoke(
+            this,
+            new CompanionGuidance(mark.ScreenX, mark.ScreenY, label ?? "Here", hold));
+    }
+
+    /// <summary>
+    /// Thins a shape's outline to a handful of points the companion can sweep
+    /// through, keeping the first and last so the trace starts and ends where
+    /// the shape does.
+    /// </summary>
+    private static IReadOnlyList<GuidancePoint>? TraceablePath(IReadOnlyList<GuidancePoint>? points)
+    {
+        const int mostLegs = 8;
+        if (points is null || points.Count < 2)
+        {
+            return null;
+        }
+
+        if (points.Count <= mostLegs)
+        {
+            return points;
+        }
+
+        var stride = (double)(points.Count - 1) / (mostLegs - 1);
+        var thinned = new List<GuidancePoint>(mostLegs);
+        for (var index = 0; index < mostLegs; index++)
+        {
+            thinned.Add(points[(int)Math.Round(index * stride)]);
+        }
+
+        return thinned;
+    }
+
     private async Task<TimeSpan> PresentDiagramStepAsync(
         LessonState lesson,
         LessonStep step,
@@ -1761,6 +1865,13 @@ public sealed class MetisRuntime : IDisposable
                 GuidanceOverlayRequested?.Invoke(
                     this,
                     new GuidanceOverlayRequest([mark], DimBackground: false, hold, accumulate));
+
+                // Follow the shape as it appears. A teacher does not draw a
+                // vector and then stand still — the hand travels along what is
+                // being described, and that movement is half of the
+                // explanation. Without this the diagram grew while the pointer
+                // sat wherever it had been left.
+                SendCompanionAlong(mark, step.TargetLabel ?? ShortenForLabel(step.Instruction), hold);
 
                 _log.Info(
                     $"Diagram step {lesson.StepNumber}: drew {DiagramShapeKinds.Name(step.Diagram)} " +
@@ -1799,29 +1910,37 @@ public sealed class MetisRuntime : IDisposable
 
     private async Task SpeakLessonLineAsync(string line, CancellationToken cancellationToken)
     {
-        StartCompanionResponse(line, null, showBubble: true);
+        // With speech off there is no clip to pace against, so the words reveal
+        // at the reading estimate, as before.
         if (!Settings.SpeechEnabled)
         {
+            StartCompanionResponse(line, null, showBubble: true);
             return;
         }
 
         try
         {
-            // Through the chosen voice, not Piper. Every step of a walkthrough
-            // comes through here, so hardcoding one engine silenced the whole
-            // feature on any machine set to a different one.
+            // Synthesise first so the words on screen can be paced to the real
+            // length of the clip. The lesson path used to show the text with no
+            // duration — a fixed rate per word, unrelated to how long the
+            // sentence actually takes to say — so the voice and the text drifted
+            // apart. Now the reveal and the audio start together and finish
+            // together.
             var audio = await SynthesizeTextAsync(line, null, cancellationToken);
             if (audio is not null)
             {
+                StartCompanionResponse(line, GetAudioDuration(audio), showBubble: true);
                 await _audioPlayback.PlayAsync(audio, AudioPriority.Speech, cancellationToken);
             }
             else
             {
+                StartCompanionResponse(line, null, showBubble: true);
                 _log.Info($"No speech audio came back for a lesson step, so it was shown but not spoken: \"{line}\"");
             }
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
+            StartCompanionResponse(line, null, showBubble: true);
             _log.Error("Metis could not speak a lesson line.", exception);
         }
     }
@@ -1997,17 +2116,13 @@ public sealed class MetisRuntime : IDisposable
     private async Task PointAtAnswerAsync(
         string request,
         AssistantPlan plan,
+        ScreenCapture capture,
         CancellationToken cancellationToken)
     {
-        if (!Settings.VisualGuidanceEnabled || _lastLessonCapture is null && !plan.HasAnnotation)
+        if (!Settings.VisualGuidanceEnabled)
         {
-            // No capture was kept from this turn and the reply named no spot;
-            // there is nothing to resolve a mark against.
-        }
-
-        var capture = _lastLessonCapture;
-        if (capture is null)
-        {
+            // Guidance is switched off: there is nothing to resolve a mark
+            // against.
             return;
         }
 
@@ -2102,6 +2217,14 @@ public sealed class MetisRuntime : IDisposable
             return null;
         }
 
+        // The last thing before it is drawn: pin the mark onto the monitor the
+        // user can actually see. Everything upstream works in one desktop-wide
+        // space, so a valid-looking point can still land in the gap between two
+        // screens or past the only one's edge — a highlight drawn where nobody
+        // can find it. Both the overlay mark and the companion follow from this
+        // one value, so clamping here keeps every kind of mark on screen.
+        resolved = ClampToVisibleScreen(resolved);
+
         // The mark clears itself. Metis no longer waits to be caught up with,
         // so a mark that outlived its sentence would be pointing at something
         // it has stopped talking about.
@@ -2117,6 +2240,66 @@ public sealed class MetisRuntime : IDisposable
             new GuidanceOverlayRequest([resolved.ToMark(stepNumber)], DimBackground: false, hold));
 
         return resolved;
+    }
+
+    /// <summary>
+    /// Pins a resolved mark inside the visible bounds of the monitor it belongs
+    /// to. The monitor list comes from the cursor service, which already knows
+    /// how to answer "which screen is this point on" per Win32; a single-point
+    /// lookup is enough because the mark's own centre decides its monitor.
+    /// </summary>
+    private ResolvedAnnotation ClampToVisibleScreen(ResolvedAnnotation resolved)
+    {
+        // Asking Windows which monitor a point is on can fail, and a mark that
+        // cannot be clamped is still worth drawing where it was resolved.
+        (int Left, int Top, int Right, int Bottom) area;
+        try
+        {
+            area = Cursor.GetMonitorArea(resolved.ScreenX, resolved.ScreenY);
+        }
+        catch (Exception exception)
+        {
+            _log.Error("Metis could not read the monitor bounds, so the mark was left where it was resolved.", exception);
+            return resolved;
+        }
+
+        var (left, top, right, bottom) = area;
+        var monitors = new List<ScreenBoundsClamp.Monitor> { new(left, top, right, bottom) };
+
+        var (x, y, width, height) = ScreenBoundsClamp.ClampRect(
+            resolved.ScreenX, resolved.ScreenY, resolved.Width, resolved.Height, monitors);
+
+        if (x == resolved.ScreenX && y == resolved.ScreenY &&
+            width == resolved.Width && height == resolved.Height)
+        {
+            return resolved;
+        }
+
+        _log.Info(
+            $"Clamped {AnnotationScopes.Name(resolved.Scope)} onto the visible screen: " +
+            $"{resolved.ScreenX},{resolved.ScreenY} -> {x},{y}.");
+
+        // A stroke's shape lives in its points, not its centre, so the whole
+        // polyline is shifted by however far the centre moved — the drawn line
+        // travels with the mark instead of detaching from it.
+        var shiftedPoints = resolved.Points;
+        if (resolved.Points is { Count: > 0 } && (x != resolved.ScreenX || y != resolved.ScreenY))
+        {
+            var deltaX = x - resolved.ScreenX;
+            var deltaY = y - resolved.ScreenY;
+            shiftedPoints = resolved.Points
+                .Select(point => new GuidancePoint(point.ScreenX + deltaX, point.ScreenY + deltaY))
+                .ToArray();
+        }
+
+        return resolved with
+        {
+            ScreenX = x,
+            ScreenY = y,
+            Width = width,
+            Height = height,
+            Points = shiftedPoints
+        };
     }
 
     private static bool RequiresScreenObservation(string text) =>

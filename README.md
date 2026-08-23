@@ -62,20 +62,13 @@ The provider Test buttons make live requests and display authentication, model, 
 
 The defaults use `gpt-5-mini` for reasoning and screenshots, `gpt-4o-mini-transcribe` for push-to-talk transcription, and `tts-1` for spoken responses. Every field is editable so models can be changed without rebuilding Metis.
 
-## Operating modes
+## How Metis helps
 
-Metis works in one of four modes, chosen from the tray **Mode** submenu or Setup. The same request behaves differently in each, and the mode is enforced outside the AI, so no reply can widen it.
+Metis is a learning instrument. You do the work; it teaches while you do it — explaining what to do and why, pointing at the control, drawing over the screen to show you where to look. It never clicks, types, or moves the pointer for you, and there is no setting that lets it.
 
-- **Learn** — you do the work and Metis teaches while you do it. It explains what to do and why, points at the control, and never clicks or types for you.
-- **Guide** — you do the work and Metis directs you to the next step. It acts only when you explicitly ask it to in that request.
-- **Assist** — Metis shares the work, handling routine steps and leaving the consequential choices to you.
-- **Autopilot** — Metis performs the task in small verified batches and can explain afterwards what it did.
-
-Pointing at a control is allowed in every mode; performing an action is not. Every mode withholds purchases, deletions, submissions, credential and security dialogs, and administrator prompts, Autopilot included.
+That is the whole design rather than one option among several. Metis had modes once, up to and including one that operated the computer on your behalf; they were removed, because a tool that does the task for you cannot also be the thing that teaches you to do it.
 
 Metis remembers what you have already learned, per application, and shortens its guidance as your skill level rises. Memory is structured data at `%LOCALAPPDATA%\Metis\memory.json`, holds no screen content, and can be erased with **Clear memory** in Setup.
-
-See [docs/OPERATING_MODES.md](docs/OPERATING_MODES.md) for the full design.
 
 ## Desktop assistance
 

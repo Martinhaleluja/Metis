@@ -25,9 +25,8 @@ h2 + p, h2 + ul, h2 + table { page-break-before: avoid; }
 <table>
 <tr><th>Name</th><th>Role</th><th>Country</th></tr>
 <tr><td><strong>Martin Nakasole</strong></td><td>Developer — architecture, application, AI integration</td><td>Namibia</td></tr>
-<tr><td><strong>Lamek Hidengwa</strong></td><td>Designer — interface, visual identity, user experience</td><td>Namibia</td></tr>
 </table>
-<p>Two members. Both aged 18–30. Project language: English.</p>
+<p>One member, aged 18–30. Project language: English.</p>
 <p><strong>Repository:</strong> <code>github.com/Martinhaleluja/Metis</code> — open source.</p>
 <hr>
 <h2>2. Problem statement</h2>
@@ -99,16 +98,10 @@ h2 + p, h2 + ul, h2 + table { page-break-before: avoid; }
 <p>Its companion detaches from the user&#x27;s cursor, moves to the control like a</p>
 <p>second hand on the screen, and then waits for the user to perform the step</p>
 <p>themselves.</p>
-<p><strong>Four operating modes</strong>, chosen by the user at any time:</p>
-<table>
-<tr><th>Mode</th><th>Behaviour</th></tr>
-<tr><td><strong>Learn</strong></td><td>The user does the work. Metis explains why, points at each control, and waits.</td></tr>
-<tr><td><strong>Guide</strong></td><td>The user does the work. Metis directs them to the next step without theory.</td></tr>
-<tr><td><strong>Assist</strong></td><td>Metis shares the work and leaves the meaningful choices to the user.</td></tr>
-<tr><td><strong>Autopilot</strong></td><td>Metis performs the task in small verified steps and can explain them afterwards.</td></tr>
-</table>
-<p>The mode is <strong>enforced outside the AI model</strong>, in a separate policy layer. Learn</p>
-<p>mode cannot click, regardless of what the model returns. This is a structural</p>
+<p><strong>One behaviour, and no setting that widens it.</strong> The user does the work. Metis</p>
+<p>explains why, points at each control, draws over the screen, and waits.</p>
+<p>Metis has <strong>no ability to operate the computer</strong> — it cannot click, type, or move</p>
+<p>the pointer, whatever the AI model returns. This is a structural</p>
 <p>guarantee rather than an instruction the model is asked to follow.</p>
 <p><strong>Built and verified:</strong> 347 automated tests pass. Self-contained installer,</p>
 <p>per-user, no administrator rights, Windows 10 (1809) or later.</p>
@@ -169,9 +162,9 @@ h2 + p, h2 + ul, h2 + table { page-break-before: avoid; }
 <li><strong>Free tools all the way down.</strong> The creative software is free; Metis&#x27;s free tier is free; the offline path has no running cost.</li>
 </ul>
 <p><strong>Safety and transparency.</strong> Screen capture is disclosed before installation and</p>
-<p>again during onboarding, and can be switched off at any time. In every mode</p>
-<p>including Autopilot, Metis stops before anything that deletes, purchases, sends,</p>
-<p>submits or touches credentials — enforced in code and not configurable. API keys</p>
+<p>again during onboarding, and can be switched off at any time. Metis cannot act</p>
+<p>on the computer at all, so nothing it does can delete, purchase, send, submit</p>
+<p>or touch credentials — enforced in code and not configurable. API keys</p>
 <p>are stored in Windows Credential Manager, never in a settings file. <code>F12</code> stops</p>
 <p>everything immediately.</p>
 <hr>

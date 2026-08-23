@@ -80,13 +80,13 @@ const cards = [
     rotate: -4,
     body: (
       <>
-        <p className="text-[13px] font-medium text-ink">Learn mode</p>
+        <p className="text-[13px] font-medium text-ink">Teaches, never takes over</p>
         <div className="mt-2.5 flex gap-1" aria-hidden="true">
           <span className="rounded-full bg-accent px-2 py-[3px] text-[11px] font-medium text-accent-contrast">
-            Learn
+            Shows you
           </span>
           <span className="rounded-full bg-surface-sunken px-2 py-[3px] text-[11px] font-medium text-ink-muted">
-            Autopilot
+            Your pointer
           </span>
         </div>
       </>

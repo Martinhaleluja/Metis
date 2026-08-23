@@ -11,9 +11,8 @@
 | Name | Role | Country |
 |---|---|---|
 | **Martin Nakasole** | Developer — architecture, application, AI integration | Namibia |
-| **Lamek Hidengwa** | Designer — interface, visual identity, user experience | Namibia |
 
-Two members. Both aged 18–30. Project language: English.
+One member, aged 18–30. Project language: English.
 
 **Repository:** `github.com/Martinhaleluja/Metis` — open source.
 
@@ -120,18 +119,13 @@ Its companion detaches from the user's cursor, moves to the control like a
 second hand on the screen, and then waits for the user to perform the step
 themselves.
 
-**Four operating modes**, chosen by the user at any time:
+**One behaviour, and no setting that widens it.** The user does the work. Metis
+explains why, points at each control, draws over the screen, and waits.
 
-| Mode | Behaviour |
-|---|---|
-| **Learn** | The user does the work. Metis explains why, points at each control, and waits. |
-| **Guide** | The user does the work. Metis directs them to the next step without theory. |
-| **Assist** | Metis shares the work and leaves the meaningful choices to the user. |
-| **Autopilot** | Metis performs the task in small verified steps and can explain them afterwards. |
-
-The mode is **enforced outside the AI model**, in a separate policy layer. Learn
-mode cannot click, regardless of what the model returns. This is a structural
-guarantee rather than an instruction the model is asked to follow.
+Metis has **no ability to operate the computer** — it cannot click, type, or move
+the pointer, whatever the AI model returns. This is a structural guarantee
+rather than an instruction the model is asked to follow, and it is the reason
+the skill stays with the learner rather than with the tool.
 
 **Built and verified:** 347 automated tests pass. Self-contained installer,
 per-user, no administrator rights, Windows 10 (1809) or later.
@@ -217,9 +211,9 @@ development time.
   tier is free; the offline path has no running cost.
 
 **Safety and transparency.** Screen capture is disclosed before installation and
-again during onboarding, and can be switched off at any time. In every mode
-including Autopilot, Metis stops before anything that deletes, purchases, sends,
-submits or touches credentials — enforced in code and not configurable. API keys
+again during onboarding, and can be switched off at any time. Metis cannot act
+on the computer at all, so nothing it does can delete, purchase, send, submit
+or touch credentials — enforced in code and not configurable. API keys
 are stored in Windows Credential Manager, never in a settings file. `F12` stops
 everything immediately.
 

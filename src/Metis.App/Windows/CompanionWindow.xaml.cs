@@ -58,6 +58,16 @@ public partial class CompanionWindow : Window
     private int _guidanceScreenY;
 
     /// <summary>
+    /// Whether a guidance point has ever been given this session.
+    ///
+    /// The two coordinates above start life as zero, and zero is a real place —
+    /// the top-left corner of the primary screen. Holding beside a target that
+    /// was never set therefore parked the companion in that corner and kept it
+    /// there, which looked like it wandering off mid-explanation.
+    /// </summary>
+    private bool _hasGuidancePoint;
+
+    /// <summary>
     /// What the companion is doing with its position right now. Every rule
     /// about where it should be reads from this, so the cases cannot silently
     /// overlap the way a set of independent booleans eventually does.
@@ -292,6 +302,7 @@ public partial class CompanionWindow : Window
         {
             _guidanceScreenX = guidance.ScreenX;
             _guidanceScreenY = guidance.ScreenY;
+            _hasGuidancePoint = true;
             _guidanceHold = guidance.HoldDuration > TimeSpan.Zero
                 ? guidance.HoldDuration
                 : TimeSpan.FromSeconds(5);
@@ -954,6 +965,14 @@ public partial class CompanionWindow : Window
     /// </summary>
     private void HoldBesideTarget()
     {
+        if (!_hasGuidancePoint)
+        {
+            // Nothing has said where to point, so follow the cursor rather than
+            // hold beside coordinates that only mean the top-left corner.
+            FollowCursor();
+            return;
+        }
+
         var (targetLeft, targetTop) = ResolveGuidanceOrigin();
         MoveTowards(targetLeft, targetTop, smoothing: 0.46);
     }
@@ -1021,9 +1040,12 @@ public partial class CompanionWindow : Window
             targetTop = area.Bottom - windowHeight;
         }
 
+        // Clamped with the same care as the guidance origin: a bubble wider
+        // than the monitor used to collapse this range and pin the companion to
+        // the top-left corner while it was merely following the cursor.
         return (
-            Math.Clamp(targetLeft, area.Left, Math.Max(area.Left, area.Right - windowWidth)),
-            Math.Clamp(targetTop, area.Top, Math.Max(area.Top, area.Bottom - windowHeight)));
+            ClampToRange(targetLeft, area.Left, area.Right - windowWidth),
+            ClampToRange(targetTop, area.Top, area.Bottom - windowHeight));
     }
 
     /// <summary>
@@ -1031,6 +1053,15 @@ public partial class CompanionWindow : Window
     /// decides which side of the companion the bubble hangs off, so a label
     /// near the right edge of a monitor opens inwards instead of off-screen.
     /// </summary>
+    /// <summary>
+    /// Clamps a value into a range, tolerating a range narrower than nothing by
+    /// returning its middle. A collapsed range means the thing being placed is
+    /// bigger than the space, and the honest answer then is the centre rather
+    /// than whichever edge the comparison happened to reach first.
+    /// </summary>
+    private static double ClampToRange(double value, double min, double max) =>
+        min >= max ? (min + max) / 2 : Math.Clamp(value, min, max);
+
     private (double Left, double Top) ResolveGuidanceOrigin()
     {
         var area = ResolveMonitorArea(_guidanceScreenX, _guidanceScreenY);
@@ -1055,7 +1086,22 @@ public partial class CompanionWindow : Window
             ? windowWidth - shapeCenterOffset
             : shapeCenterOffset;
 
-        return (target.X - horizontalShapeCenter, target.Y - shapeCenterOffset);
+        var targetLeft = target.X - horizontalShapeCenter;
+        var targetTop = target.Y - shapeCenterOffset;
+
+        // Keep the companion's own shape on screen — not the whole window.
+        //
+        // Clamping the window meant clamping the bubble with it, and a bubble is
+        // as wide as the sentence in it. Once it was wider than the monitor the
+        // permitted range collapsed to a single point and every guidance landed
+        // in the top-left corner, whatever it was meant to be pointing at. The
+        // bubble may hang past the edge; it already flips side to avoid that.
+        // What must stay visible is the pointer itself.
+        var reach = shapeCenterOffset;
+        var shapeCentreX = ClampToRange(target.X, area.Left + reach, area.Right - reach);
+        var shapeCentreY = ClampToRange(target.Y, area.Top + reach, area.Bottom - reach);
+
+        return (shapeCentreX - horizontalShapeCenter, shapeCentreY - shapeCenterOffset);
     }
 
     private (double Left, double Top, double Right, double Bottom) ResolveMonitorArea(

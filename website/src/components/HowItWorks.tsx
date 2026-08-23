@@ -23,8 +23,8 @@ const steps = [
   },
   {
     number: "03",
-    title: "It shows you, or it does it",
-    body: "Learn draws on the screen and points at the control you need. Autopilot moves the pointer and works it for you.",
+    title: "It shows you where to look",
+    body: "Metis draws over your screen and points at the control you need, explaining as it goes. Your pointer stays yours — it never clicks or types for you.",
   },
 ];
 

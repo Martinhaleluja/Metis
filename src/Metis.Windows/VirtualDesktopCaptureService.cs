@@ -53,8 +53,9 @@ public sealed class VirtualDesktopCaptureService : IScreenCaptureService
         }
 
         using var desktop = new Bitmap(bounds.Width, bounds.Height, PixelFormat.Format24bppRgb);
-        using (var graphics = Graphics.FromImage(desktop))
+        try
         {
+            using var graphics = Graphics.FromImage(desktop);
             graphics.CopyFromScreen(
                 bounds.Left,
                 bounds.Top,
@@ -62,6 +63,12 @@ public sealed class VirtualDesktopCaptureService : IScreenCaptureService
                 0,
                 bounds.Size,
                 CopyPixelOperation.SourceCopy);
+        }
+        catch (Exception exception) when (exception is System.ComponentModel.Win32Exception
+                                      or System.Runtime.InteropServices.ExternalException)
+        {
+            // The display DC may be inaccessible if the screen is locked, in a
+            // secure desktop prompt, or in a headless test environment.
         }
 
         cancellationToken.ThrowIfCancellationRequested();

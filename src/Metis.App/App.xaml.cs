@@ -19,13 +19,13 @@ public partial class App : System.Windows.Application
     private CompanionWindow? _companionWindow;
     private PreferencesWindow? _preferencesWindow;
     private OnboardingWindow? _onboardingWindow;
-    private AssistantWindow? _assistantWindow;
     private GuidanceOverlayWindow? _overlayWindow;
     private TraceOverlayWindow? _traceWindow;
     private NotchWindow? _notchWindow;
     private Forms.NotifyIcon? _trayIcon;
     private System.Drawing.Icon? _trayDrawingIcon;
     private ThemeService? _themeService;
+    private TopmostGuard? _topmostGuard;
 
     protected override async void OnStartup(StartupEventArgs e)
     {
@@ -52,12 +52,17 @@ public partial class App : System.Windows.Application
             _themeService.Changed += (_, _) => RepaintTrayMenu();
 
             _companionWindow = new CompanionWindow(_runtime);
-            _preferencesWindow = new PreferencesWindow(_runtime, _themeService, ShowAssistant);
-            _onboardingWindow = new OnboardingWindow(_runtime, _themeService, ShowAssistant);
-            _assistantWindow = new AssistantWindow(_runtime, ShowSetup);
+            _preferencesWindow = new PreferencesWindow(_runtime, _themeService, ShowChat);
+            _onboardingWindow = new OnboardingWindow(_runtime, _themeService, ShowChat);
             _overlayWindow = new GuidanceOverlayWindow();
             _notchWindow = new NotchWindow { DebugLog = message => _runtime.Log.Info(message) };
             _traceWindow = new TraceOverlayWindow();
+
+            // The chat is part of the notch rather than a window of its own, so
+            // it is wired here and never shown or hidden as a separate thing.
+            _notchWindow.Chat.Attach(_runtime);
+            _notchWindow.ConnectChat();
+            _notchWindow.ChatSetupRequested += (_, _) => ShowSetup();
 
             // The pen comes out with the chord, and the notch becomes the tool
             // picker. A quick hold-and-drag still commits on release; touching
@@ -116,7 +121,7 @@ public partial class App : System.Windows.Application
             _notchWindow.TraceCancelled += (_, _) => Dispatcher.Invoke(() => _traceWindow.Disarm());
             _runtime.GuidanceOverlayRequested += Runtime_OnGuidanceOverlayRequested;
             _runtime.ActivityChanged += Runtime_OnActivityChanged;
-            _notchWindow.OpenRequested += (_, _) => ShowAssistant();
+            _notchWindow.OpenRequested += (_, _) => ShowChat();
             _notchWindow.SettingsRequested += (_, _) => ShowSetup();
 
             // Toggling from the notch keeps the one consequential setting a
@@ -127,7 +132,25 @@ public partial class App : System.Windows.Application
             _overlayWindow.Clear();
             _notchWindow.Show();
             _notchWindow.Tuck();
-            _companionWindow.Show();
+
+            // The companion is deliberately not shown here. It is the thing that
+            // makes Metis look like it is running, and someone who has not signed
+            // in yet has nothing for it to do — a face following the cursor around
+            // while the only thing on screen asks for a password reads as an
+            // application that has already started without permission. It arrives
+            // in RevealMetis, once the first run is done.
+
+            // Declared bottom-up: annotations are drawn over the user's screen,
+            // the companion stands on top of them, and the notch is above
+            // everything because it is the one control surface. Without this the
+            // whole stack quietly slips behind the taskbar and behind any window
+            // that raises itself when it is activated.
+            _topmostGuard = new TopmostGuard();
+            _topmostGuard.Add(_overlayWindow);
+            _topmostGuard.Add(_companionWindow);
+            _topmostGuard.Add(_notchWindow);
+            _topmostGuard.Start();
+            _notchWindow.KeepOnTop = () => _topmostGuard?.Reassert();
 
             if (e.Args.Contains("--background", StringComparer.OrdinalIgnoreCase))
             {
@@ -139,32 +162,20 @@ public partial class App : System.Windows.Application
             // without first having to remove a working API key. With no stored
             // first-run flag, --onboarding is also the only practical way to
             // rehearse the wizard.
-            if (e.Args.Contains("--onboarding", StringComparer.OrdinalIgnoreCase))
+            _notchWindow.ConnectAuth();
+            _notchWindow.Auth.Attach(_runtime, new CredentialStoreSessionAccess());
+            _notchWindow.Auth.SignedIn += (_, _) => AfterSignIn();
+            _notchWindow.Auth.Finished += (_, _) => FinishFirstRun();
+
+            // Everything below this line assumes there is someone to show Metis
+            // to. StartFirstRunAsync decides whether that is true, and opens the
+            // rest of the startup sequence itself once it is.
+            if (await HoldForFirstRunAsync(e.Args))
             {
-                ShowOnboarding();
+                return;
             }
-            else if (e.Args.Contains("--setup", StringComparer.OrdinalIgnoreCase))
-            {
-                ShowSetup();
-            }
-            else if (OnboardingVersions.ShouldShow(
-                         _runtime.Settings.OnboardingCompleted,
-                         _runtime.Settings.OnboardingVersion))
-            {
-                // Deliberately not HasAnyApiKey, which only knows about the
-                // three cloud providers: a fully local user has no cloud key,
-                // so that test sent them back to Setup on every launch forever.
-                //
-                // The version check is what brings existing users back through
-                // it once. Onboarding is where the shortcuts and the two modes
-                // are explained, so someone who finished the old one has been
-                // taught things that are no longer true.
-                ShowOnboarding();
-            }
-            else
-            {
-                ShowAssistant();
-            }
+
+            ContinueStartup(e.Args);
         }
         catch (Exception exception)
         {
@@ -220,7 +231,7 @@ public partial class App : System.Windows.Application
             Renderer = new Forms.ToolStripProfessionalRenderer(new MetisTrayColorTable(_themeService))
         };
 
-        var openItem = new Forms.ToolStripMenuItem("Open Metis", null, (_, _) => Dispatcher.Invoke(ShowAssistant))
+        var openItem = new Forms.ToolStripMenuItem("Open Metis", null, (_, _) => Dispatcher.Invoke(ShowChat))
         {
             ForeColor = _themeService?.GetDrawingColor("Accent", System.Drawing.Color.FromArgb(120, 216, 255))
                         ?? System.Drawing.Color.FromArgb(120, 216, 255),
@@ -253,7 +264,7 @@ public partial class App : System.Windows.Application
             Visible = true,
             ContextMenuStrip = menu
         };
-        _trayIcon.DoubleClick += (_, _) => Dispatcher.Invoke(ShowAssistant);
+        _trayIcon.DoubleClick += (_, _) => Dispatcher.Invoke(ShowChat);
     }
 
     /// <summary>
@@ -282,6 +293,210 @@ public partial class App : System.Windows.Application
 
         _accountWindow.Show();
         _accountWindow.Activate();
+    }
+
+    // ============================= First run =============================
+
+    /// <summary>The startup arguments, kept so the branch below the gate can run once it lifts.</summary>
+    private string[] _pendingArgs = [];
+
+    /// <summary>
+    /// Decides whether this launch may proceed, and holds it at the sign-in
+    /// panel if not.
+    /// </summary>
+    /// <returns>True when startup should stop here and wait for the user.</returns>
+    private async Task<bool> HoldForFirstRunAsync(string[] args)
+    {
+        _pendingArgs = args;
+
+        var settings = _runtime!.Settings;
+        var configured = MetisBackend.IsConfigured(settings.SupabaseUrl, settings.SupabaseAnonKey);
+        var url = MetisBackend.ResolveUrl(settings.SupabaseUrl);
+        var key = MetisBackend.ResolveKey(settings.SupabaseAnonKey);
+
+        var secrets = new CredentialStoreSessionAccess();
+        var token = secrets.ReadSupabaseRefreshToken();
+        var hasStoredSession = !string.IsNullOrWhiteSpace(token);
+
+        var refreshSucceeded = false;
+        var reachable = true;
+
+        if (configured && hasStoredSession)
+        {
+            // A short timeout on purpose. This runs before the user can see
+            // anything, so a backend that is slow to answer must not be able to
+            // hold the whole application shut while it decides.
+            using var http = new System.Net.Http.HttpClient { Timeout = TimeSpan.FromSeconds(12) };
+            var auth = new Metis.Data.SupabaseAuthClient(http);
+
+            Metis.Data.AuthResult result;
+            try
+            {
+                result = await auth.RefreshAsync(url, key, token!);
+            }
+            catch (Exception exception)
+            {
+                // Anything thrown on the way out is the network, not an answer.
+                _runtime.Log.Error("The stored session could not be renewed.", exception);
+                result = Metis.Data.AuthResult.Unreachable(exception.Message);
+            }
+
+            reachable = result.Reachable;
+            refreshSucceeded = result.Success && result.AccessToken is not null && result.Account is not null;
+
+            if (refreshSucceeded)
+            {
+                if (result.RefreshToken is not null)
+                {
+                    secrets.WriteSupabaseRefreshToken(result.RefreshToken);
+                }
+
+                var account = await auth.LoadAccountAsync(
+                    url, key, result.AccessToken!, result.Account!.UserId,
+                    Entitlements.ParseEnvironment(settings.MetisEnvironment));
+
+                _runtime.SignIn(account ?? result.Account);
+                await _runtime.SaveSettingsAsync(
+                    _runtime.Settings with { LastAuthenticatedUtc = DateTimeOffset.UtcNow }, null, null);
+            }
+            else if (reachable)
+            {
+                // The server answered and would not renew it. Keeping a token
+                // the backend has already rejected only makes the next launch
+                // wait for the same refusal.
+                secrets.DeleteSupabaseRefreshToken();
+            }
+        }
+
+        var decision = StartupAuthGate.Decide(
+            configured,
+            hasStoredSession,
+            refreshSucceeded,
+            reachable,
+            _runtime.Settings.LastAuthenticatedUtc,
+            DateTimeOffset.UtcNow);
+
+        _runtime.Log.Info(
+            $"Startup auth: {decision} (backend {(configured ? "configured" : "absent")}, "
+            + $"stored session {(hasStoredSession ? "found" : "none")}, "
+            + $"refresh {(refreshSucceeded ? "renewed" : "failed")}, "
+            + $"backend {(reachable ? "reachable" : "unreachable")}).");
+
+        if (decision == StartupAuthDecision.Allow)
+        {
+            RevealMetis();
+            return false;
+        }
+
+        _notchWindow!.OpenAuth();
+        return true;
+    }
+
+    /// <summary>
+    /// Signed in. Setup comes next, so the user can add the API key Metis will
+    /// actually answer with, and the welcome page waits until they are done
+    /// with it.
+    /// </summary>
+    private void AfterSignIn()
+    {
+        _notchWindow?.CloseAuth();
+
+        if (_preferencesWindow is null)
+        {
+            ShowWelcomePanel();
+            return;
+        }
+
+        // Setup hides rather than closes — it is created once and lives for the
+        // whole session — so "the user has finished with it" is a visibility
+        // change and not a Closed event. The handler removes itself, because
+        // this should happen on the first run and never again.
+        void OnSetupDismissed(object? sender, DependencyPropertyChangedEventArgs e)
+        {
+            if (_preferencesWindow is null || _preferencesWindow.IsVisible)
+            {
+                return;
+            }
+
+            _preferencesWindow.IsVisibleChanged -= OnSetupDismissed;
+            ShowWelcomePanel();
+        }
+
+        _preferencesWindow.IsVisibleChanged += OnSetupDismissed;
+        ShowSetup();
+    }
+
+    /// <summary>
+    /// Brings the notch back with the about-and-permissions page, and lets the
+    /// companion appear alongside it.
+    /// </summary>
+    private void ShowWelcomePanel()
+    {
+        RevealMetis();
+
+        if (_notchWindow is null)
+        {
+            return;
+        }
+
+        _notchWindow.Auth.ShowWelcomeOnly();
+        _notchWindow.OpenAuth();
+    }
+
+    /// <summary>Done being asked things. The rest of startup runs now.</summary>
+    private void FinishFirstRun()
+    {
+        _notchWindow?.CloseAuth();
+        RevealMetis();
+        ContinueStartup(_pendingArgs);
+    }
+
+    /// <summary>
+    /// Lets the companion appear. Held back until the first run is over, so
+    /// Metis does not stand next to the cursor before anyone has agreed to it
+    /// being there. Safe to call more than once.
+    /// </summary>
+    private void RevealMetis()
+    {
+        if (_companionWindow is null || _companionWindow.IsVisible)
+        {
+            return;
+        }
+
+        _companionWindow.Show();
+        _topmostGuard?.Reassert();
+    }
+
+    /// <summary>
+    /// The branch that used to sit directly in OnStartup, now reachable either
+    /// immediately or after the first run finishes.
+    /// </summary>
+    private void ContinueStartup(string[] args)
+    {
+        if (args.Contains("--onboarding", StringComparer.OrdinalIgnoreCase))
+        {
+            ShowOnboarding();
+        }
+        else if (args.Contains("--setup", StringComparer.OrdinalIgnoreCase))
+        {
+            ShowSetup();
+        }
+        else if (OnboardingVersions.ShouldShow(
+                     _runtime!.Settings.OnboardingCompleted,
+                     _runtime.Settings.OnboardingVersion))
+        {
+            // Deliberately not HasAnyApiKey, which only knows about the three
+            // cloud providers: a fully local user has no cloud key, so that test
+            // sent them back to Setup on every launch forever.
+            //
+            // The version check is what brings existing users back through it
+            // once, because onboarding explains things that have since changed.
+            ShowOnboarding();
+        }
+        else
+        {
+            ShowChat();
+        }
     }
 
     /// <summary>
@@ -408,10 +623,6 @@ public partial class App : System.Windows.Application
     }
 
     /// <summary>
-    /// Only one anchored window is open at a time: they share the same space
-    /// under the notch, so showing one folds the other away first.
-    /// </summary>
-    /// <summary>
     /// Preferences is a free-standing, resizable window rather than an anchored
     /// one. It is a place to work through settings, not a glance at the notch,
     /// and the paged layout needs more room than the anchored slot allows.
@@ -423,7 +634,7 @@ public partial class App : System.Windows.Application
             return;
         }
 
-        _assistantWindow?.FoldIntoNotch();
+        _notchWindow?.CloseChat();
         _preferencesWindow.ShowAt();
     }
 
@@ -439,28 +650,33 @@ public partial class App : System.Windows.Application
             return;
         }
 
-        _assistantWindow?.FoldIntoNotch();
+        _notchWindow?.CloseChat();
         _onboardingWindow.Show();
         _onboardingWindow.Activate();
     }
 
-    private void ShowAssistant()
+    /// <summary>
+    /// Opens the chat, which is the notch itself unfolding rather than a window
+    /// appearing. Asking for it again while it is open puts it away, so the same
+    /// gesture, tray entry and shortcut all toggle the one surface.
+    /// </summary>
+    private void ShowChat()
     {
-        if (_assistantWindow is null || _notchWindow is null)
+        if (_notchWindow is null)
         {
             return;
         }
 
-        if (_assistantWindow.IsVisible)
+        if (_notchWindow.IsChatOpen)
         {
-            _assistantWindow.FoldIntoNotch();
+            _notchWindow.CloseChat();
             return;
         }
 
         // Preferences is no longer anchored under the notch, so it does not
         // compete for the slot and only needs hiding.
         _preferencesWindow?.Hide();
-        _assistantWindow.OpenFromNotch(_notchWindow.AnchorBottom);
+        _notchWindow.OpenChat();
     }
 
     private void Quit()
@@ -474,10 +690,10 @@ public partial class App : System.Windows.Application
         // SystemEvents keeps a process-lifetime handler list, so the theme
         // service has to be unhooked explicitly.
         _themeService?.Dispose();
+        _topmostGuard?.Dispose();
 
         _preferencesWindow?.AllowClose();
         _onboardingWindow?.AllowClose();
-        _assistantWindow?.AllowClose();
         _overlayWindow?.AllowClose();
         _traceWindow?.AllowClose();
         _notchWindow?.AllowClose();

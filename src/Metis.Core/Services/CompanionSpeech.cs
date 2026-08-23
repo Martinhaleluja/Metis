@@ -33,7 +33,7 @@ public static class CompanionSpeech
         var words = CountWords(text);
         return words == 0
             ? TimeSpan.Zero
-            : TimeSpan.FromMilliseconds(Math.Clamp(words * 400d, 700d, 30_000d));
+            : TimeSpan.FromMilliseconds(Math.Clamp(words * GuidanceTuning.ScaleMs(400d), GuidanceTuning.ScaleMs(700d), 30_000d));
     }
 
     public static int CountWords(string? text) =>

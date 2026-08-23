@@ -22,16 +22,16 @@ public static class DiagramStepDuration
     /// and a diagram wants a beat of quiet at the end rather than the next
     /// shape arriving on the final syllable.
     /// </summary>
-    public const double WordsPerSecond = 2.6;
+    public static readonly double WordsPerSecond = GuidanceTuning.ScaleSpeed(2.6);
 
     /// <summary>
     /// The shortest a stage can be. The stroke animation alone takes a moment,
     /// so anything less would move on before the shape had finished appearing.
     /// </summary>
-    public static readonly TimeSpan Minimum = TimeSpan.FromSeconds(3);
+    public static readonly TimeSpan Minimum = GuidanceTuning.Scale(TimeSpan.FromSeconds(3));
 
     /// <summary>The longest, so one wordy stage cannot stall the lesson.</summary>
-    public static readonly TimeSpan Maximum = TimeSpan.FromSeconds(14);
+    public static readonly TimeSpan Maximum = GuidanceTuning.Scale(TimeSpan.FromSeconds(14));
 
     public static TimeSpan For(LessonStep step)
     {

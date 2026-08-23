@@ -1,4 +1,4 @@
-using System.Runtime.InteropServices;
+﻿using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Interop;
@@ -31,6 +31,40 @@ public partial class NotchWindow : Window
     private const double TuckedWidth = 104;
 
     /// <summary>
+    /// How wide the notch becomes when it is the chat. Wide enough for a
+    /// readable measure of body text without becoming a window that dominates
+    /// the top of the screen.
+    /// </summary>
+    private const double ChatWidth = 640;
+
+    /// <summary>
+    /// The tallest the chat is allowed to grow. Past this the transcript
+    /// scrolls inside the notch instead, because a panel that keeps growing
+    /// eventually covers the thing the user is asking about.
+    /// </summary>
+    private const double ChatMaxHeight = 520;
+
+    /// <summary>
+    /// The first-run panel is narrower than the chat. A sign-in form stretched
+    /// to the chat's 640px puts a 40-character-wide field in the middle of a
+    /// mostly empty black sheet, which reads as unfinished rather than roomy.
+    /// </summary>
+    private const double AuthWidth = 430;
+
+    /// <summary>The host window around <see cref="AuthWidth"/>, with the same slack the chat gets.</summary>
+    private const double AuthWindowWidth = 454;
+
+    /// <summary>
+    /// Widths and heights of the host window in each of its two shapes. The
+    /// window is kept only slightly larger than the notch it draws, because its
+    /// transparent margin still swallows clicks aimed at whatever is underneath.
+    /// </summary>
+    private const double PillWindowWidth = 560;
+    private const double PillWindowHeight = 64;
+    private const double ChatWindowWidth = 664;
+    private const double WindowSlack = 26;
+
+    /// <summary>
     /// Width the notch takes while it is the trace toolbar: six controls plus
     /// the body's own padding, with room to spare so nothing sits against the
     /// rounded edge where it is awkward to hit.
@@ -55,6 +89,16 @@ public partial class NotchWindow : Window
     private System.Windows.Point _pressPoint;
     private bool _pressed;
 
+    /// <summary>
+    /// The window that had the keyboard before the chat took it, so it can be
+    /// handed back when the chat folds away. Without this, dismissing the chat
+    /// leaves the user typing into nothing.
+    /// </summary>
+    private nint _previousForeground;
+
+    /// <summary>The height the body is currently animating towards.</summary>
+    private double _bodyHeightTarget = ExpandedHeight;
+
     /// <summary>Raised when the user pulls the notch down or clicks it.</summary>
     public event EventHandler? OpenRequested;
 
@@ -75,12 +119,480 @@ public partial class NotchWindow : Window
     public bool IsTracing { get; private set; }
 
     /// <summary>
+    /// True while the notch is unfolded into any panel rather than resting.
+    ///
+    /// The resting behaviours — tucking, peeking on hover, being dragged, being
+    /// resized to narrate an activity — are all wrong whenever something is
+    /// open inside the notch, and they were wrong for the same reason before
+    /// there was a second panel. Asking this rather than asking about the chat
+    /// specifically is what stopped the first-run panel from being tucked away
+    /// underneath the user while they were typing their password into it.
+    /// </summary>
+    public bool IsPanelOpen => IsChatOpen || IsAuthOpen;
+
+    // ============================== The chat ==============================
+
+    /// <summary>True while the notch is open as the chat.</summary>
+    public bool IsChatOpen { get; private set; }
+
+    /// <summary>The conversation itself, for the host to wire to the runtime.</summary>
+    public NotchChat Chat => ChatHost;
+
+    /// <summary>Raised when the chat asks for the setup window.</summary>
+    public event EventHandler? ChatSetupRequested;
+
+    /// <summary>
+    /// Connects the chat panel to the notch's own geometry. Called once, after
+    /// the panel has been given a runtime.
+    /// </summary>
+    public void ConnectChat()
+    {
+        ChatHost.CloseRequested += (_, _) => CloseChat();
+        ChatHost.SetupRequested += (_, _) => ChatSetupRequested?.Invoke(this, EventArgs.Empty);
+
+        // This is what makes the notch grow as you type into it: the panel says
+        // its content changed size, and the notch animates to the new height.
+        ChatHost.ContentSizeChanged += (_, _) => FitToChat();
+    }
+
+    /// <summary>Opens the chat if it is closed, folds it away if it is open.</summary>
+    public void ToggleChat()
+    {
+        if (IsChatOpen)
+        {
+            CloseChat();
+        }
+        else
+        {
+            OpenChat();
+        }
+    }
+
+    /// <summary>
+    /// Unfolds the notch into the chat. The notch does not become a window: it
+    /// stays the same object pinned to the same edge and simply grows, which is
+    /// what keeps Metis in one findable place.
+    /// </summary>
+    public void OpenChat()
+    {
+        if (IsChatOpen)
+        {
+            FocusChat();
+            return;
+        }
+
+        // A trace in progress owns the notch, and taking the tools away
+        // mid-gesture would strand the user holding a pen. The first-run panel
+        // owns it for a harder reason: nothing in Metis is meant to be reachable
+        // until it is done, and a chat opened over the top of it would be.
+        if (IsTracing || IsAuthOpen)
+        {
+            return;
+        }
+
+        DebugLog?.Invoke("Notch chat opening.");
+        IsChatOpen = true;
+        _retractTimer.Stop();
+        _pressed = false;
+        Visibility = Visibility.Visible;
+
+        SetThinking(false);
+        StepPips.Visibility = Visibility.Collapsed;
+
+        // Released before assigning, because an animation holding a property at
+        // its end value ignores a plain assignment: the pill row stayed visible
+        // behind the chat every time after the first without this.
+        Animate(NotchContent, OpacityProperty, 0, Fade, null);
+        Animate(Grabber, OpacityProperty, 0, Fade, null);
+        HoverControls.BeginAnimation(OpacityProperty, null);
+        HoverControls.Opacity = 0;
+
+        PositionOverTopEdge();
+
+        ChatHost.BeginAnimation(OpacityProperty, null);
+        ChatHost.Visibility = Visibility.Visible;
+        ChatHost.Opacity = 0;
+        ChatHost.Width = ChatWidth;
+        ChatHost.UpdateLayout();
+
+        var target = ChatTargetHeight();
+        GrowWindowFor(target);
+
+        Animate(NotchBody, WidthProperty, ChatWidth, Shape,
+            new BackEase { Amplitude = 0.16, EasingMode = EasingMode.EaseOut });
+        AnimateBodyHeight(target);
+        Animate(NotchDrop, TranslateTransform.YProperty, 0, Shape,
+            new CubicEase { EasingMode = EasingMode.EaseOut });
+        Animate(ChatHost, OpacityProperty, 1, Fade, null, beginAfter: 90);
+
+        _isShown = true;
+        KeepOnTop?.Invoke();
+        FocusChat();
+        ReportChatOnceSettled();
+    }
+
+    /// <summary>
+    /// Says what the chat actually looks like once its entrance has finished.
+    /// "Open was called" and "the user can see and click the chat" are
+    /// different claims: this panel is animated, layered and topmost, and every
+    /// one of those has silently swallowed a surface in this app before without
+    /// raising an error. Measuring any earlier just reports the values the
+    /// animation starts from.
+    /// </summary>
+    private void ReportChatOnceSettled()
+    {
+        if (DebugLog is null)
+        {
+            return;
+        }
+
+        var settled = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(700) };
+        settled.Tick += (_, _) =>
+        {
+            settled.Stop();
+            if (!IsChatOpen)
+            {
+                return;
+            }
+
+            var reachable = false;
+            if (ChatHost.ActualWidth > 0 && PresentationSource.FromVisual(ChatHost) is not null)
+            {
+                var centre = ChatHost.PointToScreen(
+                    new System.Windows.Point(ChatHost.ActualWidth / 2, ChatHost.ActualHeight / 2));
+                reachable = WindowFromPoint(new PointStruct
+                {
+                    X = (int)Math.Round(centre.X),
+                    Y = (int)Math.Round(centre.Y)
+                }) == Handle;
+            }
+
+            DebugLog?.Invoke(
+                $"Notch chat settled: window=({Left:0},{Top:0}) {Width:0}x{Height:0} " +
+                $"body={NotchBody.ActualWidth:0}x{NotchBody.ActualHeight:0} dropY={NotchDrop.Y:0} " +
+                $"panel={ChatHost.ActualWidth:0}x{ChatHost.ActualHeight:0} " +
+                $"panelOpacity={ChatHost.Opacity:0.00} clickable={reachable} " +
+                $"keyboard={ChatHost.IsKeyboardFocusWithin}");
+        };
+
+        settled.Start();
+    }
+
+    /// <summary>
+    /// Folds the chat back into the notch. It folds rather than vanishing, so
+    /// the user is shown where it went and where to find it again.
+    /// </summary>
+    public void CloseChat()
+    {
+        if (!IsChatOpen)
+        {
+            return;
+        }
+
+        DebugLog?.Invoke("Notch chat closing.");
+        IsChatOpen = false;
+        ChatHost.CloseMenus();
+        ReleaseKeyboard();
+
+        var fade = new DoubleAnimation(0, TimeSpan.FromMilliseconds(140))
+        {
+            EasingFunction = new CubicEase { EasingMode = EasingMode.EaseIn },
+            FillBehavior = FillBehavior.HoldEnd
+        };
+
+        fade.Completed += (_, _) =>
+        {
+            // The chat may have been reopened during the fade; collapsing then
+            // would take it away the moment it was asked for.
+            if (!IsChatOpen)
+            {
+                ChatHost.Visibility = Visibility.Collapsed;
+            }
+        };
+
+        ChatHost.BeginAnimation(OpacityProperty, fade);
+
+        AnimateBodyHeight(ExpandedHeight);
+        Tuck();
+        ShrinkWindowAfterFold();
+    }
+
+    // =========================== The first run ===========================
+
+    /// <summary>True while the notch is showing the sign-in or welcome panel.</summary>
+    public bool IsAuthOpen { get; private set; }
+
+    /// <summary>The first-run panel, for the host to wire to the runtime.</summary>
+    public NotchAuth Auth => AuthHost;
+
+    /// <summary>
+    /// Connects the first-run panel to the notch's geometry, the same way
+    /// ConnectChat does for the chat.
+    /// </summary>
+    public void ConnectAuth()
+    {
+        AuthHost.ContentSizeChanged += (_, _) => FitToAuth();
+    }
+
+    /// <summary>
+    /// Unfolds the notch into the sign-in panel.
+    ///
+    /// This deliberately does not check IsTracing the way OpenChat does. There
+    /// is nothing to interrupt: this runs before anything else in Metis is
+    /// visible, which is the whole point of the gate.
+    /// </summary>
+    public void OpenAuth()
+    {
+        if (IsAuthOpen)
+        {
+            FocusAuth();
+            return;
+        }
+
+        DebugLog?.Invoke("Notch first-run panel opening.");
+        IsAuthOpen = true;
+        _retractTimer.Stop();
+        _pressed = false;
+        Visibility = Visibility.Visible;
+
+        SetThinking(false);
+        StepPips.Visibility = Visibility.Collapsed;
+
+        // Released before assigning, for the same reason OpenChat does it: an
+        // animation holding a property at its end value ignores an assignment.
+        Animate(NotchContent, OpacityProperty, 0, Fade, null);
+        Animate(Grabber, OpacityProperty, 0, Fade, null);
+        HoverControls.BeginAnimation(OpacityProperty, null);
+        HoverControls.Opacity = 0;
+
+        PositionOverTopEdge();
+
+        AuthHost.BeginAnimation(OpacityProperty, null);
+        AuthHost.Visibility = Visibility.Visible;
+        AuthHost.Opacity = 0;
+        AuthHost.Width = AuthWidth;
+        AuthHost.UpdateLayout();
+
+        var target = AuthTargetHeight();
+        GrowWindowFor(target);
+
+        Animate(NotchBody, WidthProperty, AuthWidth, Shape,
+            new BackEase { Amplitude = 0.16, EasingMode = EasingMode.EaseOut });
+        AnimateBodyHeight(target);
+        Animate(NotchDrop, TranslateTransform.YProperty, 0, Shape,
+            new CubicEase { EasingMode = EasingMode.EaseOut });
+        Animate(AuthHost, OpacityProperty, 1, Fade, null, beginAfter: 90);
+
+        _isShown = true;
+        KeepOnTop?.Invoke();
+        FocusAuth();
+    }
+
+    /// <summary>Folds the first-run panel away once it has nothing left to ask.</summary>
+    public void CloseAuth()
+    {
+        if (!IsAuthOpen)
+        {
+            return;
+        }
+
+        DebugLog?.Invoke("Notch first-run panel closing.");
+        IsAuthOpen = false;
+        ReleaseKeyboard();
+
+        var fade = new DoubleAnimation(0, TimeSpan.FromMilliseconds(140))
+        {
+            EasingFunction = new CubicEase { EasingMode = EasingMode.EaseIn },
+            FillBehavior = FillBehavior.HoldEnd
+        };
+
+        fade.Completed += (_, _) =>
+        {
+            if (!IsAuthOpen)
+            {
+                AuthHost.Visibility = Visibility.Collapsed;
+            }
+        };
+
+        AuthHost.BeginAnimation(OpacityProperty, fade);
+
+        // Back to the resting width as well as the resting height. The chat
+        // never has to do this because it closes to the same width it opened
+        // from; the auth panel does not.
+        Animate(NotchBody, WidthProperty, TuckedWidth, Shape,
+            new CubicEase { EasingMode = EasingMode.EaseOut });
+        AnimateBodyHeight(ExpandedHeight);
+        Tuck();
+        ShrinkWindowAfterFold();
+    }
+
+    private void FocusAuth()
+    {
+        var current = GetForegroundWindow();
+        if (current != Handle)
+        {
+            _previousForeground = current;
+        }
+
+        SetActivatable(true);
+        Activate();
+        SetForegroundWindow(Handle);
+        AuthHost.FocusFirstField();
+    }
+
+    private void FitToAuth()
+    {
+        if (!IsAuthOpen)
+        {
+            return;
+        }
+
+        var target = AuthTargetHeight();
+        if (Math.Abs(target - _bodyHeightTarget) < 0.5)
+        {
+            return;
+        }
+
+        GrowWindowFor(target);
+        AnimateBodyHeight(target);
+        ShrinkWindowAfterFold();
+    }
+
+    private double AuthTargetHeight() =>
+        Math.Min(AuthHost.MeasureDesiredHeight(AuthWidth), ChatMaxHeight);
+
+    /// <summary>
+    /// Lets the notch take the keyboard, which it normally refuses. The window
+    /// carries WS_EX_NOACTIVATE so that narrating an activity never steals focus
+    /// from the user's work; that flag also makes it impossible to type into,
+    /// so it is lifted for exactly as long as the chat is open.
+    /// </summary>
+    private void FocusChat()
+    {
+        var current = GetForegroundWindow();
+        if (current != Handle)
+        {
+            _previousForeground = current;
+        }
+
+        SetActivatable(true);
+        Activate();
+        SetForegroundWindow(Handle);
+        ChatHost.FocusComposer();
+    }
+
+    /// <summary>
+    /// Hands the keyboard back to whatever had it before the chat opened, and
+    /// restores the notch's refusal to be activated.
+    /// </summary>
+    private void ReleaseKeyboard()
+    {
+        SetActivatable(false);
+
+        if (_previousForeground != nint.Zero && IsWindow(_previousForeground))
+        {
+            SetForegroundWindow(_previousForeground);
+        }
+
+        _previousForeground = nint.Zero;
+    }
+
+    private void SetActivatable(bool activatable)
+    {
+        var handle = Handle;
+        if (handle == nint.Zero)
+        {
+            return;
+        }
+
+        var style = GetWindowLong(handle, GwlExStyle);
+        style = activatable ? style & ~WsExNoActivate : style | WsExNoActivate;
+        SetWindowLong(handle, GwlExStyle, style);
+    }
+
+    /// <summary>
+    /// Re-measures the chat and animates the notch to fit it. This runs on every
+    /// keystroke that changes the composer's shape and on every message, so it
+    /// does nothing when the height has not actually moved — otherwise each
+    /// character would restart a 420ms animation and the panel would never
+    /// settle.
+    /// </summary>
+    private void FitToChat()
+    {
+        if (!IsChatOpen)
+        {
+            return;
+        }
+
+        var target = ChatTargetHeight();
+        if (Math.Abs(target - _bodyHeightTarget) < 0.5)
+        {
+            return;
+        }
+
+        GrowWindowFor(target);
+        AnimateBodyHeight(target);
+        ShrinkWindowAfterFold();
+    }
+
+    private double ChatTargetHeight() =>
+        Math.Min(ChatHost.MeasureDesiredHeight(ChatWidth), ChatMaxHeight);
+
+    private void AnimateBodyHeight(double target)
+    {
+        _bodyHeightTarget = target;
+        Animate(NotchBody, HeightProperty, target, Shape,
+            new CubicEase { EasingMode = EasingMode.EaseOut });
+    }
+
+    /// <summary>
+    /// Makes the host window big enough before the notch grows into it. A
+    /// window cannot clip a little and show the rest: content past its edge is
+    /// simply gone, so this always runs ahead of the animation.
+    /// </summary>
+    private void GrowWindowFor(double bodyHeight)
+    {
+        var wanted = bodyHeight + WindowSlack;
+        if (Height < wanted)
+        {
+            Height = wanted;
+        }
+    }
+
+    /// <summary>
+    /// Pulls the window back in once the fold has finished. Shrinking it while
+    /// the notch is still moving would cut the motion off part-way, and leaving
+    /// it large would keep an invisible sheet over the top of the screen
+    /// swallowing clicks meant for the user's own windows.
+    /// </summary>
+    private void ShrinkWindowAfterFold()
+    {
+        var settle = new DispatcherTimer { Interval = Shape.TimeSpan + TimeSpan.FromMilliseconds(120) };
+        settle.Tick += (_, _) =>
+        {
+            settle.Stop();
+            Height = Math.Max(PillWindowHeight, _bodyHeightTarget + WindowSlack);
+            if (!IsChatOpen)
+            {
+                PositionOverTopEdge();
+            }
+        };
+
+        settle.Start();
+    }
+
+    /// <summary>
     /// Turns the notch into the trace toolbar. Putting the tools here rather
     /// than in a floating palette keeps the screen clear: the user is trying to
     /// look at their own work, and a second window would sit on top of it.
     /// </summary>
     public void ShowTraceTools(TraceTool active)
     {
+        // The notch can only be one thing at a time, and a trace is a gesture
+        // already in progress, so the chat gives way to it rather than the
+        // other way round.
+        CloseChat();
+
         IsTracing = true;
         _retractTimer.Stop();
         Visibility = Visibility.Visible;
@@ -118,6 +630,7 @@ public partial class NotchWindow : Window
         // Wide enough for six controls, and it stays fully out so the tools are
         // reachable without hunting for the notch.
         Animate(NotchBody, WidthProperty, ToolbarWidth, Shape, new BackEase { Amplitude = 0.2, EasingMode = EasingMode.EaseOut });
+        AnimateBodyHeight(ExpandedHeight);
         Animate(NotchDrop, TranslateTransform.YProperty, 0, Shape, new CubicEase { EasingMode = EasingMode.EaseOut });
 
         // Must come after the trace surface has been shown, or that surface
@@ -280,6 +793,14 @@ public partial class NotchWindow : Window
     /// can be traced without the window taking a dependency on logging.
     /// </summary>
     public Action<string>? DebugLog { get; set; }
+
+    /// <summary>
+    /// Asks the host to push Metis's whole always-on-top stack back to the top,
+    /// in its intended order. Called at the moments the notch changes shape,
+    /// rather than leaving it to the next scheduled pass, so the notch is never
+    /// seen appearing from behind another window.
+    /// </summary>
+    public Action? KeepOnTop { get; set; }
 
     /// <summary>
     /// Whether the toolbar can actually be clicked, by asking Windows which
@@ -450,6 +971,14 @@ public partial class NotchWindow : Window
             return;
         }
 
+        if (IsPanelOpen)
+        {
+            // The chat carries the same narration on its own status line, so
+            // the notch has nowhere to put this and nothing to add. Resizing
+            // the body here would collapse the open panel mid-sentence.
+            return;
+        }
+
         _retractTimer.Stop();
 
         if (activity.Kind == MetisActivityKind.Idle || string.IsNullOrWhiteSpace(activity.Text))
@@ -482,10 +1011,12 @@ public partial class NotchWindow : Window
         var target = Math.Clamp(NotchContent.DesiredSize.Width + HorizontalPadding, 132, Width - 24);
 
         Animate(NotchBody, WidthProperty, target, Shape, new BackEase { Amplitude = 0.22, EasingMode = EasingMode.EaseOut });
+        AnimateBodyHeight(ExpandedHeight);
         Animate(NotchDrop, TranslateTransform.YProperty, 0, Shape, new CubicEase { EasingMode = EasingMode.EaseOut });
         Animate(NotchContent, OpacityProperty, 1, Fade, null, beginAfter: _isShown ? 0 : 120);
         Animate(Grabber, OpacityProperty, 0, Fade, null);
         _isShown = true;
+        KeepOnTop?.Invoke();
     }
 
     /// <summary>
@@ -495,11 +1026,12 @@ public partial class NotchWindow : Window
     /// </summary>
     public void Tuck()
     {
-        if (IsTracing)
+        if (IsTracing || IsPanelOpen)
         {
             // The toolbar is the only way to finish a trace, so the notch stays
             // out for as long as the user is marking something. Retracting it
             // mid-gesture takes the controls away exactly when they are needed.
+            // The open chat holds it out for the same reason.
             return;
         }
 
@@ -518,6 +1050,13 @@ public partial class NotchWindow : Window
 
     private void Notch_OnMouseEnter(object sender, System.Windows.Input.MouseEventArgs e)
     {
+        if (IsPanelOpen)
+        {
+            // The pointer is inside the chat, not on a resting notch, so there
+            // is nothing to reveal and nothing to peek.
+            return;
+        }
+
         _hovered = true;
         Animate(HoverControls, OpacityProperty, 1, Fade, null);
 
@@ -535,6 +1074,11 @@ public partial class NotchWindow : Window
 
     private void Notch_OnMouseLeave(object sender, System.Windows.Input.MouseEventArgs e)
     {
+        if (IsPanelOpen)
+        {
+            return;
+        }
+
         _hovered = false;
         _pressed = false;
         Animate(HoverControls, OpacityProperty, 0, Fade, null);
@@ -546,6 +1090,14 @@ public partial class NotchWindow : Window
 
     private void Notch_OnMouseLeftButtonDown(object sender, System.Windows.Input.MouseButtonEventArgs e)
     {
+        if (IsPanelOpen)
+        {
+            // Every click inside the chat bubbles up to the body. Reading them
+            // as presses on the notch would make typing into the composer close
+            // the very panel being typed into.
+            return;
+        }
+
         if (IsTracing)
         {
             // Only while the toolbar is up, and only the element that was hit:
@@ -566,7 +1118,7 @@ public partial class NotchWindow : Window
     /// </summary>
     private void Notch_OnMouseMove(object sender, System.Windows.Input.MouseEventArgs e)
     {
-        if (!_pressed || e.LeftButton != System.Windows.Input.MouseButtonState.Pressed)
+        if (IsPanelOpen || !_pressed || e.LeftButton != System.Windows.Input.MouseButtonState.Pressed)
         {
             return;
         }
@@ -580,7 +1132,7 @@ public partial class NotchWindow : Window
 
     private void Notch_OnMouseLeftButtonUp(object sender, System.Windows.Input.MouseButtonEventArgs e)
     {
-        if (!_pressed || IsTracing)
+        if (IsPanelOpen || !_pressed || IsTracing)
         {
             _pressed = false;
             return;
@@ -722,7 +1274,14 @@ public partial class NotchWindow : Window
             GetSystemMetrics(SmYVirtualScreen)));
 
         var primary = SystemParameters.PrimaryScreenWidth;
-        Width = Math.Min(560, primary);
+
+        // The window is only as wide as the shape the notch is currently in.
+        // Its transparent margin is still a solid sheet as far as the mouse is
+        // concerned, so an oversized window quietly eats clicks aimed at the
+        // windows underneath it.
+        Width = Math.Min(
+            IsChatOpen ? ChatWindowWidth : IsAuthOpen ? AuthWindowWidth : PillWindowWidth,
+            primary);
         Left = origin.X + ((primary - Width) / 2);
         Top = origin.Y;
     }
@@ -742,6 +1301,15 @@ public partial class NotchWindow : Window
 
     [DllImport("user32.dll")]
     private static extern int GetSystemMetrics(int index);
+
+    [DllImport("user32.dll")]
+    private static extern nint GetForegroundWindow();
+
+    [DllImport("user32.dll")]
+    private static extern bool SetForegroundWindow(nint handle);
+
+    [DllImport("user32.dll")]
+    private static extern bool IsWindow(nint handle);
 
     [DllImport("user32.dll")]
     private static extern bool SetWindowPos(

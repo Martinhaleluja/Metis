@@ -50,7 +50,10 @@ public sealed record CompanionShapeOption(
 /// </summary>
 public static class CompanionShapes
 {
-    public const string DefaultName = "Blob";
+    // A pointer by default: Metis teaches by pointing things out, and a cursor
+    // reads as a second hand on the screen guiding you, the way a person would.
+    // The blob is still there for anyone who prefers it.
+    public const string DefaultName = "Cursor";
 
     public static IReadOnlyList<CompanionShapeOption> All { get; } =
     [

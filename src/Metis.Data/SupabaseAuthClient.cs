@@ -13,9 +13,18 @@ public sealed record AuthResult(
     string Message,
     string? AccessToken = null,
     string? RefreshToken = null,
-    MetisAccount? Account = null)
+    MetisAccount? Account = null,
+    bool Reachable = true)
 {
     public static AuthResult Failed(string message) => new(false, message);
+
+    /// <summary>
+    /// The server never answered. Distinct from a refusal, because the two mean
+    /// opposite things: a refused token says the session is over, while silence
+    /// says nothing at all about it. The startup gate turns on that difference —
+    /// it is what lets someone who signed in last week open Metis on a train.
+    /// </summary>
+    public static AuthResult Unreachable(string message) => new(false, message, Reachable: false);
 }
 
 /// <summary>
@@ -56,7 +65,7 @@ public sealed class SupabaseAuthClient(HttpClient http)
 
         if (response is null)
         {
-            return AuthResult.Failed("Metis could not reach the sign-in service.");
+            return AuthResult.Unreachable("Metis could not reach the sign-in service.");
         }
 
         using var document = response.Value.Document;
@@ -84,7 +93,7 @@ public sealed class SupabaseAuthClient(HttpClient http)
 
         if (response is null)
         {
-            return AuthResult.Failed("Metis could not reach the sign-in service.");
+            return AuthResult.Unreachable("Metis could not reach the sign-in service.");
         }
 
         using var document = response.Value.Document;
@@ -113,7 +122,7 @@ public sealed class SupabaseAuthClient(HttpClient http)
 
         if (response is null)
         {
-            return AuthResult.Failed("Metis could not reach the sign-in service.");
+            return AuthResult.Unreachable("Metis could not reach the sign-in service.");
         }
 
         using var document = response.Value.Document;

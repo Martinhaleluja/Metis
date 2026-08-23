@@ -24,6 +24,40 @@ public static class LessonStepRouting
     public static bool RequiresRealScreenAnnotation(LessonStep step)
     {
         ArgumentNullException.ThrowIfNull(step);
-        return step.HasTarget && !step.HasDiagram;
+
+        // Either kind of evidence will do. A step that names its control but
+        // omits coordinates used to be discarded, so every such step fell back
+        // to one remembered spot and the whole lesson marked the same place.
+        return (step.HasTarget || step.HasNamedTarget) && !step.HasDiagram;
     }
+
+    /// <summary>
+    /// Whether a step should be drawn as a shape on a blank canvas instead of
+    /// marked on the real screen.
+    /// </summary>
+    /// <remarks>
+    /// Drawing on a canvas means abandoning the screen, so it has to be the
+    /// narrow case. Three things must all hold: the lesson was asked for as a
+    /// subject to illustrate, the step actually describes a shape, and the step
+    /// is not also pointing at something real — because a real target is the
+    /// answer the user asked for, and an invented shape drawn over their work
+    /// is not.
+    ///
+    /// Without the first condition a stray shape field on an otherwise ordinary
+    /// answer replaces a mark on the user's screen with a triangle floating in
+    /// the middle of it.
+    /// </remarks>
+    public static bool ShouldDrawOnCanvas(LessonStep step, bool illustratingASubject)
+    {
+        ArgumentNullException.ThrowIfNull(step);
+        return illustratingASubject && step.HasDiagram && !step.HasTarget;
+    }
+
+    /// <summary>
+    /// Whether a request should be answered by drawing a subject rather than by
+    /// marking the screen. A request that mentions the screen has its answer on
+    /// the screen, whatever subject its words happen to touch.
+    /// </summary>
+    public static bool ShouldIllustrateSubject(bool subjectMatchedFromRequest, bool requestAsksAboutScreen) =>
+        subjectMatchedFromRequest && !requestAsksAboutScreen;
 }

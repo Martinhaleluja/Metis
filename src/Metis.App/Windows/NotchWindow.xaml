@@ -1,7 +1,8 @@
 <Window x:Class="Metis.App.Windows.NotchWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Metis activity"
+        xmlns:windows="clr-namespace:Metis.App.Windows"
+        Title="Metis"
         WindowStyle="None"
         ResizeMode="NoResize"
         AllowsTransparency="True"
@@ -9,7 +10,6 @@
         ShowInTaskbar="False"
         ShowActivated="False"
         Topmost="True"
-        Focusable="False"
         WindowStartupLocation="Manual"
         Width="560" Height="64">
     <Window.Resources>
@@ -86,7 +86,9 @@
     <Grid Background="Transparent">
         <!-- The notch hangs off the top edge, so only the bottom corners are
              rounded. It is always present while Metis runs: tucked to a thin
-             sliver when idle, expanded when there is something to say. -->
+             sliver when idle, expanded when there is something to say, and
+             opened out into the chat when the user pulls it down. The chat has
+             no window of its own — this is it. -->
         <Border x:Name="NotchBody"
                 Background="{DynamicResource NotchBodyBrush}"
                 CornerRadius="0,0,18,18"
@@ -107,108 +109,128 @@
                 <DropShadowEffect Color="#000000" BlurRadius="16" ShadowDepth="3" Opacity="0.42" />
             </Border.Effect>
 
-            <Grid>
-                <!-- Tucked state: a grabber bar, so the notch reads as
-                     something you can pull rather than a stray black shape. -->
-                <Border x:Name="Grabber" Width="30" Height="3" CornerRadius="2"
-                        Background="{DynamicResource NotchGrabberBrush}" HorizontalAlignment="Center"
-                        VerticalAlignment="Bottom" Margin="0,0,0,7" />
+            <!-- Clipped, because the body's height is animated and the chat
+                 inside it is taller than the body for the whole of the opening
+                 motion. Without this the panel spills out of the notch and
+                 hangs unattached over the screen while it grows. -->
+            <Grid ClipToBounds="True">
+                <!-- Everything that belongs to the resting notch is pinned to
+                     the top strip, so it does not drift to the middle of the
+                     panel when the body grows into the chat. -->
+                <Grid x:Name="PillLayer" Height="34" VerticalAlignment="Top">
+                    <!-- Tucked state: a grabber bar, so the notch reads as
+                         something you can pull rather than a stray black shape. -->
+                    <Border x:Name="Grabber" Width="30" Height="3" CornerRadius="2"
+                            Background="{DynamicResource NotchGrabberBrush}" HorizontalAlignment="Center"
+                            VerticalAlignment="Bottom" Margin="0,0,0,7" />
 
-                <Grid x:Name="NotchContent" Margin="14,0" Opacity="0">
-                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                        <Grid Width="16" Height="16" Margin="0,0,9,0" VerticalAlignment="Center">
-                            <Ellipse x:Name="PulseHalo" Width="16" Height="16"
-                                     Fill="{DynamicResource StatusThinkingBrush}" Opacity="0.28" />
-                            <Ellipse x:Name="StatusLight" Width="8" Height="8"
-                                     Fill="{DynamicResource StatusThinkingBrush}"
-                                     HorizontalAlignment="Center" VerticalAlignment="Center" />
-                        </Grid>
+                    <Grid x:Name="NotchContent" Margin="14,0" Opacity="0">
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                            <Grid Width="16" Height="16" Margin="0,0,9,0" VerticalAlignment="Center">
+                                <Ellipse x:Name="PulseHalo" Width="16" Height="16"
+                                         Fill="{DynamicResource StatusThinkingBrush}" Opacity="0.28" />
+                                <Ellipse x:Name="StatusLight" Width="8" Height="8"
+                                         Fill="{DynamicResource StatusThinkingBrush}"
+                                         HorizontalAlignment="Center" VerticalAlignment="Center" />
+                            </Grid>
 
-                        <TextBlock x:Name="ActivityText" Text="" VerticalAlignment="Center"
-                                   Foreground="{DynamicResource NotchTextBrush}" FontSize="12.5" FontWeight="Medium"
-                                   TextTrimming="CharacterEllipsis" MaxWidth="260" />
+                            <TextBlock x:Name="ActivityText" Text="" VerticalAlignment="Center"
+                                       Foreground="{DynamicResource NotchTextBrush}" FontSize="12.5" FontWeight="Medium"
+                                       TextTrimming="CharacterEllipsis" MaxWidth="260" />
 
-                        <ItemsControl x:Name="StepPips" VerticalAlignment="Center" Margin="10,1,0,0"
-                                      Visibility="Collapsed">
-                            <ItemsControl.ItemsPanel>
-                                <ItemsPanelTemplate>
-                                    <StackPanel Orientation="Horizontal" />
-                                </ItemsPanelTemplate>
-                            </ItemsControl.ItemsPanel>
-                        </ItemsControl>
+                            <ItemsControl x:Name="StepPips" VerticalAlignment="Center" Margin="10,1,0,0"
+                                          Visibility="Collapsed">
+                                <ItemsControl.ItemsPanel>
+                                    <ItemsPanelTemplate>
+                                        <StackPanel Orientation="Horizontal" />
+                                    </ItemsPanelTemplate>
+                                </ItemsControl.ItemsPanel>
+                            </ItemsControl>
 
-                        <StackPanel x:Name="ThinkingDots" Orientation="Horizontal" VerticalAlignment="Center"
-                                    Margin="10,1,0,0" Visibility="Collapsed">
-                            <Ellipse x:Name="Dot1" Width="5" Height="5" Fill="{DynamicResource NotchMutedBrush}" Margin="0,0,4,0" />
-                            <Ellipse x:Name="Dot2" Width="5" Height="5" Fill="{DynamicResource NotchMutedBrush}" Margin="0,0,4,0" />
-                            <Ellipse x:Name="Dot3" Width="5" Height="5" Fill="{DynamicResource NotchMutedBrush}" />
+                            <StackPanel x:Name="ThinkingDots" Orientation="Horizontal" VerticalAlignment="Center"
+                                        Margin="10,1,0,0" Visibility="Collapsed">
+                                <Ellipse x:Name="Dot1" Width="5" Height="5" Fill="{DynamicResource NotchMutedBrush}" Margin="0,0,4,0" />
+                                <Ellipse x:Name="Dot2" Width="5" Height="5" Fill="{DynamicResource NotchMutedBrush}" Margin="0,0,4,0" />
+                                <Ellipse x:Name="Dot3" Width="5" Height="5" Fill="{DynamicResource NotchMutedBrush}" />
+                            </StackPanel>
                         </StackPanel>
+                    </Grid>
+
+                    <!-- Trace toolbar. The notch becomes the tool picker while
+                         an area is being marked out, so there is no second window
+                         competing with the thing the user is trying to look at. -->
+                    <StackPanel x:Name="TraceTools" Orientation="Horizontal" Visibility="Collapsed"
+                                HorizontalAlignment="Center" VerticalAlignment="Center">
+                        <!-- The three tools have to be told apart at a glance, so
+                             they differ on two axes at once: dashed vs solid, and
+                             round vs square vs open corners. An irregular dashed
+                             loop is the marching-ants idiom for a free selection. -->
+                        <Border x:Name="ToolFreehand" Tag="Freehand" Style="{StaticResource TraceToolButton}"
+                                MouseLeftButtonUp="TraceTool_OnClick" ToolTip="Draw around an area">
+                            <Border.RenderTransform><ScaleTransform /></Border.RenderTransform>
+                            <Path Style="{StaticResource TraceToolIcon}"
+                                  StrokeDashArray="2.2 1.7"
+                                  Data="M 8,2.7 C 11.3,2.5 14,4.7 13.9,7.7 C 13.8,10.7 11.1,13.3 7.8,13.3
+                                        C 4.5,13.3 2.1,11 2.1,7.9 C 2.1,4.8 4.7,2.9 8,2.7 Z" />
+                        </Border>
+                        <Border x:Name="ToolRectangle" Tag="Rectangle" Style="{StaticResource TraceToolButton}"
+                                MouseLeftButtonUp="TraceTool_OnClick" ToolTip="Drag a rectangle">
+                            <Border.RenderTransform><ScaleTransform /></Border.RenderTransform>
+                            <Path Style="{StaticResource TraceToolIcon}"
+                                  Data="M 2.6,3.7 L 13.4,3.7 L 13.4,12.3 L 2.6,12.3 Z" />
+                        </Border>
+                        <!-- Four corner brackets: the standard way to say "all of
+                             it" without drawing a filled shape that would read as a
+                             solid selection. -->
+                        <Border x:Name="ToolFullScreen" Tag="FullScreen" Style="{StaticResource TraceToolButton}"
+                                MouseLeftButtonUp="TraceTool_OnClick" ToolTip="Use the whole screen">
+                            <Border.RenderTransform><ScaleTransform /></Border.RenderTransform>
+                            <Path Style="{StaticResource TraceToolIcon}"
+                                  Data="M 2.6,6.2 L 2.6,2.6 L 6.2,2.6   M 9.8,2.6 L 13.4,2.6 L 13.4,6.2
+                                        M 13.4,9.8 L 13.4,13.4 L 9.8,13.4   M 6.2,13.4 L 2.6,13.4 L 2.6,9.8" />
+                        </Border>
+
+                        <Border x:Name="ToolDivider" Width="1" Height="16" Background="#40FFFFFF" Margin="8,0"
+                                RenderTransformOrigin="0.5,0.5">
+                            <Border.RenderTransform><ScaleTransform /></Border.RenderTransform>
+                        </Border>
+
+                        <Border x:Name="ToolAsk" Width="46" Style="{StaticResource TraceToolButton}"
+                                MouseLeftButtonUp="TraceAsk_OnClick" ToolTip="Ask about this area">
+                            <Border.RenderTransform><ScaleTransform /></Border.RenderTransform>
+                            <TextBlock Text="Ask" FontSize="11.5" FontWeight="SemiBold" Foreground="#30D158"
+                                       HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                        <Border x:Name="ToolCancel" Style="{StaticResource TraceToolButton}"
+                                MouseLeftButtonUp="TraceCancel_OnClick" ToolTip="Cancel">
+                            <Border.RenderTransform><ScaleTransform /></Border.RenderTransform>
+                            <Path Style="{StaticResource TraceToolIcon}" Stroke="#FF6257"
+                                  Data="M 4.6,4.6 L 11.4,11.4   M 11.4,4.6 L 4.6,11.4" />
+                        </Border>
+                    </StackPanel>
+
+                    <!-- Hover affordances: pull-down chevron and a settings gear.
+                         Only shown on hover so the resting notch stays quiet. -->
+                    <StackPanel x:Name="HoverControls" Orientation="Horizontal" Opacity="0"
+                                HorizontalAlignment="Right" VerticalAlignment="Center" Margin="0,0,10,0">
+                        <TextBlock x:Name="Chevron" Text="⌄" FontSize="15" Foreground="{DynamicResource NotchChromeBrush}"
+                                   Margin="0,-3,10,0" VerticalAlignment="Center" />
+                        <TextBlock Text="⚙" FontSize="13" Foreground="{DynamicResource NotchChromeBrush}" VerticalAlignment="Center"
+                                   Cursor="Hand" ToolTip="Metis setup"
+                                   MouseLeftButtonUp="Settings_OnMouseLeftButtonUp" />
                     </StackPanel>
                 </Grid>
 
-                <!-- Trace toolbar. The notch becomes the tool picker while
-                     an area is being marked out, so there is no second window
-                     competing with the thing the user is trying to look at. -->
-                <StackPanel x:Name="TraceTools" Orientation="Horizontal" Visibility="Collapsed"
-                            HorizontalAlignment="Center" VerticalAlignment="Center">
-                    <!-- The three tools have to be told apart at a glance, so
-                         they differ on two axes at once: dashed vs solid, and
-                         round vs square vs open corners. An irregular dashed
-                         loop is the marching-ants idiom for a free selection. -->
-                    <Border x:Name="ToolFreehand" Tag="Freehand" Style="{StaticResource TraceToolButton}"
-                            MouseLeftButtonUp="TraceTool_OnClick" ToolTip="Draw around an area">
-                        <Border.RenderTransform><ScaleTransform /></Border.RenderTransform>
-                        <Path Style="{StaticResource TraceToolIcon}"
-                              StrokeDashArray="2.2 1.7"
-                              Data="M 8,2.7 C 11.3,2.5 14,4.7 13.9,7.7 C 13.8,10.7 11.1,13.3 7.8,13.3
-                                    C 4.5,13.3 2.1,11 2.1,7.9 C 2.1,4.8 4.7,2.9 8,2.7 Z" />
-                    </Border>
-                    <Border x:Name="ToolRectangle" Tag="Rectangle" Style="{StaticResource TraceToolButton}"
-                            MouseLeftButtonUp="TraceTool_OnClick" ToolTip="Drag a rectangle">
-                        <Border.RenderTransform><ScaleTransform /></Border.RenderTransform>
-                        <Path Style="{StaticResource TraceToolIcon}"
-                              Data="M 2.6,3.7 L 13.4,3.7 L 13.4,12.3 L 2.6,12.3 Z" />
-                    </Border>
-                    <!-- Four corner brackets: the standard way to say "all of
-                         it" without drawing a filled shape that would read as a
-                         solid selection. -->
-                    <Border x:Name="ToolFullScreen" Tag="FullScreen" Style="{StaticResource TraceToolButton}"
-                            MouseLeftButtonUp="TraceTool_OnClick" ToolTip="Use the whole screen">
-                        <Border.RenderTransform><ScaleTransform /></Border.RenderTransform>
-                        <Path Style="{StaticResource TraceToolIcon}"
-                              Data="M 2.6,6.2 L 2.6,2.6 L 6.2,2.6   M 9.8,2.6 L 13.4,2.6 L 13.4,6.2
-                                    M 13.4,9.8 L 13.4,13.4 L 9.8,13.4   M 6.2,13.4 L 2.6,13.4 L 2.6,9.8" />
-                    </Border>
+                <!-- The chat. Collapsed rather than hidden while the notch is
+                     resting, so it costs no layout until it is asked for. -->
+                <windows:NotchChat x:Name="ChatHost" VerticalAlignment="Top"
+                                   Visibility="Collapsed" Opacity="0" Cursor="Arrow" />
 
-                    <Border x:Name="ToolDivider" Width="1" Height="16" Background="#40FFFFFF" Margin="8,0"
-                            RenderTransformOrigin="0.5,0.5">
-                        <Border.RenderTransform><ScaleTransform /></Border.RenderTransform>
-                    </Border>
-
-                    <Border x:Name="ToolAsk" Width="46" Style="{StaticResource TraceToolButton}"
-                            MouseLeftButtonUp="TraceAsk_OnClick" ToolTip="Ask about this area">
-                        <Border.RenderTransform><ScaleTransform /></Border.RenderTransform>
-                        <TextBlock Text="Ask" FontSize="11.5" FontWeight="SemiBold" Foreground="#30D158"
-                                   HorizontalAlignment="Center" VerticalAlignment="Center" />
-                    </Border>
-                    <Border x:Name="ToolCancel" Style="{StaticResource TraceToolButton}"
-                            MouseLeftButtonUp="TraceCancel_OnClick" ToolTip="Cancel">
-                        <Border.RenderTransform><ScaleTransform /></Border.RenderTransform>
-                        <Path Style="{StaticResource TraceToolIcon}" Stroke="#FF6257"
-                              Data="M 4.6,4.6 L 11.4,11.4   M 11.4,4.6 L 4.6,11.4" />
-                    </Border>
-                </StackPanel>
-
-                <!-- Hover affordances: pull-down chevron and a settings gear.
-                     Only shown on hover so the resting notch stays quiet. -->
-                <StackPanel x:Name="HoverControls" Orientation="Horizontal" Opacity="0"
-                            HorizontalAlignment="Right" VerticalAlignment="Center" Margin="0,0,10,0">
-                    <TextBlock x:Name="Chevron" Text="⌄" FontSize="15" Foreground="{DynamicResource NotchChromeBrush}"
-                               Margin="0,-3,10,0" VerticalAlignment="Center" />
-                    <TextBlock Text="⚙" FontSize="13" Foreground="{DynamicResource NotchChromeBrush}" VerticalAlignment="Center"
-                               Cursor="Hand" ToolTip="Metis setup"
-                               MouseLeftButtonUp="Settings_OnMouseLeftButtonUp" />
-                </StackPanel>
+                <!-- First run: sign in, then what Metis is. Collapsed on the
+                     same terms as the chat, and only ever shown instead of it —
+                     the two are never open at once. -->
+                <windows:NotchAuth x:Name="AuthHost" VerticalAlignment="Top"
+                                   Visibility="Collapsed" Opacity="0" Cursor="Arrow" />
             </Grid>
         </Border>
     </Grid>

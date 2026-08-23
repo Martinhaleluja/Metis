@@ -57,7 +57,11 @@ public enum MetisFeature
     /// <summary>Connecting a personal provider API key. Pro and staff only.</summary>
     CustomAiProvider,
 
-    /// <summary>Operating the computer at all — Autopilot's underlying permission.</summary>
+    /// <summary>
+    /// Operating the computer directly. Metis is a learning instrument and does
+    /// not do this any more; the value survives because the server-side enum it
+    /// mirrors still carries it, and the two have to agree.
+    /// </summary>
     ComputerControl,
 
     /// <summary>Running system commands for things with no interface.</summary>

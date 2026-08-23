@@ -33,15 +33,15 @@ public sealed class CompanionFlight
     /// over. Distance-proportional timing is what stops a hop to the next
     /// button taking as long as a crossing of two monitors.
     /// </summary>
-    private const double PixelsPerSecond = 800d;
+    private static readonly double PixelsPerSecond = GuidanceTuning.ScaleSpeed(800d);
 
     /// <summary>
     /// A flight shorter than this still gets enough time to be seen as motion
     /// rather than a jump, and a long one stops short of feeling like a
     /// cutscene the user has to sit through.
     /// </summary>
-    private static readonly TimeSpan ShortestFlight = TimeSpan.FromMilliseconds(550);
-    private static readonly TimeSpan LongestFlight = TimeSpan.FromMilliseconds(1400);
+    private static readonly TimeSpan ShortestFlight = GuidanceTuning.Scale(TimeSpan.FromMilliseconds(550));
+    private static readonly TimeSpan LongestFlight = GuidanceTuning.Scale(TimeSpan.FromMilliseconds(1400));
 
     /// <summary>
     /// How far the arc bows away from the straight line, as a share of the

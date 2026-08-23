@@ -184,10 +184,14 @@ public sealed class AnnotationDurationTests
             AnnotationDuration.For(AnnotationScope.Control, 900, 500, Screen));
 
     [Fact]
-    public void The_two_holds_are_seven_and_five_seconds()
+    public void The_two_holds_are_a_seven_and_five_second_base_scaled_by_the_pace()
     {
-        Assert.Equal(TimeSpan.FromSeconds(7), AnnotationDuration.Standard);
-        Assert.Equal(TimeSpan.FromSeconds(5), AnnotationDuration.Small);
+        // The base holds are 7s and 5s; the guidance pace knob shortens both so
+        // the whole experience feels snappier, and the standard stays the
+        // longer of the two.
+        Assert.Equal(GuidanceTuning.Scale(TimeSpan.FromSeconds(7)), AnnotationDuration.Standard);
+        Assert.Equal(GuidanceTuning.Scale(TimeSpan.FromSeconds(5)), AnnotationDuration.Small);
+        Assert.True(AnnotationDuration.Standard > AnnotationDuration.Small);
     }
 
     [Fact]
@@ -367,4 +371,39 @@ public sealed class AnnotationParsingTests
 
         Assert.Equal(AnnotationScope.Region, plan.Scope);
     }
+
+    [Fact]
+    public void A_single_turn_plan_converts_to_an_annotation_target()
+    {
+        var plan = AssistantPlanParser.Parse(
+            """
+            {
+              "spoken_text": "The Save button is in the top left.",
+              "screen_observed": true,
+              "scope": "control",
+              "x": 120,
+              "y": 80,
+              "w": 60,
+              "h": 32,
+              "label": "Save",
+              "element": "Save File"
+            }
+            """,
+            hasScreenshot: true);
+
+        Assert.True(plan.HasAnnotation);
+        Assert.Empty(plan.LessonSteps);
+
+        var target = plan.ToAnnotationTarget();
+        Assert.Equal(AnnotationScope.Control, target.Scope);
+        Assert.Equal(120, target.NormalizedX);
+        Assert.Equal(80, target.NormalizedY);
+        Assert.Equal(60, target.NormalizedWidth);
+        Assert.Equal(32, target.NormalizedHeight);
+        Assert.Equal("Save", target.Label);
+        Assert.Equal("Save File", target.ElementName);
+        Assert.True(target.HasPoint);
+        Assert.True(target.HasExtent);
+    }
 }
+

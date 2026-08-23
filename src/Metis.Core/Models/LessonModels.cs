@@ -77,6 +77,17 @@ public sealed record LessonStep(
     public bool HasTarget => TargetX >= 0 && TargetY >= 0;
 
     /// <summary>
+    /// True when the step says which control it means, even without saying
+    /// where it is.
+    ///
+    /// A name outlives a coordinate. The screen moves on as the learner works,
+    /// but "the Record button" still means the Record button, so a named step
+    /// can be placed against the screen as it is now.
+    /// </summary>
+    public bool HasNamedTarget =>
+        !string.IsNullOrWhiteSpace(ElementName) || !string.IsNullOrWhiteSpace(Text);
+
+    /// <summary>
     /// True when this step draws something Metis is explaining rather than
     /// marking something that is already on screen.
     /// </summary>

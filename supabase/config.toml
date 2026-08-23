@@ -1,0 +1,3 @@
+# Links this directory to the hosted project, so `supabase db push` and
+# `supabase db diff` know where they are pointing without being told each time.
+project_id = "liaqpxhgxmdjzwxullag"

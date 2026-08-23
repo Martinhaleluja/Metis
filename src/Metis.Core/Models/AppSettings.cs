@@ -61,12 +61,6 @@ public sealed record AppSettings
     public string? PreferredMicrophoneId { get; init; }
 
     /// <summary>
-    /// Learn, Guide, Assist, or Autopilot. Guide is the default because it
-    /// helps without touching the user's computer unless they ask.
-    /// </summary>
-    public string OperatingMode { get; init; } = "Guide";
-
-    /// <summary>
     /// Enables the Ctrl+Alt context shortcut and the Ctrl+Alt+Shift inspect
     /// shortcut alongside the original Ctrl+Shift+1 hold-to-talk chord.
     /// </summary>
@@ -99,7 +93,12 @@ public sealed record AppSettings
     /// </summary>
     public string MetisEnvironment { get; init; } = "production";
 
-    /// <summary>The Metis backend. Empty means Metis runs with no account at all.</summary>
+    /// <summary>
+    /// The Metis backend. Empty is the normal case and does not mean "no
+    /// account": it means use the project compiled into the build, which is
+    /// what every ordinary install does. Filling this in points a development
+    /// copy somewhere else without a recompile. See <c>MetisBackend</c>.
+    /// </summary>
     public string SupabaseUrl { get; init; } = string.Empty;
 
     /// <summary>
@@ -108,6 +107,24 @@ public sealed record AppSettings
     /// decides what any request may actually read.
     /// </summary>
     public string SupabaseAnonKey { get; init; } = string.Empty;
+
+    /// <summary>
+    /// When this copy last held a session the backend agreed to. It is what
+    /// bounds the offline grace period, so someone who signed in yesterday and
+    /// is now on a train still gets in, while a machine abandoned for a month
+    /// asks again. Null means signed in before Metis started recording it.
+    /// </summary>
+    public DateTimeOffset? LastAuthenticatedUtc { get; init; }
+
+    /// <summary>
+    /// Whether Metis may fetch and install a newer build by itself.
+    ///
+    /// On by default, because testers are the people who most need the newest
+    /// build and are least likely to go looking for it. The installer upgrades
+    /// in place, per-user, and needs no administrator rights, so an update is
+    /// a prompt rather than an interruption.
+    /// </summary>
+    public bool AutomaticUpdates { get; init; } = true;
 
     /// <summary>
     /// Lets Metis draw temporary highlights, arrows, and numbered steps over
@@ -238,7 +255,6 @@ public sealed record AppSettings
         ChatterboxVoice = string.IsNullOrWhiteSpace(ChatterboxVoice) ? "default" : ChatterboxVoice.Trim(),
         CompanionSize = Math.Clamp(CompanionSize, 32, 112),
         CursorDistance = Math.Clamp(CursorDistance, 0, 120),
-        OperatingMode = NormalizeOperatingMode(OperatingMode),
         SoundPackPath = NormalizeOptionalPath(SoundPackPath),
         CompanionColor = CompanionPalette.Normalize(CompanionColor),
         CompanionShape = CompanionShapes.Normalize(CompanionShape),
@@ -264,14 +280,6 @@ public sealed record AppSettings
     /// </summary>
     private static string NormalizeOptionalPath(string? value) =>
         string.IsNullOrWhiteSpace(value) ? string.Empty : value.Trim().Trim('"');
-
-    private static string NormalizeOperatingMode(string? value) => value?.Trim().ToLowerInvariant() switch
-    {
-        "learn" or "teach" or "teacher" => "Learn",
-        "assist" or "collaborate" => "Assist",
-        "autopilot" or "auto" or "agent" => "Autopilot",
-        _ => "Guide"
-    };
 
     private static string NormalizeProvider(string? value) => value?.Trim().ToLowerInvariant() switch
     {

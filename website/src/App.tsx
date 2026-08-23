@@ -4,7 +4,7 @@ import { FinalCta } from "./components/FinalCta";
 import { Footer } from "./components/Footer";
 import { Hero } from "./components/Hero";
 import { HowItWorks } from "./components/HowItWorks";
-import { Modes } from "./components/Modes";
+import { NeverTakesOver } from "./components/NeverTakesOver";
 import { Nav } from "./components/Nav";
 import { Privacy } from "./components/Privacy";
 import { useWaitlist } from "./lib/waitlist";
@@ -32,7 +32,7 @@ export default function App() {
         <Hero waitlist={waitlist} />
         <AppMarquee />
         <Capabilities />
-        <Modes />
+        <NeverTakesOver />
         <HowItWorks />
         <Privacy />
         <FinalCta waitlist={waitlist} />

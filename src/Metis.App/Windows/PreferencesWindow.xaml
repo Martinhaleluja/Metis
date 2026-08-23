@@ -98,11 +98,11 @@
                             <UniformGrid Columns="2">
                                 <Border Style="{StaticResource UtilityCard}" Margin="0,0,8,12">
                                     <StackPanel>
-                                        <TextBlock Style="{StaticResource MonoLabelText}" Text="OPERATING MODE" />
+                                        <TextBlock Style="{StaticResource MonoLabelText}" Text="WHAT METIS DOES" />
                                         <TextBlock x:Name="DashModeText" Style="{StaticResource SubtitleText}" Margin="0,8,0,0" />
                                         <TextBlock x:Name="DashModeSummary" Style="{StaticResource CaptionText}" Margin="0,4,0,10" />
-                                        <Button Content="Change" Style="{StaticResource SecondaryButton}"
-                                                HorizontalAlignment="Left" Tag="Modes" Click="Jump_OnClick" />
+                                        <Button Content="Screen and privacy" Style="{StaticResource SecondaryButton}"
+                                                HorizontalAlignment="Left" Tag="Privacy" Click="Jump_OnClick" />
                                     </StackPanel>
                                 </Border>
                                 <Border Style="{StaticResource UtilityCard}" Margin="8,0,0,12">
@@ -353,26 +353,6 @@
                         </StackPanel>
 
                         <!-- ============ Modes ============ -->
-                        <StackPanel x:Name="PageModes" Visibility="Collapsed">
-                            <TextBlock Text="Modes &amp; autonomy" Style="{StaticResource PageTitleText}" />
-                            <TextBlock Style="{StaticResource CaptionText}" Margin="0,4,0,20"
-                                       Text="How much Metis is allowed to do on its own." />
-                            <ItemsControl x:Name="ModeList" />
-                            <Border Style="{StaticResource UtilityCard}" Margin="0,4,0,0">
-                                <StackPanel>
-                                    <CheckBox x:Name="ContextShortcutsCheck" Margin="0,0,0,12"
-                                              Content="Enable the Ctrl+Alt screen shortcuts" />
-                                    <CheckBox x:Name="VisualGuidanceCheck" Margin="0,0,0,12"
-                                              Content="Draw arrows and highlights over the desktop" />
-                                    <CheckBox x:Name="FullControlCheck"
-                                              Content="Allow Metis to move the pointer and type" />
-                                    <Border Style="{StaticResource Separator}" />
-                                    <TextBlock Style="{StaticResource CaptionText}"
-                                               Text="In every mode, Metis stops and asks before anything that deletes, buys, pays, sends, or submits. That limit is not configurable." />
-                                </StackPanel>
-                            </Border>
-                        </StackPanel>
-
                         <!-- ============ Voice ============ -->
                         <StackPanel x:Name="PageVoice" Visibility="Collapsed">
                             <TextBlock Text="Voice &amp; input" Style="{StaticResource PageTitleText}" />
@@ -547,6 +527,13 @@
                                     <CheckBox x:Name="CaptureScreenCheck" Margin="0,12,0,0"
                                               Content="Let Metis capture the screen when I ask it something" />
                                     <TextBlock x:Name="CaptureDisclosure" Style="{StaticResource CaptionText}" Margin="48,8,0,0" />
+                                    <Border Style="{StaticResource Separator}" />
+                                    <CheckBox x:Name="VisualGuidanceCheck" Margin="0,0,0,12"
+                                              Content="Draw arrows and highlights over the desktop" />
+                                    <CheckBox x:Name="ContextShortcutsCheck"
+                                              Content="Enable the Ctrl+Alt screen shortcuts" />
+                                    <TextBlock Style="{StaticResource CaptionText}" Margin="48,8,0,0"
+                                               Text="Metis draws over the screen to point things out. The marks are click-through and fade on their own; it never takes the pointer or types for you." />
                                 </StackPanel>
                             </Border>
 

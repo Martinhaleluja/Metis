@@ -8,6 +8,7 @@ using System.Windows.Media.Effects;
 using System.Windows.Shapes;
 using System.Windows.Threading;
 using Metis.Core.Models;
+using Metis.Core.Services;
 using MediaColor = System.Windows.Media.Color;
 
 namespace Metis.App.Windows;
@@ -385,13 +386,12 @@ public partial class GuidanceOverlayWindow : Window
         // corners just off the edge of the screen, which draws the mark
         // perfectly and shows the user nothing at all.
         const double inset = 3;
-        var surfaceWidth = Width > 0 ? Width : SystemParameters.VirtualScreenWidth;
-        var surfaceHeight = Height > 0 ? Height : SystemParameters.VirtualScreenHeight;
+        var monitor = MonitorRectFor(mark.ScreenX, mark.ScreenY, fromDevice);
 
-        var left = Math.Max(inset, bounds.X - padding);
-        var top = Math.Max(inset, bounds.Y - padding);
-        var right = Math.Min(surfaceWidth - inset, bounds.X + bounds.Width + padding);
-        var bottom = Math.Min(surfaceHeight - inset, bounds.Y + bounds.Height + padding);
+        var left = Math.Max(monitor.Left + inset, bounds.X - padding);
+        var top = Math.Max(monitor.Top + inset, bounds.Y - padding);
+        var right = Math.Min(monitor.Right - inset, bounds.X + bounds.Width + padding);
+        var bottom = Math.Min(monitor.Bottom - inset, bounds.Y + bounds.Height + padding);
 
         // A rectangle inverted by the clamp has nothing to bracket.
         if (right <= left || bottom <= top)
@@ -680,27 +680,22 @@ public partial class GuidanceOverlayWindow : Window
         label.Measure(new System.Windows.Size(double.PositiveInfinity, double.PositiveInfinity));
         var size = label.DesiredSize;
 
+        var monitor = MonitorRectFor(mark.ScreenX, mark.ScreenY, fromDevice);
+
         // Prefer sitting just above the mark, and drop below when the mark is
-        // near the top edge, so a badge never leaves the desktop or covers the
+        // near the top edge, so a badge never leaves the monitor or covers the
         // thing it is naming.
         var top = bounds.Y - size.Height - 8;
-        if (top < 4)
+        if (top < monitor.Top + 4)
         {
             top = bounds.Y + bounds.Height + 8;
         }
 
         var left = bounds.X + (bounds.Width / 2d) - (size.Width / 2d);
 
-        // Width/Height are set explicitly when the overlay is stretched over the
-        // desktop; ActualWidth stays zero because this window never runs a
-        // normal layout pass, which pinned every label to the top-left corner.
-        var surfaceWidth = Width > 0 ? Width : SystemParameters.VirtualScreenWidth;
-        var surfaceHeight = Height > 0 ? Height : SystemParameters.VirtualScreenHeight;
-
-        Canvas.SetLeft(label, Math.Clamp(left, 4, Math.Max(4, surfaceWidth - size.Width - 4)));
-        Canvas.SetTop(label, Math.Clamp(top, 4, Math.Max(4, surfaceHeight - size.Height - 4)));
+        Canvas.SetLeft(label, Math.Clamp(left, monitor.Left + 4, Math.Max(monitor.Left + 4, monitor.Right - size.Width - 4)));
+        Canvas.SetTop(label, Math.Clamp(top, monitor.Top + 4, Math.Max(monitor.Top + 4, monitor.Bottom - size.Height - 4)));
         MarkCanvas.Children.Add(label);
-        _ = fromDevice;
     }
 
     /// <summary>
@@ -730,14 +725,26 @@ public partial class GuidanceOverlayWindow : Window
         {
             target = ToWindowPoint(mark.ScreenX, mark.ScreenY, fromDevice);
 
-            // Approach from whichever side has room, so the arrow never runs off
-            // the desktop and never covers the control it is pointing at.
-            fromLeft = target.X > Width / 2d;
-            var fromAbove = target.Y > Height / 2d;
+            // Approach from whichever side has room ON THE TARGET'S OWN MONITOR,
+            // not the whole desktop: judged against the desktop midpoint, a
+            // target on a left-hand monitor always reads as "reach right", which
+            // sends the tail toward — or across — the neighbouring screen. The
+            // monitor's own midpoint keeps the approach and the tail on the
+            // screen the user is looking at.
+            var monitor = MonitorRectFor(mark.ScreenX, mark.ScreenY, fromDevice);
+            fromLeft = target.X > (monitor.Left + monitor.Right) / 2d;
+            var fromAbove = target.Y > (monitor.Top + monitor.Bottom) / 2d;
             var reach = 170d;
             tail = new System.Windows.Point(
                 target.X + (fromLeft ? -reach : reach),
                 target.Y + (fromAbove ? -reach * 0.62 : reach * 0.62));
+
+            // If the reach still spilled the tail off the monitor, pull it back
+            // inside so the tail — and the label anchored to it — stay visible.
+            const double edge = 6;
+            tail = new System.Windows.Point(
+                Math.Clamp(tail.X, monitor.Left + edge, monitor.Right - edge),
+                Math.Clamp(tail.Y, monitor.Top + edge, monitor.Bottom - edge));
         }
 
         // The bow is what makes it read as drawn by hand rather than plotted.
@@ -829,7 +836,7 @@ public partial class GuidanceOverlayWindow : Window
         stroke.StrokeDashArray = [span, span];
         stroke.StrokeDashOffset = span;
 
-        var draw = new DoubleAnimation(span, 0, TimeSpan.FromMilliseconds(560))
+        var draw = new DoubleAnimation(span, 0, GuidanceTuning.Scale(TimeSpan.FromMilliseconds(560)))
         {
             EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }
         };
@@ -843,9 +850,9 @@ public partial class GuidanceOverlayWindow : Window
             return;
         }
 
-        var fade = new DoubleAnimation(1, 0, TimeSpan.FromMilliseconds(900))
+        var fade = new DoubleAnimation(1, 0, GuidanceTuning.Scale(TimeSpan.FromMilliseconds(900)))
         {
-            BeginTime = TimeSpan.FromMilliseconds(2200),
+            BeginTime = GuidanceTuning.Scale(TimeSpan.FromMilliseconds(2200)),
             EasingFunction = new CubicEase { EasingMode = EasingMode.EaseIn }
         };
         stroke.BeginAnimation(OpacityProperty, fade);
@@ -899,6 +906,31 @@ public partial class GuidanceOverlayWindow : Window
         return new System.Windows.Point(transformed.X - origin.X, transformed.Y - origin.Y);
     }
 
+    /// <summary>
+    /// The bounds, in this window's local coordinates, of the monitor a screen
+    /// point falls on. Falls back to the whole surface if the monitor cannot be
+    /// read, so the arrow degrades to its old whole-desktop behaviour rather
+    /// than to nothing.
+    /// </summary>
+    private Rect MonitorRectFor(int screenX, int screenY, Matrix fromDevice)
+    {
+        var handle = MonitorFromPoint(new NativePoint { X = screenX, Y = screenY }, MonitorDefaultToNearest);
+        var info = new MonitorInfo { Size = Marshal.SizeOf<MonitorInfo>() };
+        if (handle == nint.Zero || !GetMonitorInfo(handle, ref info))
+        {
+            return new Rect(0, 0, Width > 0 ? Width : SystemParameters.VirtualScreenWidth,
+                Height > 0 ? Height : SystemParameters.VirtualScreenHeight);
+        }
+
+        var topLeft = ToWindowPoint(info.Left, info.Top, fromDevice);
+        var bottomRight = ToWindowPoint(info.Right, info.Bottom, fromDevice);
+        return new Rect(
+            topLeft.X,
+            topLeft.Y,
+            Math.Max(1, bottomRight.X - topLeft.X),
+            Math.Max(1, bottomRight.Y - topLeft.Y));
+    }
+
     private void StretchOverVirtualDesktop()
     {
         var fromDevice = PresentationSource.FromVisual(this)?.CompositionTarget?.TransformFromDevice
@@ -931,4 +963,34 @@ public partial class GuidanceOverlayWindow : Window
 
     [DllImport("user32.dll")]
     private static extern int GetSystemMetrics(int index);
+
+    private const uint MonitorDefaultToNearest = 2;
+
+    [DllImport("user32.dll")]
+    private static extern nint MonitorFromPoint(NativePoint point, uint flags);
+
+    [DllImport("user32.dll", CharSet = CharSet.Auto)]
+    private static extern bool GetMonitorInfo(nint monitor, ref MonitorInfo info);
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct NativePoint
+    {
+        public int X;
+        public int Y;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct MonitorInfo
+    {
+        public int Size;
+        public int Left;
+        public int Top;
+        public int Right;
+        public int Bottom;
+        public int WorkLeft;
+        public int WorkTop;
+        public int WorkRight;
+        public int WorkBottom;
+        public uint Flags;
+    }
 }
