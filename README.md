@@ -4,7 +4,7 @@ An AI companion for your computer.
 
 Metis is a Windows-native desktop companion rebuilt with C# and .NET 8/WPF.
 
-Metis lives in the tray, follows the cursor as a vector companion, records while `Ctrl+Shift+1` is held, captures the complete virtual desktop, and sends the request to the selected reasoning provider. For screen-aware requests, the provider can return a small structured desktop plan that moves Metis independently and performs compatible cursorless actions.
+Metis lives in the tray, optionally displays a top notch bar for quick chat and authentication, follows the cursor as a vector companion, records while `Ctrl+Shift+1` is held, captures the complete virtual desktop, and sends the request to the selected reasoning provider. For screen-aware requests, the provider can return a small structured desktop plan that moves Metis independently and performs visual guidance.
 
 Reasoning, transcription, and spoken output are selected independently:
 
@@ -16,6 +16,13 @@ Reasoning, transcription, and spoken output are selected independently:
 - **Automatic** tries configured cloud providers in the order Gemini, OpenAI, then Claude.
 - **AssemblyAI** is an optional speech-to-text provider for voice requests.
 - **ElevenLabs** is an optional text-to-speech provider for Metis's voice.
+
+## Features & UI
+
+- **Top Notch Interface**: Access quick chat and authentication gating directly from the top notch bar on your screen.
+- **Visual Desktop Guidance**: Metis draws temporary click-through highlights, arrows, and step indicators over real UI controls.
+- **Cursor Inspector**: Hold shortcuts to inspect UI elements directly under your mouse pointer.
+- **Privacy & Safety First**: Metis never takes over your computer or clicks high-impact controls (payments, credentials, deletion). Emergency stop (`F12`) instantly halts active plans.
 
 ## Development
 
@@ -70,11 +77,12 @@ That is the whole design rather than one option among several. Metis had modes o
 
 Metis remembers what you have already learned, per application, and shortens its guidance as your skill level rises. Memory is structured data at `%LOCALAPPDATA%\Metis\memory.json`, holds no screen content, and can be erased with **Clear memory** in Setup.
 
-## Desktop assistance
+## Desktop assistance & Shortcuts
 
-- Hold `Ctrl+Alt` while another app is active and ask about what you see, then release the keys.
-- Hold `Ctrl+Alt+Shift` and point at a control to ask about that exact element — "what does this do?", "why is this red?". Metis resolves "this" from the UI element under your pointer rather than from the window as a whole.
-- Hold `Ctrl+Shift+1` while another app is active, ask Metis to point to or click a visible control, then release the keys.
+- **Hold `Ctrl+Shift+1`**: Start push-to-talk recording while another app is active, ask Metis to point to or explain a visible control, then release to send.
+- **Hold `Ctrl+Alt`**: Ask about what you currently see on screen.
+- **Hold `Ctrl+Alt+Shift`**: Point at a specific control to ask about that exact element ("what does this do?", "why is this red?"). Metis resolves "this" from the UI element under your pointer rather than the entire window.
+- **Press `F12`**: Emergency Stop. Immediately cancels active guidance, clears queued actions, and stops current requests.
 - When visual guidance is enabled, Metis draws a temporary click-through highlight, arrow, and numbered step over the real control. The marks expire on their own and never alter the application underneath.
 - A short pop plays when the microphone opens and a woosh when the request is sent, so you know Metis heard you without looking away from your work. Both are synthesised in code, and the woosh only fires once a recording is long enough to be real.
 - To use your own sounds, drop WAV or MP3 files into the `sound effects` folder beside the executable and name them after the moment they mark: `app started`, `audio recording started`, `inspect keys pressed`, `inspect keys released`, `request sent`, `task complete`, `saved settings`, `stop metis`, and `error`. Numbered variants such as `error 1` and `error 2` are picked at random without repeating the previous one. Matching is by keyword, so case, numbering, and separators do not matter. Files must be under 6 seconds; anything missing falls back to a built-in cue or stays silent.
