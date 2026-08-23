@@ -497,6 +497,36 @@ public partial class App : System.Windows.Application
         {
             ShowChat();
         }
+
+        StartBackgroundUpdateCheck();
+    }
+
+    private void StartBackgroundUpdateCheck()
+    {
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                // Wait 4 seconds after startup so UI is fully settled
+                await Task.Delay(TimeSpan.FromSeconds(4));
+                if (_runtime is null || _notchWindow is null)
+                {
+                    return;
+                }
+
+                var updater = new UpdateService(_runtime.Log);
+                var check = await updater.CheckAsync();
+                if (check.UpdateAvailable)
+                {
+                    _runtime.Log.Info($"Background update check: version {check.Version} available.");
+                    Dispatcher.Invoke(() => _notchWindow.Chat.ShowUpdate(check));
+                }
+            }
+            catch (Exception exception)
+            {
+                _runtime?.Log.Error("Background update check encountered an error.", exception);
+            }
+        });
     }
 
     /// <summary>

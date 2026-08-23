@@ -29,6 +29,7 @@ public partial class NotchChat : System.Windows.Controls.UserControl
 {
     private readonly ObservableCollection<ChatBubble> _messages = [];
     private MetisRuntime? _runtime;
+    private UpdateCheck? _availableUpdate;
     private bool _sending;
 
     /// <summary>Raised when the user asks for the chat to be put away.</summary>
@@ -108,6 +109,64 @@ public partial class NotchChat : System.Windows.Controls.UserControl
         _messages.Clear();
         _messages.Add(new ChatBubble("Metis", text));
         RaiseSizeChanged();
+    }
+
+    /// <summary>
+    /// Displays the update banner telling the user to click update, after which
+    /// Metis will download the installer and automatically restart.
+    /// </summary>
+    public void ShowUpdate(UpdateCheck update)
+    {
+        if (!update.UpdateAvailable)
+        {
+            return;
+        }
+
+        _availableUpdate = update;
+        UpdateTitle.Text = $"Update to Metis {update.Version ?? "new version"} is available";
+        UpdateSubtitle.Text = "Click update and Metis will automatically restart.";
+        UpdateActionLabel.Text = "Update";
+        UpdateButton.IsEnabled = true;
+        UpdateButton.Opacity = 1.0;
+        UpdateBanner.Visibility = Visibility.Visible;
+        RaiseSizeChanged();
+    }
+
+    public void HideUpdate()
+    {
+        UpdateBanner.Visibility = Visibility.Collapsed;
+        RaiseSizeChanged();
+    }
+
+    private async void UpdateButton_OnClick(object sender, MouseButtonEventArgs e)
+    {
+        e.Handled = true;
+        if (_availableUpdate is null || !_availableUpdate.UpdateAvailable)
+        {
+            return;
+        }
+
+        if (_runtime is null)
+        {
+            return;
+        }
+
+        UpdateActionLabel.Text = "Updating…";
+        UpdateSubtitle.Text = "Downloading update and restarting Metis…";
+        UpdateButton.IsEnabled = false;
+        UpdateButton.Opacity = 0.6;
+        RaiseSizeChanged();
+
+        var updater = new UpdateService(_runtime.Log);
+        var started = await updater.DownloadAndRunAsync(_availableUpdate);
+        if (!started)
+        {
+            UpdateActionLabel.Text = "Retry";
+            UpdateSubtitle.Text = "Update download failed. Check your internet connection or retry.";
+            UpdateButton.IsEnabled = true;
+            UpdateButton.Opacity = 1.0;
+            RaiseSizeChanged();
+        }
     }
 
     // ============================ Sending ============================

@@ -154,6 +154,7 @@
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
 
         <!-- ============================ Header ============================
@@ -211,12 +212,37 @@
             </StackPanel>
         </Grid>
 
+        <!-- ======================= Update Banner ======================= -->
+        <Border x:Name="UpdateBanner" Grid.Row="1" Margin="14,2,14,6" Background="#240A7CFF"
+                BorderBrush="{StaticResource ChatAccent}" BorderThickness="1"
+                CornerRadius="10" Padding="12,8" Visibility="Collapsed">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <StackPanel VerticalAlignment="Center" Margin="0,0,10,0">
+                    <TextBlock x:Name="UpdateTitle" Text="Update available" FontSize="12"
+                               FontWeight="SemiBold" Foreground="{StaticResource ChatInk}" />
+                    <TextBlock x:Name="UpdateSubtitle" Text="Click update and Metis will automatically restart."
+                               FontSize="10.5" Foreground="{StaticResource ChatMuted}" Margin="0,2,0,0" TextWrapping="Wrap" />
+                </StackPanel>
+                <Border x:Name="UpdateButton" Grid.Column="1" Style="{StaticResource ChatChip}"
+                        Background="{StaticResource ChatAccent}" BorderThickness="0"
+                        Padding="14,0" Height="28" CornerRadius="14" VerticalAlignment="Center"
+                        MouseLeftButtonUp="UpdateButton_OnClick">
+                    <TextBlock x:Name="UpdateActionLabel" Text="Update" FontSize="11.5" FontWeight="SemiBold"
+                               Foreground="White" VerticalAlignment="Center" />
+                </Border>
+            </Grid>
+        </Border>
+
         <!-- ========================== Transcript ==========================
              The row is Auto rather than star-sized, so the panel is exactly as
              tall as the conversation until the conversation outgrows the cap.
              That is what lets the notch grow with what is in it instead of
              opening at one fixed size. -->
-        <ScrollViewer x:Name="MessagesScroll" Grid.Row="1" MaxHeight="330"
+        <ScrollViewer x:Name="MessagesScroll" Grid.Row="2" MaxHeight="330"
                       Style="{StaticResource ChatScroller}" Padding="14,2,10,6">
             <ItemsControl x:Name="MessagesList">
                 <ItemsControl.ItemTemplate>
@@ -288,7 +314,7 @@
         <!-- =========================== Composer ===========================
              The field grows with what is typed into it, and the notch grows
              with the field. -->
-        <Grid Grid.Row="2" Margin="14,2,14,0">
+        <Grid Grid.Row="3" Margin="14,2,14,0">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="*" />
                 <ColumnDefinition Width="Auto" />
@@ -319,7 +345,7 @@
         </Grid>
 
         <!-- ============================ Footer ============================ -->
-        <Grid Grid.Row="3" Margin="18,7,18,11">
+        <Grid Grid.Row="4" Margin="18,7,18,11">
             <StackPanel Orientation="Horizontal" HorizontalAlignment="Left" VerticalAlignment="Center">
                 <Ellipse x:Name="StateDot" Width="6" Height="6" Fill="#30D158"
                          Margin="0,0,6,0" VerticalAlignment="Center" />

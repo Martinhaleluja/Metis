@@ -185,6 +185,7 @@ public partial class PreferencesWindow : System.Windows.Window
             _companionColour = s.CompanionColor;
             _companionShape = s.CompanionShape;
 
+            UserNameBox.Text = s.UserName;
             StartWithWindowsCheck.IsChecked = s.StartWithWindows;
             ReduceMotionCheck.IsChecked = s.ReduceMotion;
             ActivationSoundsCheck.IsChecked = s.ActivationSoundsEnabled;
@@ -534,6 +535,7 @@ public partial class PreferencesWindow : System.Windows.Window
         var s = _runtime.Settings;
         var rows = new List<Border>
         {
+            DiagnosticRow("Metis version", AppVersion.Current),
             DiagnosticRow("Reasoning provider", s.AiProvider),
             DiagnosticRow("Cloud key stored",
                 _runtime.HasAnyApiKey ? "Yes" : "No — local providers do not need one"),
@@ -724,6 +726,7 @@ public partial class PreferencesWindow : System.Windows.Window
 
         return _runtime.Settings with
         {
+            UserName = UserNameBox.Text.Trim(),
             StartWithWindows = StartWithWindowsCheck.IsChecked == true,
             ReduceMotion = ReduceMotionCheck.IsChecked == true,
             ActivationSoundsEnabled = ActivationSoundsCheck.IsChecked == true,

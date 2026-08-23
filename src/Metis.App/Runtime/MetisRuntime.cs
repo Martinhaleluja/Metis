@@ -1286,9 +1286,9 @@ public sealed class MetisRuntime : IDisposable
                 _taskContext.Describe(),
                 skillContext,
                 taughtSkills,
-                recall,
                 region,
-                _academicTeaching);
+                _academicTeaching,
+                Settings.UserName);
             SetActivity(MetisActivityKind.Thinking, "Thinking");
             var response = await GenerateWithSelectedProviderAsync(request, cancellationToken);
 

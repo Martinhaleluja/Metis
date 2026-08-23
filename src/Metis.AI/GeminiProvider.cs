@@ -208,9 +208,21 @@ public sealed partial class GeminiProvider : IGeminiProvider, IDisposable
     {
         ThrowIfDisposed();
         ValidateKey(apiKey);
-        var normalizedModel = NormalizeModel(model);
+        var normalizedModel = NormalizeSpeechModel(model);
         var payload = GeminiRequestBuilder.BuildSpeechJson(voiceName, text);
-        var body = await SendForJsonAsync(apiKey, normalizedModel, payload, cancellationToken).ConfigureAwait(false);
+        
+        string body;
+        try
+        {
+            body = await SendForJsonAsync(apiKey, normalizedModel, payload, cancellationToken).ConfigureAwait(false);
+        }
+        catch (GeminiProviderException ex) when (ex.Kind is GeminiErrorKind.InvalidRequest or GeminiErrorKind.EmptyResponse
+                                              && normalizedModel != "gemini-2.0-flash")
+        {
+            // Fallback to default gemini-2.0-flash if the requested model returns 404 or unsupported response modality
+            normalizedModel = "gemini-2.0-flash";
+            body = await SendForJsonAsync(apiKey, normalizedModel, payload, cancellationToken).ConfigureAwait(false);
+        }
 
         using var document = ParseJson(body);
         foreach (var part in EnumerateResponseParts(document.RootElement))
@@ -660,6 +672,24 @@ public sealed partial class GeminiProvider : IGeminiProvider, IDisposable
         if (normalized.StartsWith("models/", StringComparison.OrdinalIgnoreCase))
         {
             normalized = normalized["models/".Length..];
+        }
+
+        ValidateModel(normalized);
+        return normalized;
+    }
+
+    private static string NormalizeSpeechModel(string? model)
+    {
+        var normalized = string.IsNullOrWhiteSpace(model) ? "gemini-2.0-flash" : model.Trim();
+        if (normalized.StartsWith("models/", StringComparison.OrdinalIgnoreCase))
+        {
+            normalized = normalized["models/".Length..];
+        }
+
+        if (normalized.Contains("preview-tts", StringComparison.OrdinalIgnoreCase) ||
+            normalized.Equals("auto", StringComparison.OrdinalIgnoreCase))
+        {
+            normalized = "gemini-2.0-flash";
         }
 
         ValidateModel(normalized);

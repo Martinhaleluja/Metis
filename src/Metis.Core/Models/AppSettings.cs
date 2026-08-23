@@ -13,7 +13,7 @@ public sealed record AppSettings
 
     public string AiProvider { get; init; } = "Gemini";
     public string ReasoningModel { get; init; } = "gemini-3.5-flash";
-    public string SpeechModel { get; init; } = "gemini-2.5-flash-preview-tts";
+    public string SpeechModel { get; init; } = "gemini-2.0-flash";
     public string VoiceName { get; init; } = "Kore";
     public string OpenAiReasoningModel { get; init; } = "gpt-5-mini";
     public string OpenAiTranscriptionModel { get; init; } = "gpt-4o-mini-transcribe";
@@ -65,6 +65,12 @@ public sealed record AppSettings
     /// shortcut alongside the original Ctrl+Shift+1 hold-to-talk chord.
     /// </summary>
     public bool ContextShortcutsEnabled { get; init; } = true;
+
+    /// <summary>
+    /// The display name the user prefers Metis to address them by.
+    /// Empty string means Metis will not use a specific name unless configured.
+    /// </summary>
+    public string UserName { get; init; } = string.Empty;
 
     /// <summary>
     /// The word that starts a request while Ctrl+Space listening is on. Kept
@@ -226,7 +232,7 @@ public sealed record AppSettings
         SettingsVersion = SettingsVersion < 1 ? 1 : SettingsVersion,
         AiProvider = NormalizeProvider(AiProvider),
         ReasoningModel = NormalizeModel(ReasoningModel, "gemini-3.5-flash"),
-        SpeechModel = NormalizeModel(SpeechModel, "gemini-2.5-flash-preview-tts"),
+        SpeechModel = NormalizeSpeechModel(SpeechModel, "gemini-2.0-flash"),
         VoiceName = string.IsNullOrWhiteSpace(VoiceName) ? "Kore" : VoiceName.Trim(),
         OpenAiReasoningModel = NormalizeModel(OpenAiReasoningModel, "gpt-5-mini"),
         OpenAiTranscriptionModel = NormalizeModel(OpenAiTranscriptionModel, "gpt-4o-mini-transcribe"),
@@ -331,5 +337,17 @@ public sealed record AppSettings
         return model.StartsWith("models/", StringComparison.OrdinalIgnoreCase)
             ? model["models/".Length..]
             : model;
+    }
+
+    private static string NormalizeSpeechModel(string? value, string fallback)
+    {
+        var model = NormalizeModel(value, fallback);
+        if (model.Contains("preview-tts", StringComparison.OrdinalIgnoreCase) ||
+            model.Equals("auto", StringComparison.OrdinalIgnoreCase))
+        {
+            return fallback;
+        }
+
+        return model;
     }
 }

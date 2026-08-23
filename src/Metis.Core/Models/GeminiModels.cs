@@ -42,7 +42,12 @@ public sealed record GeminiRequest(
     /// answer should draw a diagram instead of marking the screen. Decided from
     /// the domain of whichever skill matched, not from the request's wording.
     /// </summary>
-    bool AcademicTeaching = false);
+    bool AcademicTeaching = false,
+
+    /// <summary>
+    /// The user's configured preferred display name.
+    /// </summary>
+    string? UserName = null);
 
 public sealed record GeminiResponse(string Text, string Model, AssistantPlan? Plan = null);
 

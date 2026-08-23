@@ -187,6 +187,15 @@
 
                             <Border Style="{StaticResource UtilityCard}" Margin="0,0,0,12">
                                 <StackPanel>
+                                    <TextBlock Style="{StaticResource MonoLabelText}" Text="YOUR NAME" />
+                                    <TextBlock Style="{StaticResource CaptionText}" Margin="0,4,0,8"
+                                               Text="What Metis should call you when speaking or guiding." />
+                                    <TextBox x:Name="UserNameBox" Margin="0,0,0,0" ToolTip="Enter your name" />
+                                </StackPanel>
+                            </Border>
+
+                            <Border Style="{StaticResource UtilityCard}" Margin="0,0,0,12">
+                                <StackPanel>
                                     <TextBlock Style="{StaticResource MonoLabelText}" Text="STARTUP" />
                                     <CheckBox x:Name="StartWithWindowsCheck" Margin="0,12,0,0"
                                               Content="Start Metis when I sign in to Windows" />

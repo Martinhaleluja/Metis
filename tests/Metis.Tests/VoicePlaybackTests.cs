@@ -98,9 +98,23 @@ public sealed class GeminiSpeechFailureTests
             """)));
 
         var error = await Assert.ThrowsAsync<GeminiProviderException>(() =>
+            provider.SynthesizeSpeechAsync("fake-secret-key", "gemini-2.0-flash", "Kore", "Hello"));
+
+        Assert.Contains("gemini-2.0-flash", error.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Deprecated_tts_model_name_normalizes_to_stable_flash()
+    {
+        using var provider = new GeminiProvider(new HttpClient(new StubResponse("""
+            {"candidates":[{"content":{"parts":[]}}]}
+            """)));
+
+        var error = await Assert.ThrowsAsync<GeminiProviderException>(() =>
             provider.SynthesizeSpeechAsync("fake-secret-key", "gemini-2.5-flash-preview-tts", "Kore", "Hello"));
 
-        Assert.Contains("gemini-2.5-flash-preview-tts", error.Message, StringComparison.Ordinal);
+        // Should normalize to gemini-2.0-flash rather than querying preview-tts
+        Assert.Contains("gemini-2.0-flash", error.Message, StringComparison.Ordinal);
     }
 
     private sealed class StubResponse(string json) : HttpMessageHandler
