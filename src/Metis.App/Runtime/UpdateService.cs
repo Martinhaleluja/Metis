@@ -128,7 +128,7 @@ public sealed class UpdateService(IDiagnosticLog log)
                 continue;
             }
 
-            if (!name.StartsWith("Metis-Setup-", StringComparison.OrdinalIgnoreCase)
+            if (!(name.StartsWith("Metis-Setup-", StringComparison.OrdinalIgnoreCase) || string.Equals(name, "Metis.exe", StringComparison.OrdinalIgnoreCase))
                 || !name.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
             {
                 continue;
