@@ -4,7 +4,9 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
 using Metis.App.Runtime;
+using Metis.Core.Agents;
 using Metis.Core.Models;
+using Metis.Core.Services;
 
 // WPF and Windows Forms are both enabled, so these names are ambiguous under
 // implicit usings. Everything in this window is WPF.
@@ -14,6 +16,26 @@ using Brush = System.Windows.Media.Brush;
 using Brushes = System.Windows.Media.Brushes;
 
 namespace Metis.App.Windows;
+
+public sealed record AgentDotItem(string TaskId, Brush DotBrush, string Tooltip);
+
+public static class AgentColors
+{
+    private static readonly string[] Palette =
+    [
+        "#0A7CFF", // Electric Blue
+        "#30D158", // Vibrant Green
+        "#BF5AF2", // Purple
+        "#FF9F0A", // Amber Orange
+        "#FF375F", // Vivid Coral
+        "#5E5CE6", // Indigo
+        "#64D2FF", // Cyan
+        "#FFD60A"  // Yellow
+    ];
+
+    public static Brush GetBrush(int index) =>
+        (Brush)new SolidColorBrush((Color)ColorConverter.ConvertFromString(Palette[Math.Abs(index) % Palette.Length]));
+}
 
 /// <summary>
 /// The whole of Metis's chat, laid out to live inside the notch. There is no
@@ -37,6 +59,12 @@ public partial class NotchChat : System.Windows.Controls.UserControl
 
     /// <summary>Raised when the user asks for the setup window.</summary>
     public event EventHandler? SetupRequested;
+
+    /// <summary>Raised when the user clicks Spawn Agent.</summary>
+    public event EventHandler? SpawnAgentRequested;
+
+    /// <summary>Raised when the user clicks the active agent dots.</summary>
+    public event EventHandler? AgentDrawerRequested;
 
     /// <summary>
     /// Raised whenever the content changes size — a message arriving, the
@@ -66,12 +94,48 @@ public partial class NotchChat : System.Windows.Controls.UserControl
         runtime.StatusChanged += Runtime_OnStatusChanged;
         runtime.AudioLevelChanged += Runtime_OnAudioLevelChanged;
         runtime.State.Changed += Runtime_OnStateChanged;
-        runtime.ChatsChanged += (_, _) => Dispatcher.Invoke(RefreshModelChip);
+        runtime.ChatsChanged += (_, _) => Dispatcher.InvokeAsync(RefreshModelChip);
 
         // The model list depends on which provider is selected, so it is rebuilt
         // whenever settings change rather than only once. Usage is re-read at
         // the same time, which keeps the counts from going stale.
-        runtime.SettingsChanged += (_, _) => Dispatcher.Invoke(RefreshModelChip);
+        runtime.SettingsChanged += (_, _) => Dispatcher.InvokeAsync(RefreshModelChip);
+
+        if (runtime.AgentTasks is not null)
+        {
+            runtime.AgentTasks.TaskCreated += (_, task) => Dispatcher.InvokeAsync(() =>
+            {
+                RefreshAgentDots();
+                _messages.Add(new ChatBubble("Metis", $"⚡ Agent [{task.Id}] started: \"{task.Goal}\" in the background."));
+                RaiseSizeChanged();
+            });
+
+            runtime.AgentTasks.TaskCompleted += (_, task) => Dispatcher.InvokeAsync(() =>
+            {
+                RefreshAgentDots();
+                var summary = string.IsNullOrWhiteSpace(task.ResultSummary) ? "Task completed successfully." : task.ResultSummary;
+                _messages.Add(new ChatBubble("Metis", $"✅ Agent [{task.Id}] finished!\n\nGoal: \"{task.Goal}\"\n\nResult: {summary}"));
+                RaiseSizeChanged();
+            });
+
+            runtime.AgentTasks.TaskUpdated += (_, _) => Dispatcher.InvokeAsync(RefreshAgentDots);
+
+            runtime.AgentTasks.TaskFailed += (_, task) => Dispatcher.InvokeAsync(() =>
+            {
+                RefreshAgentDots();
+                _messages.Add(new ChatBubble("Problem", $"❌ Agent [{task.Id}] failed: {task.ErrorMessage ?? "Unknown error"}\n\nClick 'Spawn Agent' or type /spawn {task.Goal} to retry."));
+                RaiseSizeChanged();
+            });
+
+            runtime.AgentTasks.TaskCancelled += (_, task) => Dispatcher.InvokeAsync(() =>
+            {
+                RefreshAgentDots();
+                _messages.Add(new ChatBubble("Metis", $"⏹ Agent [{task.Id}] was cancelled."));
+                RaiseSizeChanged();
+            });
+
+            RefreshAgentDots();
+        }
 
         StatusText.Text = runtime.CurrentStatus;
         Greet("I'm ready. Ask me about your screen, or tell me what to do.");
@@ -173,26 +237,40 @@ public partial class NotchChat : System.Windows.Controls.UserControl
 
     private async void Send_OnClick(object sender, MouseButtonEventArgs e)
     {
-        e.Handled = true;
-        await SendAsync();
+        try
+        {
+            e.Handled = true;
+            await SendAsync();
+        }
+        catch (Exception ex)
+        {
+            _runtime?.Log.Error("Unhandled exception in Send_OnClick", ex);
+        }
     }
 
     private async void PromptBox_OnPreviewKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
     {
-        // Enter sends and Shift+Enter breaks the line, which is the convention
-        // every chat box follows. PreviewKeyDown rather than KeyDown so the
-        // TextBox never gets the chance to insert the newline first.
-        if (e.Key == Key.Enter && Keyboard.Modifiers == ModifierKeys.None)
+        try
         {
-            e.Handled = true;
-            await SendAsync();
-            return;
-        }
+            // Enter sends and Shift+Enter breaks the line, which is the convention
+            // every chat box follows. PreviewKeyDown rather than KeyDown so the
+            // TextBox never gets the chance to insert the newline first.
+            if (e.Key == Key.Enter && Keyboard.Modifiers == ModifierKeys.None)
+            {
+                e.Handled = true;
+                await SendAsync();
+                return;
+            }
 
-        if (e.Key == Key.Escape)
+            if (e.Key == Key.Escape)
+            {
+                e.Handled = true;
+                CloseRequested?.Invoke(this, EventArgs.Empty);
+            }
+        }
+        catch (Exception ex)
         {
-            e.Handled = true;
-            CloseRequested?.Invoke(this, EventArgs.Empty);
+            _runtime?.Log.Error("Unhandled exception in PromptBox_OnPreviewKeyDown", ex);
         }
     }
 
@@ -211,11 +289,25 @@ public partial class NotchChat : System.Windows.Controls.UserControl
 
         PromptBox.Clear();
         UpdatePlaceholder();
-        _sending = true;
-        SendButton.Opacity = 0.45;
+
         try
         {
+            // The spawn intercept that used to sit here is gone. It caught the
+            // prompt before the runtime ever saw it, which meant the typed path
+            // and the voice path disagreed about what counted as a request for
+            // an agent, it only ever started one however many were asked for,
+            // and it could never follow "spawn an agent" with "to do what?".
+            // The runtime handles all of it now, in one place.
+
+            _sending = true;
+            SendButton.Opacity = 0.45;
             await _runtime.AskTextAsync(prompt);
+        }
+        catch (Exception exception)
+        {
+            _runtime.Log.Error("Failed to send message", exception);
+            _messages.Add(new ChatBubble("Problem", $"Failed to send message: {exception.Message}"));
+            RaiseSizeChanged();
         }
         finally
         {
@@ -223,6 +315,34 @@ public partial class NotchChat : System.Windows.Controls.UserControl
             SendButton.Opacity = 1;
             FocusComposer();
         }
+    }
+
+    private void SpawnAgentChip_OnClick(object sender, MouseButtonEventArgs e)
+    {
+        e.Handled = true;
+        SpawnAgentRequested?.Invoke(this, EventArgs.Empty);
+    }
+
+    private void AgentDots_OnClick(object sender, MouseButtonEventArgs e)
+    {
+        e.Handled = true;
+        AgentDrawerRequested?.Invoke(this, EventArgs.Empty);
+    }
+
+    public void RefreshAgentDots()
+    {
+        if (_runtime?.AgentTasks is null) return;
+
+        var active = _runtime.AgentTasks.GetActiveTasks();
+        var dots = new List<AgentDotItem>();
+        for (var i = 0; i < active.Count; i++)
+        {
+            var task = active[i];
+            dots.Add(new AgentDotItem(task.Id, AgentColors.GetBrush(i), $"{task.Id}: {task.Goal} ({task.Status})"));
+        }
+
+        AgentDotsControl.ItemsSource = dots;
+        AgentDotsControl.Visibility = dots.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
     }
 
     /// <summary>
@@ -241,7 +361,7 @@ public partial class NotchChat : System.Windows.Controls.UserControl
 
     // ========================= Runtime events =========================
 
-    private void Runtime_OnMessageAdded(object? sender, AssistantMessage message) => Dispatcher.Invoke(() =>
+    private void Runtime_OnMessageAdded(object? sender, AssistantMessage message) => Dispatcher.InvokeAsync(() =>
     {
         var author = message.Role switch
         {
@@ -257,12 +377,12 @@ public partial class NotchChat : System.Windows.Controls.UserControl
     });
 
     private void Runtime_OnStatusChanged(object? sender, string status) =>
-        Dispatcher.Invoke(() => StatusText.Text = status);
+        Dispatcher.InvokeAsync(() => StatusText.Text = status);
 
     private void Runtime_OnAudioLevelChanged(object? sender, float level) =>
         Dispatcher.BeginInvoke(() => VoiceLevel.Value = Math.Clamp(level, 0, 1));
 
-    private void Runtime_OnStateChanged(object? sender, AssistantState state) => Dispatcher.Invoke(() =>
+    private void Runtime_OnStateChanged(object? sender, AssistantState state) => Dispatcher.InvokeAsync(() =>
     {
         VoiceLevel.Visibility = state == AssistantState.Listening ? Visibility.Visible : Visibility.Hidden;
 

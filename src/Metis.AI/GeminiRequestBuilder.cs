@@ -84,6 +84,23 @@ public static class GeminiRequestBuilder
         return JsonSerializer.Serialize(payload, SerializerOptions);
     }
 
+    private static readonly HashSet<string> ValidGeminiVoices = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "Puck", "Charon", "Kore", "Fenrir", "Aoede", "Zephyr", "Leda", "Orus",
+        "Callirrhoe", "Autonoe", "Despina", "Erinome", "Helike", "Iapetus", "Thalassa", "Proteus"
+    };
+
+    public static string NormalizeVoice(string? voiceName)
+    {
+        if (string.IsNullOrWhiteSpace(voiceName))
+        {
+            return "Kore";
+        }
+
+        var trimmed = voiceName.Trim();
+        return ValidGeminiVoices.TryGetValue(trimmed, out var match) ? match : "Kore";
+    }
+
     public static string BuildSpeechJson(string voiceName, string text)
     {
         if (string.IsNullOrWhiteSpace(text))
@@ -91,6 +108,7 @@ public static class GeminiRequestBuilder
             throw new ArgumentException("Speech text cannot be empty.", nameof(text));
         }
 
+        var normalizedVoice = NormalizeVoice(voiceName);
         var payload = new
         {
             contents = new[]
@@ -110,7 +128,7 @@ public static class GeminiRequestBuilder
                     {
                         prebuiltVoiceConfig = new
                         {
-                            voiceName = string.IsNullOrWhiteSpace(voiceName) ? "Kore" : voiceName.Trim()
+                            voiceName = normalizedVoice
                         }
                     }
                 }

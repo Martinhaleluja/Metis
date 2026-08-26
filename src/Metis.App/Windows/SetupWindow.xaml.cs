@@ -74,7 +74,6 @@ public partial class SetupWindow : Window
         ElevenLabsApiKeyBox.Password = string.Empty;
         SelectComboItem(ProviderBox, settings.AiProvider);
         ReasoningModelBox.Text = settings.ReasoningModel;
-        SpeechModelBox.Text = settings.SpeechModel;
         SelectComboItem(VoiceBox, settings.VoiceName);
         OpenAiReasoningModelBox.Text = settings.OpenAiReasoningModel;
         OpenAiTranscriptionModelBox.Text = settings.OpenAiTranscriptionModel;
@@ -344,14 +343,15 @@ public partial class SetupWindow : Window
 
     private AppSettings BuildSettings()
     {
-        var provider = (ProviderBox.SelectedItem as ComboBoxItem)?.Content?.ToString() ?? "Gemini";
-        var geminiVoice = (VoiceBox.SelectedItem as ComboBoxItem)?.Content?.ToString() ?? "Kore";
-        var openAiVoice = (OpenAiVoiceBox.SelectedItem as ComboBoxItem)?.Content?.ToString() ?? "alloy";
+        var provider = SelectedContent(ProviderBox, "Gemini");
+        var geminiVoice = SelectedContent(VoiceBox, "Kore");
+        var geminiSpeechModel = _runtime.Settings.SpeechModel;
+        var openAiVoice = SelectedContent(OpenAiVoiceBox, "alloy");
         return _runtime.Settings with
         {
             AiProvider = provider,
             ReasoningModel = ReasoningModelBox.Text,
-            SpeechModel = SpeechModelBox.Text,
+            SpeechModel = geminiSpeechModel,
             VoiceName = geminiVoice,
             OpenAiReasoningModel = OpenAiReasoningModelBox.Text,
             OpenAiTranscriptionModel = OpenAiTranscriptionModelBox.Text,
@@ -488,7 +488,7 @@ public partial class SetupWindow : Window
     }
 
     private void Runtime_OnStatusChanged(object? sender, string status) =>
-        Dispatcher.Invoke(() =>
+        Dispatcher.InvokeAsync(() =>
         {
             InlineStatusText.Text = status;
             DiagnosticsRuntimeText.Text = status;
@@ -571,35 +571,7 @@ public partial class SetupWindow : Window
         var usesPiper = textToSpeech.Equals("Piper", StringComparison.OrdinalIgnoreCase);
         var usesChatterbox = textToSpeech.Equals("Chatterbox-Nano", StringComparison.OrdinalIgnoreCase);
 
-        // Windows counts as a local voice: it needs no key and no network, so
-        // the cloud voice card would only be misleading next to it.
-        var usesWindowsVoice = textToSpeech.Equals("Windows", StringComparison.OrdinalIgnoreCase);
-        WindowsVoiceCard.Visibility = usesWindowsVoice ? Visibility.Visible : Visibility.Collapsed;
-        if (usesWindowsVoice)
-        {
-            // Guarded: this runs on every panel refresh, and a speech stack
-            // that cannot be queried must not take the Setup window down with
-            // it — the user would be left unable to reach any other setting.
-            try
-            {
-                var voices = _runtime.GetWindowsVoices();
-                WindowsVoiceStatusText.Text = voices.Count switch
-                {
-                    0 => "Windows has no speech voices installed. Add one under " +
-                         "Settings > Time & language > Speech.",
-                    1 => $"Speaks with {voices[0].Name}, already on this PC. " +
-                         "Nothing to download, and it works with no key and no internet.",
-                    _ => $"Speaks with {voices[0].Name}, one of {voices.Count} voices already on this PC. " +
-                         "Nothing to download, and it works with no key and no internet."
-                };
-            }
-            catch (Exception exception)
-            {
-                WindowsVoiceStatusText.Text = $"Windows voices could not be listed: {exception.Message}";
-            }
-        }
-
-        var usesLocalVoice = usesPiper || usesChatterbox || usesWindowsVoice;
+        var usesLocalVoice = usesPiper || usesChatterbox;
         NativeTextToSpeechCard.Visibility = usesElevenLabs || usesLocalVoice ? Visibility.Collapsed : Visibility.Visible;
         PiperCard.Visibility = usesPiper ? Visibility.Visible : Visibility.Collapsed;
         ChatterboxNanoCard.Visibility = usesChatterbox ? Visibility.Visible : Visibility.Collapsed;
@@ -843,6 +815,23 @@ public partial class SetupWindow : Window
             InlineStatusText.Text = exception.Message;
         }
     }
+    private async void GeminiPreviewVoice_OnClick(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            GeminiVoiceStatusText.Text = "Generating voice preview…";
+            await SavePendingSettingsAsync();
+            var voice = SelectedContent(VoiceBox, "Kore");
+            var result = await _runtime.PreviewVoiceAsync(voice, _runtime.Settings.SpeechModel);
+            GeminiVoiceStatusText.Text = result.Message;
+            InlineStatusText.Text = result.Message;
+        }
+        catch (Exception exception)
+        {
+            GeminiVoiceStatusText.Text = exception.Message;
+            InlineStatusText.Text = exception.Message;
+        }
+    }
 
     private void SetSpeechProviderStatus(string provider, string message)
     {
@@ -1065,21 +1054,51 @@ public partial class SetupWindow : Window
     private static string? NullIfWhiteSpace(string? value) =>
         string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 
-    private static string SelectedContent(System.Windows.Controls.ComboBox comboBox, string fallback) =>
-        (comboBox.SelectedItem as ComboBoxItem)?.Content?.ToString() ?? fallback;
+    private static string SelectedContent(System.Windows.Controls.ComboBox comboBox, string fallback)
+    {
+        if (comboBox.SelectedItem is ComboBoxItem item)
+        {
+            return item.Tag?.ToString() ?? item.Content?.ToString() ?? fallback;
+        }
+        if (!string.IsNullOrWhiteSpace(comboBox.Text))
+        {
+            return comboBox.Text.Trim();
+        }
+        return fallback;
+    }
 
     private static void SelectComboItem(System.Windows.Controls.ComboBox comboBox, string value)
     {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            if (comboBox.Items.Count > 0)
+            {
+                comboBox.SelectedIndex = 0;
+            }
+            return;
+        }
+
         foreach (var item in comboBox.Items.OfType<ComboBoxItem>())
         {
-            if (string.Equals(item.Content?.ToString(), value, StringComparison.OrdinalIgnoreCase))
+            var tag = item.Tag?.ToString();
+            var content = item.Content?.ToString();
+            if (string.Equals(tag, value, StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(content, value, StringComparison.OrdinalIgnoreCase) ||
+                (!string.IsNullOrWhiteSpace(value) && content?.StartsWith(value, StringComparison.OrdinalIgnoreCase) == true))
             {
                 comboBox.SelectedItem = item;
                 return;
             }
         }
 
-        comboBox.SelectedIndex = 0;
+        if (comboBox.IsEditable)
+        {
+            comboBox.Text = value;
+        }
+        else if (comboBox.Items.Count > 0)
+        {
+            comboBox.SelectedIndex = 0;
+        }
     }
 
     private void RefreshMicrophones(string? preferredId)

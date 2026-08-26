@@ -62,8 +62,12 @@ public partial class PreferencesWindow : System.Windows.Window
         ("Companion", "Companion", "colour color size cursor distance sprite"),
         ("Privacy", "Memory & privacy", "screen capture memory chat history clear erase privacy recall"),
         ("Skills", "Skills", "skills markdown folder notes"),
-        ("Diagnostics", "Diagnostics", "diagnostics logs status troubleshoot")
+        ("Agents", "Autonomous Agents", "agents background autonomous worker approval permissions execution task powershell safety concurrency timeout"),
+        ("Diagnostics", "Diagnostics", "diagnostics logs status troubleshoot"),
+        ("Updates", "Updates", "update upgrade version release github download restart check")
     ];
+
+    private UpdateCheck? _availableUpdate;
 
     public PreferencesWindow(MetisRuntime runtime, ThemeService? theme, Action showAssistant)
     {
@@ -79,7 +83,9 @@ public partial class PreferencesWindow : System.Windows.Window
         _pages["Companion"] = PageCompanion;
         _pages["Privacy"] = PagePrivacy;
         _pages["Skills"] = PageSkills;
+        _pages["Agents"] = PageAgents;
         _pages["Diagnostics"] = PageDiagnostics;
+        _pages["Updates"] = PageUpdates;
 
         BuildNav();
 
@@ -94,6 +100,8 @@ public partial class PreferencesWindow : System.Windows.Window
 
         CompanionSizeSlider.ValueChanged += Companion_OnChanged;
         CursorDistanceSlider.ValueChanged += Companion_OnChanged;
+        AgentMaxTurnsSlider.ValueChanged += (_, _) => AgentMaxTurnsLabel.Text = $"{(int)AgentMaxTurnsSlider.Value} turns";
+        AgentTimeoutSlider.ValueChanged += (_, _) => AgentTimeoutLabel.Text = $"{(int)AgentTimeoutSlider.Value}s";
 
         Closing += (_, args) =>
         {
@@ -216,11 +224,9 @@ public partial class PreferencesWindow : System.Windows.Window
             OpenAiTranscriptionModelBox.Text = s.OpenAiTranscriptionModel;
 
             SelectCombo(TextToSpeechProviderBox, s.TextToSpeechProvider);
-            LoadWindowsVoices(s.WindowsVoiceName);
-            SpeechModelBox.Text = s.SpeechModel;
-            VoiceNameBox.Text = s.VoiceName;
-            OpenAiSpeechModelBox.Text = s.OpenAiSpeechModel;
-            OpenAiVoiceNameBox.Text = s.OpenAiVoiceName;
+            SelectCombo(GeminiVoiceBox, s.VoiceName);
+            SelectCombo(OpenAiSpeechModelBox, s.OpenAiSpeechModel);
+            SelectCombo(OpenAiVoiceBox, s.OpenAiVoiceName);
             PiperExecutablePathBox.Text = s.PiperExecutablePath;
             PiperVoiceModelPathBox.Text = s.PiperVoiceModelPath;
             ChatterboxEndpointBox.Text = s.ChatterboxEndpoint;
@@ -243,6 +249,13 @@ public partial class PreferencesWindow : System.Windows.Window
             UserSkillsCheck.IsChecked = s.UserSkillsEnabled;
             SkillsFolderBox.Text = s.SkillsFolder;
 
+            SelectCombo(AgentAutonomyModeBox, s.AgentAutonomyMode);
+            AgentNotificationsCheck.IsChecked = s.AgentWindowsNotificationsEnabled;
+            AgentMaxTurnsSlider.Value = s.AgentMaxTurns;
+            AgentTimeoutSlider.Value = s.AgentTimeoutSeconds;
+            AgentMaxTurnsLabel.Text = $"{s.AgentMaxTurns} turns";
+            AgentTimeoutLabel.Text = $"{s.AgentTimeoutSeconds}s";
+
             BuildColourSwatches();
             BuildShapeChoices();
             LoadMicrophones(s.PreferredMicrophoneId);
@@ -250,6 +263,7 @@ public partial class PreferencesWindow : System.Windows.Window
             UpdateSpeechPanels();
             UpdateCaptureDisclosure();
             RefreshDashboard();
+            CurrentVersionLabel.Text = $"Metis v{AppVersion.Current}";
         }
         finally
         {
@@ -259,14 +273,51 @@ public partial class PreferencesWindow : System.Windows.Window
 
     private static void SelectCombo(ComboBox box, string value)
     {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            if (box.Items.Count > 0 && box.SelectedIndex < 0)
+            {
+                box.SelectedIndex = 0;
+            }
+            return;
+        }
+
         foreach (var item in box.Items.OfType<ComboBoxItem>())
         {
-            item.IsSelected = string.Equals((string?)item.Content, value, StringComparison.OrdinalIgnoreCase);
+            var tag = item.Tag as string;
+            var content = item.Content as string;
+            if (string.Equals(tag, value, StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(content, value, StringComparison.OrdinalIgnoreCase) ||
+                (!string.IsNullOrWhiteSpace(value) && content?.StartsWith(value, StringComparison.OrdinalIgnoreCase) == true))
+            {
+                item.IsSelected = true;
+                box.SelectedItem = item;
+                return;
+            }
+        }
+
+        if (box.IsEditable)
+        {
+            box.Text = value;
+        }
+        else if (box.Items.Count > 0 && box.SelectedIndex < 0)
+        {
+            box.SelectedIndex = 0;
         }
     }
 
-    private static string SelectedText(ComboBox box, string fallback) =>
-        (box.SelectedItem as ComboBoxItem)?.Content as string ?? fallback;
+    private static string SelectedText(ComboBox box, string fallback)
+    {
+        if (box.SelectedItem is ComboBoxItem item)
+        {
+            return (item.Tag as string) ?? (item.Content as string) ?? fallback;
+        }
+        if (!string.IsNullOrWhiteSpace(box.Text))
+        {
+            return box.Text.Trim();
+        }
+        return fallback;
+    }
 
     private void LoadMicrophones(string? preferredId)
     {
@@ -623,37 +674,9 @@ public partial class PreferencesWindow : System.Windows.Window
 
         var tts = SelectedText(TextToSpeechProviderBox, "Native");
         NativeTtsPanel.Visibility = Show(tts == "Native");
-        WindowsVoicePanel.Visibility = Show(tts == "Windows");
         PiperPanel.Visibility = Show(tts == "Piper");
         ChatterboxPanel.Visibility = Show(tts == "Chatterbox-Nano");
         ElevenLabsPanel.Visibility = Show(tts == "ElevenLabs");
-    }
-
-    /// <summary>
-    /// Fills the voice list from Windows itself. Read locally rather than
-    /// fetched, so it works with no key and no network — and it names what is
-    /// actually installed, instead of offering voices this machine lacks.
-    /// </summary>
-    private void LoadWindowsVoices(string selected)
-    {
-        WindowsVoiceBox.Items.Clear();
-        try
-        {
-            var voices = _runtime.GetWindowsVoices();
-            foreach (var voice in voices)
-            {
-                WindowsVoiceBox.Items.Add(voice.Name);
-            }
-
-            WindowsVoiceBox.Text = selected;
-            WindowsVoiceStatusText.Text = voices.Count == 0
-                ? "Windows has no speech voices installed. Add one under Settings > Time & language > Speech."
-                : $"{voices.Count} voice(s) already on this PC. No download, and it works offline.";
-        }
-        catch (Exception exception)
-        {
-            WindowsVoiceStatusText.Text = $"Windows voices could not be listed: {exception.Message}";
-        }
     }
 
     private void UpdateCaptureDisclosure()
@@ -755,11 +778,14 @@ public partial class PreferencesWindow : System.Windows.Window
             OpenAiTranscriptionModel = OpenAiTranscriptionModelBox.Text,
 
             TextToSpeechProvider = SelectedText(TextToSpeechProviderBox, "Native"),
-            WindowsVoiceName = WindowsVoiceBox.Text?.Trim() ?? string.Empty,
-            SpeechModel = SpeechModelBox.Text,
-            VoiceName = VoiceNameBox.Text,
-            OpenAiSpeechModel = OpenAiSpeechModelBox.Text,
-            OpenAiVoiceName = OpenAiVoiceNameBox.Text,
+            WindowsVoiceName = string.Empty,
+            // Keeps whatever speech model is already saved rather than
+            // stamping a fixed one over it on every save. Writing a literal here
+            // is how a model that cannot speak got into everyone's settings.
+            SpeechModel = _runtime.Settings.SpeechModel,
+            VoiceName = SelectedText(GeminiVoiceBox, "Kore"),
+            OpenAiSpeechModel = SelectedText(OpenAiSpeechModelBox, "tts-1"),
+            OpenAiVoiceName = SelectedText(OpenAiVoiceBox, "alloy"),
             PiperExecutablePath = PiperExecutablePathBox.Text,
             PiperVoiceModelPath = PiperVoiceModelPathBox.Text,
             ChatterboxEndpoint = ChatterboxEndpointBox.Text,
@@ -781,8 +807,19 @@ public partial class PreferencesWindow : System.Windows.Window
             ChatMemoryEnabled = ChatMemoryCheck.IsChecked == true,
 
             UserSkillsEnabled = UserSkillsCheck.IsChecked == true,
-            SkillsFolder = SkillsFolderBox.Text
+            SkillsFolder = SkillsFolderBox.Text,
+
+            AgentAutonomyMode = SelectedText(AgentAutonomyModeBox, "AskApproval"),
+            AgentWindowsNotificationsEnabled = AgentNotificationsCheck.IsChecked == true,
+            AgentMaxTurns = (int)AgentMaxTurnsSlider.Value,
+            AgentTimeoutSeconds = (int)AgentTimeoutSlider.Value
         };
+    }
+
+    private void StopAllAgents_OnClick(object sender, RoutedEventArgs e)
+    {
+        _runtime.AgentTasks?.CancelAll();
+        SaveStatus.Text = "All background agents stopped.";
     }
 
     private async Task SaveAsync(bool quiet = false)
@@ -866,6 +903,22 @@ public partial class PreferencesWindow : System.Windows.Window
         }
     }
 
+    private async void GeminiVoicePreview_OnClick(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            GeminiVoicePreviewStatus.Text = "Generating voice preview…";
+            await SaveAsync(quiet: true);
+            var voice = SelectedText(GeminiVoiceBox, "Kore");
+            var result = await _runtime.PreviewVoiceAsync(voice, _runtime.Settings.SpeechModel);
+            GeminiVoicePreviewStatus.Text = result.Message;
+        }
+        catch (Exception exception)
+        {
+            GeminiVoicePreviewStatus.Text = exception.Message;
+        }
+    }
+
     private void LocalPreset_OnClick(object sender, RoutedEventArgs e)
     {
         SelectCombo(ProviderBox, "Ollama");
@@ -875,7 +928,7 @@ public partial class PreferencesWindow : System.Windows.Window
         SelectCombo(SpeechToTextProviderBox, "Whisper.cpp");
         WhisperCppExecutablePathBox.Text = @"tools\whisper.cpp\Release\whisper-cli.exe";
         WhisperCppModelPathBox.Text = @"models\whisper\ggml-tiny.bin";
-        SelectCombo(TextToSpeechProviderBox, "Windows");
+        SelectCombo(TextToSpeechProviderBox, "Native");
         PiperExecutablePathBox.Text = @"tools\piper-standalone\piper\piper.exe";
         PiperVoiceModelPathBox.Text = @"models\piper\en_US-lessac-medium.onnx";
         UpdateProviderPanels();
@@ -995,6 +1048,60 @@ public partial class PreferencesWindow : System.Windows.Window
     }
 
     private void RefreshDiagnostics_OnClick(object sender, RoutedEventArgs e) => RefreshDiagnostics();
+
+    private async void CheckUpdates_OnClick(object sender, RoutedEventArgs e)
+    {
+        CheckUpdatesButton.IsEnabled = false;
+        UpdateStatusText.Text = "Checking GitHub releases…";
+        try
+        {
+            var updater = new UpdateService(_runtime.Log);
+            var check = await updater.CheckAsync();
+            _availableUpdate = check;
+            if (check.UpdateAvailable)
+            {
+                UpdateStatusText.Text = $"Version v{check.Version} is available to install.";
+                InstallUpdateButton.Visibility = Visibility.Visible;
+                InstallUpdateButton.Content = $"Update to v{check.Version} & restart";
+            }
+            else
+            {
+                UpdateStatusText.Text = string.IsNullOrWhiteSpace(check.Problem)
+                    ? "You are running the latest version of Metis."
+                    : $"Update check note: {check.Problem}";
+                InstallUpdateButton.Visibility = Visibility.Collapsed;
+            }
+        }
+        catch (Exception exception)
+        {
+            UpdateStatusText.Text = $"Could not check for updates: {exception.Message}";
+        }
+        finally
+        {
+            CheckUpdatesButton.IsEnabled = true;
+        }
+    }
+
+    private async void InstallUpdate_OnClick(object sender, RoutedEventArgs e)
+    {
+        if (_availableUpdate is null || !_availableUpdate.UpdateAvailable)
+        {
+            return;
+        }
+
+        InstallUpdateButton.IsEnabled = false;
+        CheckUpdatesButton.IsEnabled = false;
+        UpdateStatusText.Text = "Downloading update and restarting Metis…";
+
+        var updater = new UpdateService(_runtime.Log);
+        var started = await updater.DownloadAndRunAsync(_availableUpdate);
+        if (!started)
+        {
+            UpdateStatusText.Text = "Update download failed. Check your internet connection or try again.";
+            InstallUpdateButton.IsEnabled = true;
+            CheckUpdatesButton.IsEnabled = true;
+        }
+    }
 
     private void OpenAssistant_OnClick(object sender, RoutedEventArgs e)
     {

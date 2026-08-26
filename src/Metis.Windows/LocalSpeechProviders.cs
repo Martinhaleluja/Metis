@@ -4,10 +4,13 @@ using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
+using System.Runtime.CompilerServices;
 using Metis.Core.Contracts;
 using Metis.Core.Models;
 using NAudio.Wave;
 using NAudio.Wave.SampleProviders;
+
+[assembly: InternalsVisibleTo("Metis.Tests")]
 
 namespace Metis.Windows;
 
@@ -346,33 +349,64 @@ public sealed class ChatterboxNanoProvider : IChatterboxNanoProvider, IDisposabl
     }
 }
 
-internal static class WaveAudioDecoder
+public static class WaveAudioDecoder
 {
-    internal static SpeechAudio Decode(byte[] wavBytes, string provider)
+    internal static SpeechAudio Decode(byte[] audioBytes, string provider)
     {
+        if (audioBytes == null || audioBytes.Length == 0)
+        {
+            return new SpeechAudio([], 24000, 1, 16, $"audio/pcm;provider={provider}");
+        }
+
         try
         {
-            using var stream = new MemoryStream(wavBytes, false);
-            using var reader = new WaveFileReader(stream);
-            var pcm = new SampleToWaveProvider16(reader.ToSampleProvider());
-            using var output = new MemoryStream();
-            var buffer = new byte[16 * 1024];
-            int read;
-            while ((read = pcm.Read(buffer, 0, buffer.Length)) > 0)
+            using var stream = new MemoryStream(audioBytes, false);
+            WaveStream reader;
+            if (audioBytes.Length >= 12 &&
+                audioBytes[0] == 0x52 && audioBytes[1] == 0x49 && audioBytes[2] == 0x46 && audioBytes[3] == 0x46 &&
+                audioBytes[8] == 0x57 && audioBytes[9] == 0x41 && audioBytes[10] == 0x56 && audioBytes[11] == 0x45)
             {
-                output.Write(buffer, 0, read);
+                reader = new WaveFileReader(stream);
+            }
+            else if ((audioBytes.Length >= 3 && audioBytes[0] == 0x49 && audioBytes[1] == 0x44 && audioBytes[2] == 0x33) ||
+                     (audioBytes.Length >= 2 && audioBytes[0] == 0xFF && (audioBytes[1] & 0xE0) == 0xE0))
+            {
+                reader = new Mp3FileReader(stream);
+            }
+            else
+            {
+                try
+                {
+                    reader = new WaveFileReader(stream);
+                }
+                catch
+                {
+                    return new SpeechAudio(audioBytes, 24000, 1, 16, $"audio/pcm;provider={provider}");
+                }
             }
 
-            return new SpeechAudio(
-                output.ToArray(),
-                pcm.WaveFormat.SampleRate,
-                pcm.WaveFormat.Channels,
-                16,
-                $"audio/pcm;provider={provider}");
+            using (reader)
+            {
+                var pcm = new SampleToWaveProvider16(reader.ToSampleProvider());
+                using var output = new MemoryStream();
+                var buffer = new byte[16 * 1024];
+                int read;
+                while ((read = pcm.Read(buffer, 0, buffer.Length)) > 0)
+                {
+                    output.Write(buffer, 0, read);
+                }
+
+                return new SpeechAudio(
+                    output.ToArray(),
+                    pcm.WaveFormat.SampleRate,
+                    pcm.WaveFormat.Channels,
+                    16,
+                    $"audio/pcm;provider={provider}");
+            }
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
-            throw new InvalidOperationException($"{provider} returned audio Metis could not decode as WAV.", exception);
+            return new SpeechAudio(audioBytes, 24000, 1, 16, $"audio/pcm;provider={provider}");
         }
     }
 }

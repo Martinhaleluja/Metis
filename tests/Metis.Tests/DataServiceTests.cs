@@ -16,7 +16,7 @@ public sealed class DataServiceTests
             {
                 AiProvider = "OpenClaw",
                 ReasoningModel = "gemini-2.5-flash",
-                SpeechModel = "gemini-voice-model",
+                SpeechModel = "gemini-voice-model-tts",
                 VoiceName = "Aoede",
                 OpenAiReasoningModel = "gpt-reasoning-model",
                 OpenAiTranscriptionModel = "gpt-transcription-model",

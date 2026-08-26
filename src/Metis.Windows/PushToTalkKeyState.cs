@@ -65,6 +65,73 @@ public sealed class PushToTalkKeyState
 }
 
 /// <summary>
+/// Tracks dedicated Direct Agent Voice shortcut chords: Ctrl+Shift+A and Ctrl+Alt+A.
+/// Directly records voice and dispatches an autonomous agent goal to the AgentTaskManager.
+/// </summary>
+public sealed class DirectAgentVoiceKeyState
+{
+    public const uint LeftControl = 0xA2;
+    public const uint RightControl = 0xA3;
+    public const uint LeftShift = 0xA0;
+    public const uint RightShift = 0xA1;
+    public const uint LeftAlt = 0xA4;
+    public const uint RightAlt = 0xA5;
+    public const uint KeyA = 0x41;
+
+    private readonly HashSet<uint> _keysDown = [];
+
+    public bool IsActive { get; private set; }
+
+    public PushToTalkTransition Update(uint virtualKey, bool isDown)
+    {
+        if (!IsRelevant(virtualKey))
+        {
+            return PushToTalkTransition.None;
+        }
+
+        if (isDown)
+        {
+            _keysDown.Add(virtualKey);
+        }
+        else
+        {
+            _keysDown.Remove(virtualKey);
+        }
+
+        var control = _keysDown.Contains(LeftControl) || _keysDown.Contains(RightControl);
+        var shift = _keysDown.Contains(LeftShift) || _keysDown.Contains(RightShift);
+        var alt = _keysDown.Contains(LeftAlt) || _keysDown.Contains(RightAlt);
+        var hasA = _keysDown.Contains(KeyA);
+
+        // Triggers on Ctrl+Shift+A or Ctrl+Alt+A
+        var combination = (control && shift && hasA) || (control && alt && hasA);
+
+        if (combination && !IsActive)
+        {
+            IsActive = true;
+            return PushToTalkTransition.Pressed;
+        }
+
+        if (!combination && IsActive)
+        {
+            IsActive = false;
+            return PushToTalkTransition.Released;
+        }
+
+        return PushToTalkTransition.None;
+    }
+
+    public void Reset()
+    {
+        _keysDown.Clear();
+        IsActive = false;
+    }
+
+    private static bool IsRelevant(uint virtualKey) =>
+        virtualKey is LeftControl or RightControl or LeftShift or RightShift or LeftAlt or RightAlt or KeyA;
+}
+
+/// <summary>
 /// Tracks the Ctrl+Alt context chord and the Ctrl+Alt+Shift inspect chord.
 /// Activation begins when Ctrl+Alt goes down without the hold-to-talk digit;
 /// Shift at any point during the hold upgrades the activation to Inspect, so

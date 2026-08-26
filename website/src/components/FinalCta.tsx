@@ -1,37 +1,87 @@
 import type { useWaitlist } from "../lib/waitlist";
-import { MetisOrb } from "./MetisOrb";
 import { Reveal } from "./Reveal";
 import { WaitlistForm } from "./WaitlistForm";
 
-export function FinalCta({ waitlist }: { waitlist: ReturnType<typeof useWaitlist> }) {
+export function FinalCta({
+  waitlist,
+}: {
+  waitlist: ReturnType<typeof useWaitlist>;
+}) {
   return (
-    <section className="relative overflow-hidden py-24 sm:py-32">
-      <div
-        className="pointer-events-none absolute inset-x-0 bottom-0 h-[560px]"
-        aria-hidden="true"
-        style={{
-          background:
-            "radial-gradient(ellipse 60% 60% at 50% 100%, color-mix(in srgb, var(--sky) 24%, transparent), transparent 70%)",
-        }}
-      />
-
-      <div className="relative mx-auto max-w-[1180px] px-5 text-center">
+    <section className="py-24 sm:py-32">
+      <div className="mx-auto max-w-[640px] px-5">
         <Reveal>
-          <div className="mx-auto mb-8 w-[104px]">
-            <MetisOrb />
+          <div className="xp-window" style={{ transform: "rotate(-0.8deg)" }}>
+            <div className="xp-titlebar">
+              <span className="text-[12px]">
+                Metis Setup &mdash; Join the Waitlist
+              </span>
+              <button
+                className="xp-button-close"
+                aria-hidden="true"
+                tabIndex={-1}
+              >
+                &times;
+              </button>
+            </div>
+
+            <div className="flex bg-[#ece9d8]">
+              {/* XP wizard left banner */}
+              <div className="hidden sm:flex w-[140px] shrink-0 flex-col justify-between p-4 bg-gradient-to-b from-[#1085d2] to-[#002f96]">
+                <div>
+                  <img
+                    src="/metis-mark.png"
+                    alt=""
+                    width={40}
+                    height={40}
+                    className="drop-shadow-lg mb-3"
+                  />
+                  <div className="text-white text-[14px] font-bold">Metis</div>
+                  <div className="text-white/60 text-[10px]">
+                    Desktop Companion
+                  </div>
+                </div>
+                <div className="text-white/40 text-[9px]">v1.0.0</div>
+              </div>
+
+              {/* Wizard content */}
+              <div className="flex-1 p-6">
+                <h2
+                  className="text-[16px] font-bold text-[#003ca5]"
+                  style={{ fontFamily: "Trebuchet MS, sans-serif" }}
+                >
+                  Get it the day it opens
+                </h2>
+                <p
+                  className="mt-2 text-[12px] text-[#333] leading-relaxed"
+                  style={{ fontFamily: "var(--font-system)" }}
+                >
+                  One email when the download is ready. Nothing else, and no
+                  forwarding your address anywhere.
+                </p>
+
+                <div className="mt-6">
+                  <WaitlistForm waitlist={waitlist} idPrefix="footer" />
+                </div>
+              </div>
+            </div>
+
+            {/* Wizard footer */}
+            <div className="bg-[#ece9d8] border-t border-[#aca899] px-4 py-3 flex justify-end gap-2">
+              <span
+                className="xp-button-win text-[11px] opacity-50 !cursor-default"
+                aria-hidden="true"
+              >
+                &lt; Back
+              </span>
+              <a
+                href="#join"
+                className="xp-button-win text-[11px] no-underline"
+              >
+                Next &gt;
+              </a>
+            </div>
           </div>
-
-          <h2 className="mx-auto max-w-[16ch] type-title text-ink">
-            Get it the day it opens
-          </h2>
-          <p className="mx-auto mt-5 max-w-[52ch] type-body text-ink-muted">
-            One email when the download is ready. Nothing else, and no forwarding your address
-            anywhere.
-          </p>
-        </Reveal>
-
-        <Reveal delay={0.1} className="mt-9">
-          <WaitlistForm waitlist={waitlist} idPrefix="footer" />
         </Reveal>
       </div>
     </section>

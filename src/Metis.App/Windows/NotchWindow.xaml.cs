@@ -1,4 +1,4 @@
-﻿using System.Runtime.InteropServices;
+using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Interop;
@@ -6,9 +6,15 @@ using System.Windows.Media;
 using System.Windows.Media.Animation;
 using System.Windows.Shapes;
 using System.Windows.Threading;
+using Metis.App.Runtime;
+using Metis.Core.Agents;
 using Metis.Core.Models;
 using Metis.Core.Services;
 using MediaColor = System.Windows.Media.Color;
+using Brush = System.Windows.Media.Brush;
+using Color = System.Windows.Media.Color;
+using ColorConverter = System.Windows.Media.ColorConverter;
+using SolidColorBrush = System.Windows.Media.SolidColorBrush;
 
 namespace Metis.App.Windows;
 
@@ -128,7 +134,7 @@ public partial class NotchWindow : Window
     /// specifically is what stopped the first-run panel from being tucked away
     /// underneath the user while they were typing their password into it.
     /// </summary>
-    public bool IsPanelOpen => IsChatOpen || IsAuthOpen;
+    public bool IsPanelOpen => IsChatOpen || IsAuthOpen || IsAgentDrawerOpen || IsSpawnAgentOpen;
 
     // ============================== The chat ==============================
 
@@ -149,6 +155,8 @@ public partial class NotchWindow : Window
     {
         ChatHost.CloseRequested += (_, _) => CloseChat();
         ChatHost.SetupRequested += (_, _) => ChatSetupRequested?.Invoke(this, EventArgs.Empty);
+        ChatHost.SpawnAgentRequested += (_, _) => OpenSpawnAgentPanel();
+        ChatHost.AgentDrawerRequested += (_, _) => OpenAgentDrawer();
 
         // This is what makes the notch grow as you type into it: the panel says
         // its content changed size, and the notch animates to the new height.
@@ -188,6 +196,16 @@ public partial class NotchWindow : Window
         if (IsTracing || IsAuthOpen)
         {
             return;
+        }
+
+        if (IsAgentDrawerOpen)
+        {
+            CloseAgentDrawer();
+        }
+
+        if (IsSpawnAgentOpen)
+        {
+            CloseSpawnAgentPanel();
         }
 
         DebugLog?.Invoke("Notch chat opening.");
@@ -249,30 +267,37 @@ public partial class NotchWindow : Window
         var settled = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(700) };
         settled.Tick += (_, _) =>
         {
-            settled.Stop();
-            if (!IsChatOpen)
+            try
             {
-                return;
-            }
-
-            var reachable = false;
-            if (ChatHost.ActualWidth > 0 && PresentationSource.FromVisual(ChatHost) is not null)
-            {
-                var centre = ChatHost.PointToScreen(
-                    new System.Windows.Point(ChatHost.ActualWidth / 2, ChatHost.ActualHeight / 2));
-                reachable = WindowFromPoint(new PointStruct
+                settled.Stop();
+                if (!IsChatOpen)
                 {
-                    X = (int)Math.Round(centre.X),
-                    Y = (int)Math.Round(centre.Y)
-                }) == Handle;
-            }
+                    return;
+                }
 
-            DebugLog?.Invoke(
-                $"Notch chat settled: window=({Left:0},{Top:0}) {Width:0}x{Height:0} " +
-                $"body={NotchBody.ActualWidth:0}x{NotchBody.ActualHeight:0} dropY={NotchDrop.Y:0} " +
-                $"panel={ChatHost.ActualWidth:0}x{ChatHost.ActualHeight:0} " +
-                $"panelOpacity={ChatHost.Opacity:0.00} clickable={reachable} " +
-                $"keyboard={ChatHost.IsKeyboardFocusWithin}");
+                var reachable = false;
+                if (ChatHost.ActualWidth > 0 && PresentationSource.FromVisual(ChatHost) is not null)
+                {
+                    var centre = ChatHost.PointToScreen(
+                        new System.Windows.Point(ChatHost.ActualWidth / 2, ChatHost.ActualHeight / 2));
+                    reachable = WindowFromPoint(new PointStruct
+                    {
+                        X = (int)Math.Round(centre.X),
+                        Y = (int)Math.Round(centre.Y)
+                    }) == Handle;
+                }
+
+                DebugLog?.Invoke(
+                    $"Notch chat settled: window=({Left:0},{Top:0}) {Width:0}x{Height:0} " +
+                    $"body={NotchBody.ActualWidth:0}x{NotchBody.ActualHeight:0} dropY={NotchDrop.Y:0} " +
+                    $"panel={ChatHost.ActualWidth:0}x{ChatHost.ActualHeight:0} " +
+                    $"panelOpacity={ChatHost.Opacity:0.00} clickable={reachable} " +
+                    $"keyboard={ChatHost.IsKeyboardFocusWithin}");
+            }
+            catch
+            {
+                // Protect settled report timer
+            }
         };
 
         settled.Start();
@@ -461,6 +486,354 @@ public partial class NotchWindow : Window
     private double AuthTargetHeight() =>
         Math.Min(AuthHost.MeasureDesiredHeight(AuthWidth), ChatMaxHeight);
 
+    // =========================== Autonomous Agents Drawer ===========================
+
+    private const double AgentDrawerWidth = 540;
+
+    public bool IsAgentDrawerOpen { get; private set; }
+
+    public NotchAgentDrawer AgentDrawer => AgentDrawerHost;
+
+    private MetisRuntime? _runtime;
+
+    public void ConnectAgentDrawer(MetisRuntime runtime)
+    {
+        _runtime = runtime;
+        AgentDrawerHost.CloseRequested += (_, _) => CloseAgentDrawer();
+        AgentDrawerHost.SpawnAgentRequested += (_, _) => OpenSpawnAgentPanel();
+        AgentDrawerHost.ContentSizeChanged += (_, _) => FitToAgentDrawer();
+
+        if (runtime.AgentTasks is not null)
+        {
+            void UpdateState()
+            {
+                var active = runtime.AgentTasks.GetActiveTasks();
+                var dots = new List<AgentDotItem>();
+                for (var i = 0; i < active.Count; i++)
+                {
+                    dots.Add(new AgentDotItem(active[i].Id, AgentColors.GetBrush(i), $"{active[i].Id}: {active[i].Goal}"));
+                }
+                NotchAgentDots.ItemsSource = dots;
+                NotchAgentDots.Visibility = dots.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+            }
+
+            runtime.AgentTasks.TaskCreated += (_, _) => Dispatcher.InvokeAsync(() =>
+            {
+                UpdateState();
+                runtime.PlayCue(MetisSound.RequestSent);
+            });
+            runtime.AgentTasks.TaskUpdated += (_, task) => Dispatcher.InvokeAsync(() =>
+            {
+                UpdateState();
+                if (task.Status == AgentTaskStatus.Failed)
+                {
+                    runtime.PlayCue(MetisSound.Error);
+                }
+            });
+            runtime.AgentTasks.TaskCompleted += (_, _) => Dispatcher.InvokeAsync(() =>
+            {
+                UpdateState();
+                runtime.PlayCue(MetisSound.TaskComplete);
+            });
+            runtime.AgentTasks.TaskCancelled += (_, _) => Dispatcher.InvokeAsync(UpdateState);
+            runtime.AgentTasks.ApprovalRequested += (_, _) => Dispatcher.InvokeAsync(() =>
+            {
+                UpdateState();
+                runtime.PlayCue(MetisSound.TaskComplete);
+                OpenAgentDrawer();
+                AgentDrawerHost.RefreshTasks();
+            });
+            UpdateState();
+        }
+    }
+
+    private void AgentDots_OnClick(object sender, System.Windows.Input.MouseButtonEventArgs e)
+    {
+        e.Handled = true;
+        OpenAgentDrawer();
+    }
+
+    public void ToggleAgentDrawer()
+    {
+        if (IsAgentDrawerOpen)
+        {
+            CloseAgentDrawer();
+        }
+        else
+        {
+            OpenAgentDrawer();
+        }
+    }
+
+    public void OpenAgentDrawer()
+    {
+        if (IsAgentDrawerOpen || IsTracing || IsAuthOpen)
+        {
+            return;
+        }
+
+        if (IsChatOpen)
+        {
+            CloseChat();
+        }
+
+        if (IsSpawnAgentOpen)
+        {
+            CloseSpawnAgentPanel();
+        }
+
+        IsAgentDrawerOpen = true;
+        _retractTimer.Stop();
+        _pressed = false;
+        Visibility = Visibility.Visible;
+
+        SetThinking(false);
+        StepPips.Visibility = Visibility.Collapsed;
+
+        Animate(NotchContent, OpacityProperty, 0, Fade, null);
+        Animate(Grabber, OpacityProperty, 0, Fade, null);
+        HoverControls.BeginAnimation(OpacityProperty, null);
+        HoverControls.Opacity = 0;
+
+        PositionOverTopEdge();
+
+        AgentDrawerHost.BeginAnimation(OpacityProperty, null);
+        AgentDrawerHost.Visibility = Visibility.Visible;
+        AgentDrawerHost.Opacity = 0;
+        AgentDrawerHost.Width = AgentDrawerWidth;
+        AgentDrawerHost.UpdateLayout();
+
+        var target = AgentDrawerTargetHeight();
+        GrowWindowFor(target);
+
+        Animate(NotchBody, WidthProperty, AgentDrawerWidth, Shape,
+            new BackEase { Amplitude = 0.16, EasingMode = EasingMode.EaseOut });
+        AnimateBodyHeight(target);
+        Animate(NotchDrop, TranslateTransform.YProperty, 0, Shape,
+            new CubicEase { EasingMode = EasingMode.EaseOut });
+        Animate(AgentDrawerHost, OpacityProperty, 1, Fade, null, beginAfter: 90);
+
+        _isShown = true;
+        KeepOnTop?.Invoke();
+    }
+
+    public void CloseAgentDrawer()
+    {
+        if (!IsAgentDrawerOpen)
+        {
+            return;
+        }
+
+        IsAgentDrawerOpen = false;
+
+        var fade = new DoubleAnimation(0, TimeSpan.FromMilliseconds(140))
+        {
+            EasingFunction = new CubicEase { EasingMode = EasingMode.EaseIn },
+            FillBehavior = FillBehavior.HoldEnd
+        };
+
+        fade.Completed += (_, _) =>
+        {
+            if (!IsAgentDrawerOpen)
+            {
+                AgentDrawerHost.Visibility = Visibility.Collapsed;
+            }
+        };
+
+        AgentDrawerHost.BeginAnimation(OpacityProperty, fade);
+
+        Animate(NotchBody, WidthProperty, TuckedWidth, Shape,
+            new CubicEase { EasingMode = EasingMode.EaseOut });
+        AnimateBodyHeight(ExpandedHeight);
+        Tuck();
+        ShrinkWindowAfterFold();
+    }
+
+    private void FitToAgentDrawer()
+    {
+        if (!IsAgentDrawerOpen)
+        {
+            return;
+        }
+
+        var target = AgentDrawerTargetHeight();
+        GrowWindowFor(target);
+        AnimateBodyHeight(target);
+    }
+
+    private double AgentDrawerTargetHeight()
+    {
+        var measured = AgentDrawerHost.MeasureDesiredHeight(AgentDrawerWidth);
+        return Math.Max(ExpandedHeight, Math.Min(measured + 20, 520));
+    }
+
+    // =========================== Spawn Agent Panel ===========================
+
+    private const double SpawnAgentWidth = 540;
+
+    public bool IsSpawnAgentOpen { get; private set; }
+
+    public NotchSpawnAgentPanel SpawnAgentPanel => SpawnAgentHost;
+
+    public void ConnectSpawnAgent(MetisRuntime runtime)
+    {
+        SpawnAgentHost.Attach(runtime);
+        SpawnAgentHost.CloseRequested += (_, _) => CloseSpawnAgentPanel();
+        SpawnAgentHost.AgentSpawned += (_, _) => TransitionSpawnToDrawer();
+        SpawnAgentHost.ContentSizeChanged += (_, _) => FitToSpawnAgent();
+    }
+
+    private void TransitionSpawnToDrawer()
+    {
+        if (!IsSpawnAgentOpen)
+        {
+            return;
+        }
+
+        IsSpawnAgentOpen = false;
+        ReleaseKeyboard();
+
+        var fade = new DoubleAnimation(0, TimeSpan.FromMilliseconds(100))
+        {
+            EasingFunction = new CubicEase { EasingMode = EasingMode.EaseIn },
+            FillBehavior = FillBehavior.HoldEnd
+        };
+
+        fade.Completed += (_, _) =>
+        {
+            if (!IsSpawnAgentOpen)
+            {
+                SpawnAgentHost.Visibility = Visibility.Collapsed;
+                OpenAgentDrawer();
+            }
+        };
+
+        SpawnAgentHost.BeginAnimation(OpacityProperty, fade);
+    }
+
+    public void ToggleSpawnAgentPanel()
+    {
+        if (IsSpawnAgentOpen)
+        {
+            CloseSpawnAgentPanel();
+        }
+        else
+        {
+            OpenSpawnAgentPanel();
+        }
+    }
+
+    public void OpenSpawnAgentPanel()
+    {
+        if (IsSpawnAgentOpen || IsTracing || IsAuthOpen)
+        {
+            return;
+        }
+
+        if (IsChatOpen)
+        {
+            CloseChat();
+        }
+        if (IsAgentDrawerOpen)
+        {
+            CloseAgentDrawer();
+        }
+
+        IsSpawnAgentOpen = true;
+        _retractTimer.Stop();
+        _pressed = false;
+        Visibility = Visibility.Visible;
+
+        SetThinking(false);
+        StepPips.Visibility = Visibility.Collapsed;
+
+        Animate(NotchContent, OpacityProperty, 0, Fade, null);
+        Animate(Grabber, OpacityProperty, 0, Fade, null);
+        HoverControls.BeginAnimation(OpacityProperty, null);
+        HoverControls.Opacity = 0;
+
+        PositionOverTopEdge();
+
+        SpawnAgentHost.BeginAnimation(OpacityProperty, null);
+        SpawnAgentHost.Visibility = Visibility.Visible;
+        SpawnAgentHost.Opacity = 0;
+        SpawnAgentHost.Width = SpawnAgentWidth;
+        SpawnAgentHost.Reset();
+        SpawnAgentHost.UpdateLayout();
+
+        var target = SpawnAgentTargetHeight();
+        GrowWindowFor(target);
+
+        Animate(NotchBody, WidthProperty, SpawnAgentWidth, Shape,
+            new BackEase { Amplitude = 0.16, EasingMode = EasingMode.EaseOut });
+        AnimateBodyHeight(target);
+        Animate(NotchDrop, TranslateTransform.YProperty, 0, Shape,
+            new CubicEase { EasingMode = EasingMode.EaseOut });
+        Animate(SpawnAgentHost, OpacityProperty, 1, Fade, null, beginAfter: 90);
+
+        _isShown = true;
+        KeepOnTop?.Invoke();
+
+        Dispatcher.InvokeAsync(() =>
+        {
+            SetActivatable(true);
+            Activate();
+            SetForegroundWindow(Handle);
+            SpawnAgentHost.FocusGoalBox();
+        }, System.Windows.Threading.DispatcherPriority.Input);
+    }
+
+    public void CloseSpawnAgentPanel()
+    {
+        if (!IsSpawnAgentOpen)
+        {
+            return;
+        }
+
+        IsSpawnAgentOpen = false;
+        ReleaseKeyboard();
+
+        var fade = new DoubleAnimation(0, TimeSpan.FromMilliseconds(140))
+        {
+            EasingFunction = new CubicEase { EasingMode = EasingMode.EaseIn },
+            FillBehavior = FillBehavior.HoldEnd
+        };
+
+        fade.Completed += (_, _) =>
+        {
+            if (!IsSpawnAgentOpen)
+            {
+                SpawnAgentHost.Visibility = Visibility.Collapsed;
+            }
+        };
+
+        SpawnAgentHost.BeginAnimation(OpacityProperty, fade);
+
+        Animate(NotchBody, WidthProperty, TuckedWidth, Shape,
+            new CubicEase { EasingMode = EasingMode.EaseOut });
+        AnimateBodyHeight(ExpandedHeight);
+        Tuck();
+        ShrinkWindowAfterFold();
+    }
+
+    private void FitToSpawnAgent()
+    {
+        if (!IsSpawnAgentOpen)
+        {
+            return;
+        }
+
+        var target = SpawnAgentTargetHeight();
+        GrowWindowFor(target);
+        AnimateBodyHeight(target);
+    }
+
+    private double SpawnAgentTargetHeight()
+    {
+        var measured = SpawnAgentHost.MeasureDesiredHeight(SpawnAgentWidth);
+        return Math.Max(ExpandedHeight, Math.Min(measured + 20, 520));
+    }
+
     /// <summary>
     /// Lets the notch take the keyboard, which it normally refuses. The window
     /// carries WS_EX_NOACTIVATE so that narrating an activity never steals focus
@@ -570,11 +943,18 @@ public partial class NotchWindow : Window
         var settle = new DispatcherTimer { Interval = Shape.TimeSpan + TimeSpan.FromMilliseconds(120) };
         settle.Tick += (_, _) =>
         {
-            settle.Stop();
-            Height = Math.Max(PillWindowHeight, _bodyHeightTarget + WindowSlack);
-            if (!IsChatOpen)
+            try
             {
-                PositionOverTopEdge();
+                settle.Stop();
+                Height = Math.Max(PillWindowHeight, _bodyHeightTarget + WindowSlack);
+                if (!IsChatOpen)
+                {
+                    PositionOverTopEdge();
+                }
+            }
+            catch
+            {
+                // Protect shrink animation timer
             }
         };
 
@@ -911,8 +1291,15 @@ public partial class NotchWindow : Window
         _retractTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(2.2) };
         _retractTimer.Tick += (_, _) =>
         {
-            _retractTimer.Stop();
-            Tuck();
+            try
+            {
+                _retractTimer.Stop();
+                Tuck();
+            }
+            catch
+            {
+                // Protect retract timer
+            }
         };
 
         SourceInitialized += (_, _) =>
@@ -1008,7 +1395,9 @@ public partial class NotchWindow : Window
         // text, the way the shape follows the message rather than the message
         // being squeezed into a fixed pill.
         NotchContent.Measure(new System.Windows.Size(double.PositiveInfinity, ExpandedHeight));
-        var target = Math.Clamp(NotchContent.DesiredSize.Width + HorizontalPadding, 132, Width - 24);
+        var minBound = 132;
+        var maxBound = Math.Max(minBound, Width - 24);
+        var target = Math.Clamp(NotchContent.DesiredSize.Width + HorizontalPadding, minBound, maxBound);
 
         Animate(NotchBody, WidthProperty, target, Shape, new BackEase { Amplitude = 0.22, EasingMode = EasingMode.EaseOut });
         AnimateBodyHeight(ExpandedHeight);
@@ -1066,9 +1455,11 @@ public partial class NotchWindow : Window
         // moment they went to click one.
         if (!_isShown && !IsTracing)
         {
-            // Peek further out on hover so the notch invites the pull.
-            Animate(NotchBody, WidthProperty, 152, Shape, new CubicEase { EasingMode = EasingMode.EaseOut });
-            Animate(NotchDrop, TranslateTransform.YProperty, -8, Shape, new CubicEase { EasingMode = EasingMode.EaseOut });
+            // Peek further out on hover so the notch invites the pull and displays buttons/dots
+            var activeCount = _runtime?.AgentTasks?.GetActiveTasks().Count ?? 0;
+            var hoverWidth = activeCount > 0 ? 250 : 200;
+            Animate(NotchBody, WidthProperty, hoverWidth, Shape, new CubicEase { EasingMode = EasingMode.EaseOut });
+            Animate(NotchDrop, TranslateTransform.YProperty, -4, Shape, new CubicEase { EasingMode = EasingMode.EaseOut });
         }
     }
 

@@ -101,12 +101,51 @@ public static class ModelCatalog
 {
     private const int Million = 1_000_000;
 
+    public static IReadOnlyList<string> GeminiVoices { get; } =
+    [
+        "Kore",
+        "Puck",
+        "Charon",
+        "Fenrir",
+        "Aoede"
+    ];
+
+    /// <summary>
+    /// The model Metis speaks with when nothing else is chosen. Named here so
+    /// the one place that decides it is not four hardcoded strings across Setup,
+    /// Preferences and the runtime, which is how a wrong one spread last time.
+    /// </summary>
+    public const string DefaultGeminiSpeechModel = "gemini-2.5-flash-preview-tts";
+
+    /// <summary>
+    /// Gemini models that can genuinely synthesise speech.
+    ///
+    /// This list held gemini-2.0-flash, gemini-2.5-flash and gemini-2.0-flash-exp,
+    /// described as audio generators. None of them can produce audio — they are
+    /// text models — and two have since been withdrawn and answer 404. Every
+    /// entry below was verified against the live API and returns 24 kHz mono PCM.
+    ///
+    /// Google puts "tts" in the name of every speech model and in no others,
+    /// which is the test the provider uses to reject a wrong one.
+    /// </summary>
+    public static IReadOnlyList<ModelOption> GeminiSpeechModels { get; } =
+    [
+        new("Gemini", "gemini-2.5-flash-preview-tts", "Gemini 2.5 Flash TTS", ModelTier.Free, 8_192,
+            Note: "Natural, quick, and available on an ordinary API key. The default."),
+        new("Gemini", "gemini-3.1-flash-tts-preview", "Gemini 3.1 Flash TTS", ModelTier.Free, 8_192,
+            Note: "Newer voice model. Slightly warmer delivery."),
+        new("Gemini", "gemini-2.5-pro-preview-tts", "Gemini 2.5 Pro TTS", ModelTier.Paid, 8_192,
+            Note: "Most expressive, and the first to run out of quota on a free key.")
+    ];
+
     public static IReadOnlyList<ModelOption> Gemini { get; } =
     [
         new("Gemini", "gemini-3.1-pro-preview", "Gemini 3.1 Pro", ModelTier.Paid, Million,
             Note: "The most capable. No free tier at all — every request is billed."),
         new("Gemini", "gemini-3.7-flash", "Gemini 3.7 Flash", ModelTier.Free, 1_048_576,
             Note: "The newest Flash, and the best balance for Metis."),
+        new("Gemini", "gemini-3.6-flash", "Gemini 3.6 Flash", ModelTier.Free, 1_048_576,
+            Note: "High performance multimodal Flash model."),
         new("Gemini", "gemini-3.5-flash", "Gemini 3.5 Flash", ModelTier.Free, 1_048_576),
         new("Gemini", "gemini-3.5-flash-lite", "Gemini 3.5 Flash-Lite", ModelTier.Free, 1_048_576,
             Note: "Quicker and cheaper than Flash. Less accurate on cluttered screens."),
@@ -119,14 +158,11 @@ public static class ModelCatalog
         new("Gemini", "gemma-4-26b-a4b-it", "Gemma 4 26B", ModelTier.Free, 256_000,
             Note: "A lighter Gemma 4, free on the same Gemini key."),
 
-        new("Gemini", "gemini-2.5-pro", "Gemini 2.5 Pro", ModelTier.Paid, Million, 5, 100,
-            Note: "A small free allowance, then billed."),
-        new("Gemini", "gemini-2.5-flash", "Gemini 2.5 Flash", ModelTier.Free, Million, 10, 250,
-            Note: "Reads screenshots well and is quick."),
-        new("Gemini", "gemini-2.5-flash-lite", "Gemini 2.5 Flash Lite", ModelTier.Free, Million, 15, 1000,
-            Note: "The largest free allowance. Less accurate on cluttered screens."),
-        new("Gemini", "gemini-2.0-flash", "Gemini 2.0 Flash", ModelTier.Free, Million, 15, 200),
-        new("Gemini", "gemini-2.0-flash-lite", "Gemini 2.0 Flash Lite", ModelTier.Free, Million, 30, 200)
+        // The 1.5, 2.0 and 2.5 generations were all offered here until every one
+        // of them started answering 404: Google withdrew them. Listing a model
+        // the user can select and then cannot use is worse than a shorter list,
+        // because the failure arrives later and looks like a broken app rather
+        // than a retired model.
     ];
 
     public static IReadOnlyList<ModelOption> OpenAi { get; } =

@@ -43,7 +43,17 @@ public partial class GuidanceOverlayWindow : Window
     {
         InitializeComponent();
         _expiryTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(5) };
-        _expiryTimer.Tick += (_, _) => Clear();
+        _expiryTimer.Tick += (_, _) =>
+        {
+            try
+            {
+                Clear();
+            }
+            catch
+            {
+                // Protect overlay timer
+            }
+        };
 
         SourceInitialized += (_, _) =>
         {

@@ -520,14 +520,17 @@
                                     <ColumnDefinition Width="Auto" />
                                 </Grid.ColumnDefinitions>
                                 <TextBlock VerticalAlignment="Center" Text="Model" FontSize="11" />
-                                <TextBox x:Name="AssemblyAiModelBox" Grid.Column="1" />
+                                <ComboBox x:Name="AssemblyAiModelBox" Grid.Column="1" IsEditable="True">
+                                    <ComboBoxItem Content="best" ToolTip="Best Accuracy (Standard/Paid)" />
+                                    <ComboBoxItem Content="nano" ToolTip="Nano Model (Low Cost / Free Tier)" />
+                                    <ComboBoxItem Content="universal-2" ToolTip="Universal-2 Model (Legacy)" />
+                                </ComboBox>
                                 <Button Grid.Column="2" Margin="8,0,0,0" Content="Test" Tag="AssemblyAI" Click="ValidateSpeechProvider_OnClick" />
                             </Grid>
                             <TextBlock x:Name="AssemblyAiStatusText" Margin="0,7,0,0" FontSize="11" Foreground="{StaticResource MutedBrush}"
                                        Text="Enter a key to add or replace the credential stored by Windows." />
                         </StackPanel>
                     </Border>
-
                     <Grid Margin="0,16,0,0">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="170" />
@@ -536,24 +539,11 @@
                         <TextBlock VerticalAlignment="Center" Text="Text-to-speech" FontWeight="SemiBold" />
                         <ComboBox x:Name="TextToSpeechProviderBox" Grid.Column="1" SelectionChanged="TextToSpeechProviderBox_OnSelectionChanged">
                             <ComboBoxItem Content="Native" />
-                            <ComboBoxItem Content="Windows" />
                             <ComboBoxItem Content="Piper" />
                             <ComboBoxItem Content="Chatterbox-Nano" />
                             <ComboBoxItem Content="ElevenLabs" />
                         </ComboBox>
                     </Grid>
-                    <Border x:Name="WindowsVoiceCard" Margin="0,9,0,0" Padding="12" BorderBrush="#E5E5EA" BorderThickness="1" CornerRadius="4" Background="#FFFFFF" Visibility="Collapsed">
-                        <StackPanel>
-                            <DockPanel>
-                                <TextBlock Text="Windows voice" FontWeight="Bold" />
-                                <Border DockPanel.Dock="Right" Padding="7,2" Margin="10,0,0,0" Background="#E8F1FF">
-                                    <TextBlock Text="NO DOWNLOAD" FontSize="9" FontWeight="Bold" Foreground="{StaticResource BabyBlueBrush}" />
-                                </Border>
-                            </DockPanel>
-                            <TextBlock x:Name="WindowsVoiceStatusText" Margin="0,7,0,0" FontSize="11"
-                                       Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" />
-                        </StackPanel>
-                    </Border>
                     <Border x:Name="NativeTextToSpeechCard" Margin="0,9,0,0" Padding="12" BorderBrush="#E5E5EA" BorderThickness="1" CornerRadius="4" Background="#FFFFFF">
                         <StackPanel>
                             <DockPanel>
@@ -570,23 +560,20 @@
                                         <ColumnDefinition Width="170" />
                                         <ColumnDefinition Width="*" />
                                     </Grid.ColumnDefinitions>
-                                    <TextBlock VerticalAlignment="Center" Text="Gemini speech model" FontSize="11" />
-                                    <TextBox x:Name="SpeechModelBox" Grid.Column="1" />
-                                </Grid>
-                                <Grid Margin="0,8,0,0">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="170" />
-                                        <ColumnDefinition Width="*" />
-                                    </Grid.ColumnDefinitions>
                                     <TextBlock VerticalAlignment="Center" Text="Gemini voice" FontSize="11" />
                                     <ComboBox x:Name="VoiceBox" Grid.Column="1">
-                                        <ComboBoxItem Content="Kore" />
-                                        <ComboBoxItem Content="Aoede" />
-                                        <ComboBoxItem Content="Puck" />
-                                        <ComboBoxItem Content="Charon" />
-                                        <ComboBoxItem Content="Fenrir" />
+                                        <ComboBoxItem Content="Kore — Clear, soothing &amp; balanced (Female · Recommended)" Tag="Kore" />
+                                        <ComboBoxItem Content="Puck — Energetic, animated &amp; youthful (Male)" Tag="Puck" />
+                                        <ComboBoxItem Content="Charon — Deep, calm &amp; resonant (Male)" Tag="Charon" />
+                                        <ComboBoxItem Content="Fenrir — Strong, confident &amp; dynamic (Male)" Tag="Fenrir" />
+                                        <ComboBoxItem Content="Aoede — Warm, expressive &amp; melodic (Female)" Tag="Aoede" />
                                     </ComboBox>
                                 </Grid>
+                                <StackPanel Orientation="Horizontal" Margin="170,10,0,0">
+                                    <Button Content="Preview Voice" Click="GeminiPreviewVoice_OnClick" />
+                                    <TextBlock x:Name="GeminiVoiceStatusText" Margin="10,0,0,0" VerticalAlignment="Center" FontSize="11"
+                                                Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" />
+                                </StackPanel>
                             </StackPanel>
                             <StackPanel x:Name="OpenAiNativeVoicePanel" Margin="0,10,0,0" Visibility="Collapsed">
                                 <Grid>

@@ -14,8 +14,8 @@ const facts = [
     body: "Point it at a vision-capable model running locally through Ollama and the whole loop stays on your machine.",
   },
   {
-    heading: "Learn mode cannot act, structurally",
-    body: "The restriction is enforced when the plan comes back, not just asked for in the prompt. A click returned in Learn is dropped.",
+    heading: "It teaches — it never controls",
+    body: "Metis draws arrows and highlights on your screen, but it cannot click, type, or move your mouse. The teaching policy is structural, not just a prompt instruction.",
   },
 ];
 

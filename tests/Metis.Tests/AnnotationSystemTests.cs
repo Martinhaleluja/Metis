@@ -184,13 +184,11 @@ public sealed class AnnotationDurationTests
             AnnotationDuration.For(AnnotationScope.Control, 900, 500, Screen));
 
     [Fact]
-    public void The_two_holds_are_a_seven_and_five_second_base_scaled_by_the_pace()
+    public void The_two_holds_are_a_fourteen_and_nine_second_base_scaled_by_the_pace()
     {
-        // The base holds are 7s and 5s; the guidance pace knob shortens both so
-        // the whole experience feels snappier, and the standard stays the
-        // longer of the two.
-        Assert.Equal(GuidanceTuning.Scale(TimeSpan.FromSeconds(7)), AnnotationDuration.Standard);
-        Assert.Equal(GuidanceTuning.Scale(TimeSpan.FromSeconds(5)), AnnotationDuration.Small);
+        // The base holds are 14s and 9s; scaled by pace so markings stay visible comfortably.
+        Assert.Equal(GuidanceTuning.Scale(TimeSpan.FromSeconds(14)), AnnotationDuration.Standard);
+        Assert.Equal(GuidanceTuning.Scale(TimeSpan.FromSeconds(9)), AnnotationDuration.Small);
         Assert.True(AnnotationDuration.Standard > AnnotationDuration.Small);
     }
 

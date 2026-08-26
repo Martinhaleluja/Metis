@@ -51,7 +51,8 @@ public enum ActivationKind
     Typed,
     PushToTalk,
     Context,
-    Inspect
+    Inspect,
+    DirectAgent
 }
 
 /// <summary>

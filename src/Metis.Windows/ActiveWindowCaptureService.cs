@@ -33,7 +33,7 @@ public sealed class ActiveWindowCaptureService : IScreenCaptureService
         if (DwmGetWindowAttribute(window, DwmExtendedFrameBounds, out var bounds, Marshal.SizeOf<NativeRect>()) != 0 &&
             !GetWindowRect(window, out bounds))
         {
-            throw new Win32Exception(Marshal.GetLastWin32Error(), "Windows could not measure the active window.");
+            return null;
         }
 
         var width = bounds.Right - bounds.Left;
@@ -45,8 +45,9 @@ public sealed class ActiveWindowCaptureService : IScreenCaptureService
 
         cancellationToken.ThrowIfCancellationRequested();
         using var bitmap = new Bitmap(width, height, PixelFormat.Format32bppArgb);
-        using (var graphics = Graphics.FromImage(bitmap))
+        try
         {
+            using var graphics = Graphics.FromImage(bitmap);
             graphics.CopyFromScreen(
                 bounds.Left,
                 bounds.Top,
@@ -54,6 +55,10 @@ public sealed class ActiveWindowCaptureService : IScreenCaptureService
                 0,
                 new Size(width, height),
                 CopyPixelOperation.SourceCopy);
+        }
+        catch
+        {
+            return null;
         }
 
         cancellationToken.ThrowIfCancellationRequested();

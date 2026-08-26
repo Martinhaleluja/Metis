@@ -65,7 +65,7 @@ public sealed class ElevenLabsProvider : IElevenLabsProvider, IDisposable
         var bytes = await response.Content.ReadAsByteArrayAsync(cancellationToken).ConfigureAwait(false);
         return bytes.Length == 0
             ? null
-            : new SpeechAudio(bytes, 24000, 1, 16, "audio/pcm;rate=24000");
+            : AudioPayloadParser.Parse(bytes, "audio/pcm;rate=24000");
     }
 
     public async Task<IReadOnlyList<SpeechVoiceInfo>> ListVoicesAsync(

@@ -1,5 +1,6 @@
 using Metis.AI;
 using Metis.Core.Contracts;
+using Metis.Windows;
 
 namespace Metis.Tests;
 
@@ -59,7 +60,9 @@ public sealed class GeminiSpeechFailureTests
         var error = await Assert.ThrowsAsync<GeminiProviderException>(() =>
             provider.SynthesizeSpeechAsync("fake-secret-key", "gemini-3.5-flash", "Kore", "Hello"));
 
-        Assert.Contains("gemini-3.5-flash", error.Message, StringComparison.Ordinal);
+        // A text model cannot speak, so the request is sent to the speech
+        // default instead, and the message names what was actually asked.
+        Assert.Contains("tts", error.Message, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("not a speech model", error.Message, StringComparison.Ordinal);
     }
 
@@ -100,11 +103,11 @@ public sealed class GeminiSpeechFailureTests
         var error = await Assert.ThrowsAsync<GeminiProviderException>(() =>
             provider.SynthesizeSpeechAsync("fake-secret-key", "gemini-2.0-flash", "Kore", "Hello"));
 
-        Assert.Contains("gemini-2.0-flash", error.Message, StringComparison.Ordinal);
+        Assert.Contains("tts", error.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
-    public async Task Deprecated_tts_model_name_normalizes_to_stable_flash()
+    public async Task A_chosen_speech_model_is_the_one_that_gets_used()
     {
         using var provider = new GeminiProvider(new HttpClient(new StubResponse("""
             {"candidates":[{"content":{"parts":[]}}]}
@@ -113,8 +116,91 @@ public sealed class GeminiSpeechFailureTests
         var error = await Assert.ThrowsAsync<GeminiProviderException>(() =>
             provider.SynthesizeSpeechAsync("fake-secret-key", "gemini-2.5-flash-preview-tts", "Kore", "Hello"));
 
-        // Should normalize to gemini-2.0-flash rather than querying preview-tts
-        Assert.Contains("gemini-2.0-flash", error.Message, StringComparison.Ordinal);
+        // This used to assert the opposite -- that a real speech model was
+        // swapped out for a text one. That swap is exactly why nobody could
+        // hear Metis, so the rule is pinned the right way round now.
+        Assert.Contains("gemini-2.5-flash-preview-tts", error.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task A_text_model_never_reaches_the_speech_endpoint()
+    {
+        var attempted = new List<string>();
+        using var provider = new GeminiProvider(new HttpClient(new RecordingStub(attempted)));
+
+        await Assert.ThrowsAsync<GeminiProviderException>(() =>
+            provider.SynthesizeSpeechAsync("fake-secret-key", "gemini-2.0-flash", "Kore", "Hello"));
+
+        Assert.NotEmpty(attempted);
+        Assert.All(attempted, url =>
+            Assert.Contains("tts", url, StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void CleanForSpeech_strips_markdown_code_and_urls()
+    {
+        var raw = "Here is how to do it:\n```python\nprint('hello')\n```\nClick **File** -> [Link](https://example.com/guide) and run `command`.";
+        var cleaned = Metis.Core.Services.CompanionSpeech.CleanForSpeech(raw);
+
+        Assert.DoesNotContain("```", cleaned);
+        Assert.DoesNotContain("print('hello')", cleaned);
+        Assert.DoesNotContain("**", cleaned);
+        Assert.DoesNotContain("`", cleaned);
+        Assert.DoesNotContain("https://", cleaned);
+        Assert.Contains("Here is how to do it:", cleaned);
+        Assert.Contains("Click File -> Link and run command.", cleaned);
+    }
+
+    [Theory]
+    [InlineData("kore", "Kore")]
+    [InlineData("PUCK", "Puck")]
+    [InlineData("charon", "Charon")]
+    [InlineData("fenrir", "Fenrir")]
+    [InlineData("aoede", "Aoede")]
+    [InlineData("", "Kore")]
+    [InlineData(null, "Kore")]
+    public void NormalizeVoice_handles_all_casing_and_defaults(string? input, string expected)
+    {
+        Assert.Equal(expected, GeminiRequestBuilder.NormalizeVoice(input));
+    }
+
+    [Fact]
+    public void ModelCatalog_contains_free_gemini_speech_models_and_voices()
+    {
+        Assert.Contains("Kore", Metis.Core.Models.ModelCatalog.GeminiVoices);
+        Assert.Contains("Puck", Metis.Core.Models.ModelCatalog.GeminiVoices);
+        Assert.Contains("Charon", Metis.Core.Models.ModelCatalog.GeminiVoices);
+        Assert.Contains("Fenrir", Metis.Core.Models.ModelCatalog.GeminiVoices);
+        Assert.Contains("Aoede", Metis.Core.Models.ModelCatalog.GeminiVoices);
+
+        // Every speech model offered must actually be able to speak. Google
+        // names them all with "tts" and names nothing else that way.
+        Assert.NotEmpty(Metis.Core.Models.ModelCatalog.GeminiSpeechModels);
+        Assert.All(
+            Metis.Core.Models.ModelCatalog.GeminiSpeechModels,
+            m => Assert.Contains("tts", m.Id, StringComparison.OrdinalIgnoreCase));
+
+        Assert.Contains(
+            Metis.Core.Models.ModelCatalog.GeminiSpeechModels,
+            m => m.Id == Metis.Core.Models.ModelCatalog.DefaultGeminiSpeechModel
+                 && m.Tier == Metis.Core.Models.ModelTier.Free);
+    }
+
+    private sealed class RecordingStub(List<string> attempts) : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken)
+        {
+            attempts.Add(request.RequestUri?.ToString() ?? string.Empty);
+            return Task.FromResult(new HttpResponseMessage(System.Net.HttpStatusCode.OK)
+            {
+                Content = new StringContent(
+                    """{"candidates":[{"content":{"parts":[]}}]}""",
+                    System.Text.Encoding.UTF8,
+                    "application/json")
+            });
+        }
     }
 
     private sealed class StubResponse(string json) : HttpMessageHandler
@@ -128,3 +214,42 @@ public sealed class GeminiSpeechFailureTests
             });
     }
 }
+
+public sealed class WaveAudioPipelineTests
+{
+    [Fact]
+    public async Task WaveAudioPlayback_handles_empty_pcm_without_error()
+    {
+        using var playback = new WaveAudioPlayback();
+        var audio = new Metis.Core.Models.SpeechAudio([], 24000, 1, 16, "audio/pcm");
+        await playback.PlayAsync(audio);
+    }
+
+    [Fact]
+    public void WaveAudioPlayback_stop_and_dispose_are_idempotent()
+    {
+        using var playback = new WaveAudioPlayback();
+        playback.Stop();
+        playback.Stop();
+        playback.Dispose();
+        playback.Dispose();
+    }
+
+    [Fact]
+    public void WaveAudioDecoder_decodes_raw_pcm_fallback()
+    {
+        var rawPcm = new byte[1000];
+        var decoded = WaveAudioDecoder.Decode(rawPcm, "TestProvider");
+        Assert.NotNull(decoded);
+        Assert.Equal(16, decoded.BitsPerSample);
+    }
+
+    [Fact]
+    public void WaveAudioDecoder_decodes_empty_without_throwing()
+    {
+        var decoded = WaveAudioDecoder.Decode([], "TestProvider");
+        Assert.NotNull(decoded);
+        Assert.Empty(decoded.PcmData);
+    }
+}
+

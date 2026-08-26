@@ -166,6 +166,38 @@ public sealed class OpenAiProvider : IOpenAiProvider, IDisposable
         }
     }
 
+    public static readonly HashSet<string> ValidOpenAiVoices = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "alloy", "echo", "fable", "onyx", "nova", "shimmer", "ash", "coral", "sage", "verse", "ballad"
+    };
+
+    public static string NormalizeVoice(string? voiceName)
+    {
+        if (string.IsNullOrWhiteSpace(voiceName))
+        {
+            return "alloy";
+        }
+
+        var trimmed = voiceName.Trim();
+        return ValidOpenAiVoices.TryGetValue(trimmed, out var match) ? match.ToLowerInvariant() : "alloy";
+    }
+
+    public static string NormalizeSpeechModel(string? model)
+    {
+        if (string.IsNullOrWhiteSpace(model) || model.Equals("auto", StringComparison.OrdinalIgnoreCase))
+        {
+            return "tts-1";
+        }
+
+        var trimmed = model.Trim();
+        if (trimmed.StartsWith("models/", StringComparison.OrdinalIgnoreCase))
+        {
+            trimmed = trimmed["models/".Length..];
+        }
+
+        return trimmed;
+    }
+
     public async Task<SpeechAudio?> SynthesizeSpeechAsync(
         string apiKey,
         string model,
@@ -175,31 +207,34 @@ public sealed class OpenAiProvider : IOpenAiProvider, IDisposable
     {
         ThrowIfDisposed();
         ValidateKey(apiKey);
-        ValidateModel(model);
         if (string.IsNullOrWhiteSpace(text))
         {
             return null;
         }
 
+        var normalizedModel = NormalizeSpeechModel(model);
+        var normalizedVoice = NormalizeVoice(voiceName);
+
         var payload = JsonSerializer.Serialize(new
         {
-            model = model.Trim(),
+            model = normalizedModel,
             input = Shorten(text.Trim(), 4000),
-            voice = string.IsNullOrWhiteSpace(voiceName) ? "alloy" : voiceName.Trim().ToLowerInvariant(),
+            voice = normalizedVoice,
             response_format = "pcm"
         }, SerializerOptions);
+
         using var request = CreateJsonRequest(HttpMethod.Post, "audio/speech", apiKey, payload);
         using var response = await SendAsync(request, cancellationToken).ConfigureAwait(false);
         if (!response.IsSuccessStatusCode)
         {
             var body = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
-            throw CreateApiException(response.StatusCode, body, model);
+            throw CreateApiException(response.StatusCode, body, normalizedModel);
         }
 
         var bytes = await response.Content.ReadAsByteArrayAsync(cancellationToken).ConfigureAwait(false);
         return bytes.Length == 0
             ? null
-            : new SpeechAudio(bytes, 24000, 1, 16, "audio/pcm;rate=24000");
+            : AudioPayloadParser.Parse(bytes, "audio/pcm;rate=24000");
     }
 
     private async Task<string> TranscribeAsync(

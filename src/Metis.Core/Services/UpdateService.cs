@@ -8,9 +8,8 @@ using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using Metis.Core.Contracts;
-using Metis.Core.Services;
 
-namespace Metis.App.Runtime;
+namespace Metis.Core.Services;
 
 /// <summary>What a check against the release feed found.</summary>
 public sealed record UpdateCheck(
@@ -36,10 +35,10 @@ public sealed record UpdateCheck(
 /// because release hosting on a public repository is free and has no bandwidth
 /// cap, and because it means there is no update service that can go down.
 /// </summary>
-public sealed class UpdateService(IDiagnosticLog log)
+public sealed class UpdateService(IDiagnosticLog log, HttpClient? httpClient = null)
 {
     /// <summary>The repository releases are published from.</summary>
-    private const string ReleasesApi = "https://api.github.com/repos/Martinhaleluja/Metis/releases/latest";
+    public const string DefaultReleasesApi = "https://api.github.com/repos/Martinhaleluja/Metis/releases/latest";
 
     /// <summary>
     /// Only assets served by GitHub are ever fetched. The release feed is
@@ -55,49 +54,70 @@ public sealed class UpdateService(IDiagnosticLog log)
     ];
 
     private readonly IDiagnosticLog _log = log;
+    private readonly HttpClient? _injectedClient = httpClient;
 
     /// <summary>Asks GitHub what the newest release is, and whether it beats this build.</summary>
-    public async Task<UpdateCheck> CheckAsync(CancellationToken cancellationToken = default)
+    public async Task<UpdateCheck> CheckAsync(
+        string releasesApi = DefaultReleasesApi,
+        CancellationToken cancellationToken = default)
     {
         try
         {
-            using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(20) };
-            http.DefaultRequestHeaders.UserAgent.Add(new ProductInfoHeaderValue("Metis", AppVersion.Current));
-            http.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/vnd.github+json"));
-
-            using var response = await http.GetAsync(ReleasesApi, cancellationToken);
-            if (!response.IsSuccessStatusCode)
+            var http = _injectedClient;
+            var ownsClient = false;
+            if (http is null)
             {
-                // A repository with no releases yet answers 404. That is the
-                // ordinary state before the first one is published, not a fault
-                // worth showing anyone.
-                return new UpdateCheck(false, Problem: $"The release feed answered {(int)response.StatusCode}.");
+                http = new HttpClient { Timeout = TimeSpan.FromSeconds(20) };
+                ownsClient = true;
             }
 
-            await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
-            using var document = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken);
-            var root = document.RootElement;
-
-            if (root.TryGetProperty("draft", out var draft) && draft.ValueKind == JsonValueKind.True)
+            try
             {
-                return new UpdateCheck(false, Problem: "The newest release is still a draft.");
+                using var request = new HttpRequestMessage(HttpMethod.Get, releasesApi);
+                request.Headers.UserAgent.Add(new ProductInfoHeaderValue("Metis", AppVersion.Current));
+                request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/vnd.github+json"));
+
+                using var response = await http.SendAsync(request, cancellationToken).ConfigureAwait(false);
+                if (!response.IsSuccessStatusCode)
+                {
+                    // A repository with no releases yet answers 404. That is the
+                    // ordinary state before the first one is published, not a fault
+                    // worth showing anyone.
+                    return new UpdateCheck(false, Problem: $"The release feed answered {(int)response.StatusCode}.");
+                }
+
+                await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
+                using var document = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken).ConfigureAwait(false);
+                var root = document.RootElement;
+
+                if (root.TryGetProperty("draft", out var draft) && draft.ValueKind == JsonValueKind.True)
+                {
+                    return new UpdateCheck(false, Problem: "The newest release is still a draft.");
+                }
+
+                var tag = root.TryGetProperty("tag_name", out var tagName) ? tagName.GetString() : null;
+
+                if (!AppVersion.IsNewer(tag, AppVersion.Current))
+                {
+                    return new UpdateCheck(false);
+                }
+
+                var installer = FindInstaller(root);
+                if (installer is null)
+                {
+                    return new UpdateCheck(false, Problem: $"Release {tag} carries no Metis installer.");
+                }
+
+                var notes = root.TryGetProperty("body", out var body) ? body.GetString() : null;
+                return new UpdateCheck(true, AppVersion.Parse(tag)?.ToString(3), installer, notes);
             }
-
-            var tag = root.TryGetProperty("tag_name", out var tagName) ? tagName.GetString() : null;
-
-            if (!AppVersion.IsNewer(tag, AppVersion.Current))
+            finally
             {
-                return new UpdateCheck(false);
+                if (ownsClient)
+                {
+                    http.Dispose();
+                }
             }
-
-            var installer = FindInstaller(root);
-            if (installer is null)
-            {
-                return new UpdateCheck(false, Problem: $"Release {tag} carries no Metis installer.");
-            }
-
-            var notes = root.TryGetProperty("body", out var body) ? body.GetString() : null;
-            return new UpdateCheck(true, AppVersion.Parse(tag)?.ToString(3), installer, notes);
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
@@ -111,7 +131,7 @@ public sealed class UpdateService(IDiagnosticLog log)
     /// Picks the Windows installer out of a release's assets, rejecting
     /// anything served from somewhere other than GitHub.
     /// </summary>
-    private static Uri? FindInstaller(JsonElement release)
+    public static Uri? FindInstaller(JsonElement release)
     {
         if (!release.TryGetProperty("assets", out var assets) || assets.ValueKind != JsonValueKind.Array)
         {
@@ -128,8 +148,8 @@ public sealed class UpdateService(IDiagnosticLog log)
                 continue;
             }
 
-            if (!(name.StartsWith("Metis-Setup-", StringComparison.OrdinalIgnoreCase) || string.Equals(name, "Metis.exe", StringComparison.OrdinalIgnoreCase))
-                || !name.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
+            if (!name.EndsWith(".exe", StringComparison.OrdinalIgnoreCase)
+                || !name.Contains("Metis", StringComparison.OrdinalIgnoreCase))
             {
                 continue;
             }
@@ -170,12 +190,21 @@ public sealed class UpdateService(IDiagnosticLog log)
 
             var target = Path.Combine(folder, $"Metis-Setup-{check.Version ?? "latest"}-win-x64.exe");
 
-            using (var http = new HttpClient { Timeout = TimeSpan.FromMinutes(15) })
+            var http = _injectedClient;
+            var ownsClient = false;
+            if (http is null)
             {
-                http.DefaultRequestHeaders.UserAgent.Add(new ProductInfoHeaderValue("Metis", AppVersion.Current));
+                http = new HttpClient { Timeout = TimeSpan.FromMinutes(15) };
+                ownsClient = true;
+            }
 
-                using var response = await http.GetAsync(
-                    check.Installer, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+            try
+            {
+                using var request = new HttpRequestMessage(HttpMethod.Get, check.Installer);
+                request.Headers.UserAgent.Add(new ProductInfoHeaderValue("Metis", AppVersion.Current));
+
+                using var response = await http.SendAsync(
+                    request, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
                 response.EnsureSuccessStatusCode();
 
                 // Written beside the final name and moved into place, so a
@@ -184,7 +213,7 @@ public sealed class UpdateService(IDiagnosticLog log)
                 var partial = target + ".part";
                 await using (var file = File.Create(partial))
                 {
-                    await response.Content.CopyToAsync(file, cancellationToken);
+                    await response.Content.CopyToAsync(file, cancellationToken).ConfigureAwait(false);
                 }
 
                 if (File.Exists(target))
@@ -193,6 +222,13 @@ public sealed class UpdateService(IDiagnosticLog log)
                 }
 
                 File.Move(partial, target);
+            }
+            finally
+            {
+                if (ownsClient)
+                {
+                    http.Dispose();
+                }
             }
 
             _log.Info($"Update {check.Version} downloaded to {target}. Starting the installer.");

@@ -95,6 +95,113 @@ public sealed class GeminiProviderTests
         Assert.DoesNotContain(fakeKey, exception.Message, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public async Task SynthesizeSpeech_returns_speech_audio_from_inline_pcm()
+    {
+        var rawPcm = new byte[] { 0, 1, 2, 3, 4, 5 };
+        var base64 = Convert.ToBase64String(rawPcm);
+        var handler = new StubHandler(_ => Task.FromResult(JsonResponse($$"""
+            {
+              "candidates": [
+                {
+                  "content": {
+                    "parts": [
+                      {
+                        "inlineData": {
+                          "mimeType": "audio/L16;codec=pcm;rate=24000",
+                          "data": "{{base64}}"
+                        }
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+            """)));
+        using var provider = new GeminiProvider(new HttpClient(handler));
+
+        var result = await provider.SynthesizeSpeechAsync("fake-key", "gemini-2.5-flash-preview-tts", "Puck", "Hello world");
+
+        Assert.NotNull(result);
+        Assert.Equal(24000, result.SampleRate);
+        Assert.Equal(1, result.Channels);
+        Assert.Equal(16, result.BitsPerSample);
+        Assert.Equal(rawPcm, result.PcmData);
+    }
+
+    [Fact]
+    public async Task SynthesizeSpeech_cascades_through_models_on_failure()
+    {
+        var attempts = new List<string>();
+        var rawPcm = new byte[] { 10, 20, 30, 40 };
+        var base64 = Convert.ToBase64String(rawPcm);
+
+        var handler = new StubHandler(request =>
+        {
+            var uri = request.RequestUri!.ToString();
+            attempts.Add(uri);
+            if (uri.Contains("gemini-2.5-flash-preview-tts:"))
+            {
+                return Task.FromResult(JsonResponse("{\"error\":{\"message\":\"Model not available\"}}", HttpStatusCode.NotFound));
+            }
+
+            return Task.FromResult(JsonResponse($$"""
+                {
+                  "candidates": [
+                    {
+                      "content": {
+                        "parts": [
+                          {
+                            "inlineData": {
+                              "mimeType": "audio/pcm;rate=24000",
+                              "data": "{{base64}}"
+                            }
+                          }
+                        ]
+                      }
+                    }
+                  ]
+                }
+                """));
+        });
+        using var provider = new GeminiProvider(new HttpClient(handler));
+
+        var result = await provider.SynthesizeSpeechAsync("fake-key", "gemini-2.5-flash-preview-tts", "Charon", "Hello");
+
+        Assert.NotNull(result);
+        Assert.Equal(2, attempts.Count);
+        Assert.Contains("gemini-2.5-flash-preview-tts:", attempts[0]);
+        Assert.Contains("gemini-3.1-flash-tts-preview:", attempts[1]);
+        Assert.Equal(rawPcm, result.PcmData);
+    }
+
+    [Fact]
+    public async Task SynthesizeSpeech_throws_descriptive_error_when_no_audio_in_response()
+    {
+        var handler = new StubHandler(_ => Task.FromResult(JsonResponse("""
+            {
+              "candidates": [
+                {
+                  "content": {
+                    "parts": [
+                      {
+                        "text": "I cannot speak."
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+            """)));
+        using var provider = new GeminiProvider(new HttpClient(handler));
+
+        var exception = await Assert.ThrowsAsync<GeminiProviderException>(() =>
+            provider.SynthesizeSpeechAsync("fake-key", "gemini-1.5-flash", "Kore", "Hello"));
+
+        Assert.Equal(GeminiErrorKind.EmptyResponse, exception.Kind);
+        Assert.Contains("answered with text instead of audio", exception.Message);
+    }
+
     private static HttpResponseMessage JsonResponse(string json, HttpStatusCode status = HttpStatusCode.OK) =>
         new(status)
         {

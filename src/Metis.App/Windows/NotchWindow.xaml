@@ -153,6 +153,26 @@
                                 <Ellipse x:Name="Dot2" Width="5" Height="5" Fill="{DynamicResource NotchMutedBrush}" Margin="0,0,4,0" />
                                 <Ellipse x:Name="Dot3" Width="5" Height="5" Fill="{DynamicResource NotchMutedBrush}" />
                             </StackPanel>
+
+                            <!-- Active Agent Colored Dots in Resting Notch -->
+                            <ItemsControl x:Name="NotchAgentDots" VerticalAlignment="Center" Margin="8,1,0,0"
+                                          Visibility="Collapsed" Cursor="Hand" MouseLeftButtonUp="AgentDots_OnClick"
+                                          ToolTip="Active background agents (click to open drawer, Ctrl+Shift+A)">
+                                <ItemsControl.ItemsPanel>
+                                    <ItemsPanelTemplate>
+                                        <StackPanel Orientation="Horizontal" />
+                                    </ItemsPanelTemplate>
+                                </ItemsControl.ItemsPanel>
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Grid Margin="2,0" VerticalAlignment="Center">
+                                            <Ellipse Width="10" Height="10" Fill="{Binding DotBrush}" Opacity="0.35" />
+                                            <Ellipse Width="6" Height="6" Fill="{Binding DotBrush}"
+                                                     HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                        </Grid>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
                         </StackPanel>
                     </Grid>
 
@@ -231,6 +251,14 @@
                      the two are never open at once. -->
                 <windows:NotchAuth x:Name="AuthHost" VerticalAlignment="Top"
                                    Visibility="Collapsed" Opacity="0" Cursor="Arrow" />
+
+                <!-- Autonomous background agents drawer -->
+                <windows:NotchAgentDrawer x:Name="AgentDrawerHost" VerticalAlignment="Top"
+                                          Visibility="Collapsed" Opacity="0" Cursor="Arrow" />
+
+                <!-- Autonomous background agent spawn panel -->
+                <windows:NotchSpawnAgentPanel x:Name="SpawnAgentHost" VerticalAlignment="Top"
+                                              Visibility="Collapsed" Opacity="0" Cursor="Arrow" />
             </Grid>
         </Border>
     </Grid>

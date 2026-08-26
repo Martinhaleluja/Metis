@@ -295,6 +295,8 @@ public interface IGlobalPushToTalk : IDisposable
 {
     event EventHandler? Pressed;
     event EventHandler? Released;
+    event EventHandler? DirectAgentVoicePressed;
+    event EventHandler? DirectAgentVoiceReleased;
     event EventHandler? EmergencyStopPressed;
 
     /// <summary>
@@ -339,6 +341,11 @@ public interface IGlobalPushToTalk : IDisposable
     /// </summary>
     bool ContextShortcutsEnabled { get; set; }
 
+    /// <summary>
+    /// Enables direct voice-to-agent shortcut chords (Ctrl+Shift+A / Ctrl+Alt+A).
+    /// </summary>
+    bool DirectAgentShortcutsEnabled { get; set; }
+
     bool IsRunning { get; }
     void Start();
     void Stop();
@@ -359,6 +366,18 @@ public interface IUiAutomationService
     Task<string?> DescribeElementAtAsync(
         int screenX,
         int screenY,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Describes all visible controls, labels, and text situated within a specified screen region
+    /// or bounding box, for traced area and rectangle inspection.
+    /// </summary>
+    Task<string?> DescribeRegionAsync(
+        ScreenCapture capture,
+        int screenLeft,
+        int screenTop,
+        int screenWidth,
+        int screenHeight,
         CancellationToken cancellationToken = default);
 
     /// <summary>

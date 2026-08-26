@@ -97,6 +97,13 @@ public static class AssistantPlanParser
             var markLabel = Shorten(ReadString(annotationRoot, "label", "target"), MaxLabelLength);
 
             var steps = ReadLessonSteps(root, hasScreenshot);
+            var spawnRequests = ReadSpawnGoals(root);
+            var needsAnotherLook = ReadBoolean(root, "needs_another_look", "needsAnotherLook");
+            var lookFor = Shorten(ReadString(root, "look_for", "lookFor"), MaxLabelLength);
+            if (hasScreenshot && (markX >= 0 || (steps?.Any(s => s.HasTarget) == true)))
+            {
+                screenObserved = true;
+            }
 
             // A malformed structured response should still produce useful speech, but
             // never expose the raw JSON to Metis's speech engine or bubble.
@@ -119,7 +126,10 @@ public static class AssistantPlanParser
                 markWidth,
                 markHeight,
                 markLabel,
-                heardText);
+                heardText,
+                spawnRequests,
+                needsAnotherLook,
+                lookFor);
         }
         catch (JsonException)
         {
@@ -304,6 +314,61 @@ public static class AssistantPlanParser
     }
 
     private const int MaxLessonSteps = 12;
+
+    /// <summary>
+    /// How many agents one reply may ask for.
+    ///
+    /// Low on purpose. Everything spawned here is a real worker that costs
+    /// tokens and touches the machine, and a model that has misread a request
+    /// can produce a list as long as it likes. Four covers every genuine ask
+    /// seen so far and bounds the damage from one that is not.
+    /// </summary>
+    private const int MaxSpawnRequests = 4;
+
+    /// <summary>The longest goal that can be handed to an agent.</summary>
+    private const int MaxSpawnGoalLength = 600;
+
+    /// <summary>
+    /// Reads the goals the reply wants handed to background agents.
+    ///
+    /// Accepts both a list of strings and a list of objects carrying a goal,
+    /// because models produce both and the difference is not worth losing a
+    /// request over — the same forgiveness ReadLessonSteps applies to its own
+    /// alternate key names.
+    /// </summary>
+    private static IReadOnlyList<string>? ReadSpawnGoals(JsonElement root)
+    {
+        if (!TryGetProperty(root, out var array, "spawn_agents", "spawnAgents", "agents") ||
+            array.ValueKind != JsonValueKind.Array)
+        {
+            return null;
+        }
+
+        var goals = new List<string>();
+        foreach (var element in array.EnumerateArray())
+        {
+            var goal = element.ValueKind switch
+            {
+                JsonValueKind.String => element.GetString(),
+                JsonValueKind.Object => ReadString(element, "goal", "task", "instruction", "description"),
+                _ => null
+            };
+
+            goal = Shorten(goal, MaxSpawnGoalLength);
+            if (string.IsNullOrWhiteSpace(goal))
+            {
+                continue;
+            }
+
+            goals.Add(goal.Trim());
+            if (goals.Count >= MaxSpawnRequests)
+            {
+                break;
+            }
+        }
+
+        return goals.Count > 0 ? goals : null;
+    }
 
     /// <summary>
     /// Reads the steps the learner performs themselves. These are never

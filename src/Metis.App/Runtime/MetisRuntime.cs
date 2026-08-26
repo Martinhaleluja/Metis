@@ -1,12 +1,17 @@
+﻿using System.Diagnostics;
 using System.IO;
 using System.Text.Json;
 using Metis.AI;
+using Metis.AI.Agents;
+using Metis.Core.Agents;
+using Metis.Core.Agents.Tools;
 using Metis.Core.Contracts;
 using Metis.Core.Models;
 using Metis.Core.Services;
 using Metis.Core.State;
 using Metis.Data;
 using Metis.Windows;
+using NAudio.Wave;
 
 namespace Metis.App.Runtime;
 
@@ -89,6 +94,7 @@ public sealed class MetisRuntime : IDisposable
     private PointerContext? _pendingPointer;
     private IReadOnlyList<GuidancePoint>? _pendingTrace;
     private bool _disposed;
+    private string? _lastVoiceError;
 
     public MetisRuntime()
         : this(
@@ -159,8 +165,126 @@ public sealed class MetisRuntime : IDisposable
         _chatStore = new JsonChatStore(log: message => log.Info(message));
         Cursor = cursor;
         State = new AssistantStateMachine();
+        // The log matters here more than usual: a toast that Windows drops
+        // reports nothing at all, so this is the only place a broken
+        // notification system can announce itself.
+        var notifications = new WindowsNotificationService(message => _log.Info($"Notifications: {message}"));
+
+        // A toast that offers Approve and Deny and then does nothing when they
+        // are pressed is worse than a toast with no buttons at all, so the
+        // arguments those buttons carry are acted on here.
+        notifications.Activated += (_, arguments) => HandleNotificationAction(arguments);
+        // Environment.ProcessPath is the only reliable answer in a single-file
+        // app: Assembly.Location is an empty string there, so a "?? Location"
+        // fallback would hand Register a blank path rather than fall through.
+        notifications.Register(Environment.ProcessPath ?? Path.Combine(AppContext.BaseDirectory, "Metis.exe"));
+        _notifications = notifications;
+        AgentTasks = new AgentTaskManager(new AgentReasoningClient(_settingsStore, _secretStore));
+        AgentTasks.GetAutonomyMode = () => Settings.AgentAutonomyMode;
+        AgentTasks.MaxTurnsPerTask = Settings.AgentMaxTurns;
+
+        AgentTasks.TaskCreated += (_, task) =>
+        {
+            if (Settings.AgentWindowsNotificationsEnabled)
+            {
+                _notifications.ShowNotification("⚡ Agent Started", $"Agent [{task.Id}] started:\n\"{task.Goal}\"", "Metis Autonomous Agent");
+            }
+        };
+
+        AgentTasks.ApprovalRequested += (_, req) =>
+        {
+            if (Settings.AgentWindowsNotificationsEnabled)
+            {
+                _notifications.ShowActionableNotification(
+                    "Metis agent needs permission",
+                    $"{req.ToolName} — {req.Reason}",
+                    $"agent:{req.TaskId}",
+                    [
+                        ("Approve", $"approve:{req.TaskId}"),
+                        ("Deny", $"deny:{req.TaskId}")
+                    ]);
+            }
+        };
+
+        AgentTasks.TaskCompleted += (_, task) =>
+        {
+            if (Settings.AgentWindowsNotificationsEnabled)
+            {
+                var summary = string.IsNullOrWhiteSpace(task.ResultSummary) ? "Completed successfully." : task.ResultSummary;
+                _notifications.ShowNotification("✅ Agent Finished", $"Agent [{task.Id}] completed:\n\"{task.Goal}\"\n\n{summary}", "Metis Autonomous Agent");
+            }
+        };
+
+        AgentTasks.TaskFailed += (_, task) =>
+        {
+            if (Settings.AgentWindowsNotificationsEnabled)
+            {
+                var error = string.IsNullOrWhiteSpace(task.ErrorMessage) ? "Task failed." : task.ErrorMessage;
+                _notifications.ShowNotification("❌ Agent Failed", $"Agent [{task.Id}] failed:\n\"{task.Goal}\"\n\n{error}", "Click Retry in Notch Agent Drawer");
+            }
+        };
+
+        TeachingSessions = new TeachingSessionManager();
+        TeachingSessions.LessonStepChanged += (_, lesson) => LessonChanged?.Invoke(this, lesson);
+        TeachingSessions.LessonStarted += (_, lesson) => LessonChanged?.Invoke(this, lesson);
+        TeachingSessions.LessonCompleted += (_, lesson) => LessonChanged?.Invoke(this, lesson);
+
+        var teachingHooks = new CompanionTeachingHooks
+        {
+            ResolveAnnotationAsync = async target =>
+            {
+                var cap = await _capture.CaptureActiveWindowAsync();
+                if (cap is null) return null;
+                return await _annotations.ResolveAsync(target, cap);
+            },
+            ShowOverlay = req => GuidanceOverlayRequested?.Invoke(this, req),
+            ShowCompanionGuidance = g => CompanionGuidanceRequested?.Invoke(this, g),
+            ShowCompanionDemo = d => CompanionDemoRequested?.Invoke(this, d),
+            ClearOverlay = () => GuidanceOverlayRequested?.Invoke(this, GuidanceOverlayRequest.Clear),
+            GetDiagramCanvas = () => DiagramCanvas.Centred(0, 0, 1920, 1080, 0.7)
+        };
+
+        var observationHooks = new CompanionObservationHooks
+        {
+            CaptureScreenAsync = ct => _capture.CaptureActiveWindowAsync(ct),
+            FindUiElementAsync = (q, ct) => _uiAutomation.FindElementAsync(q, ct),
+            DescribeWindowAsync = (c, ct) => _uiAutomation.DescribeWindowAsync(c, ct),
+            DescribeElementAtAsync = (x, y, ct) => _uiAutomation.DescribeElementAtAsync(x, y, ct)
+        };
+
+        var orchestrationHooks = new SubAgentOrchestrationHooks
+        {
+            // A helper inherits its parent's depth plus one, so the chain is
+            // bounded. It is also marked SubAgent, which holds it at
+            // AskApproval however the autonomy setting is configured: a goal one
+            // agent wrote for another is the furthest thing from the user's own
+            // words that this system produces.
+            SpawnWorkerAsync = (goal, templateId, dir, parentId) =>
+            {
+                var parentDepth = AgentTasks.GetTask(parentId)?.Depth ?? 0;
+                return Task.FromResult(AgentTasks.SpawnTask(
+                    goal, templateId, dir, maxTurns: null,
+                    origin: AgentSpawnOrigin.SubAgent,
+                    depth: parentDepth + 1));
+            },
+            GetWorkerStatus = id => AgentTasks.GetTask(id),
+            ListActiveWorkers = () => AgentTasks.GetActiveTasks(),
+            CancelWorker = id => AgentTasks.CancelTask(id)
+        };
+
+        AgentTasks.RegisterCompanionTools(teachingHooks, observationHooks, orchestrationHooks);
+
+        // Gives agents a real, visible browser. The browser itself is not
+        // launched here -- only when an agent first asks for one -- because the
+        // very first launch may have to download Chromium, and most tasks never
+        // need a browser at all.
+        AgentTasks.UseBrowser(new Metis.Windows.PlaywrightBrowserFactory(
+            message => _log.Info($"Browser: {message}")));
     }
 
+    private readonly IWindowsNotificationService _notifications;
+    public AgentTaskManager AgentTasks { get; }
+    public TeachingSessionManager TeachingSessions { get; }
     public AppSettings Settings { get; private set; } = new();
     public AssistantStateMachine State { get; }
     public ICursorService Cursor { get; }
@@ -232,6 +356,200 @@ public sealed class MetisRuntime : IDisposable
         SetStatus("Signed out. Metis still works with your own API key.");
     }
 
+    /// <summary>
+    /// Starts one background agent per goal and returns what was started.
+    ///
+    /// Everything that spawns goes through here so origin is never forgotten:
+    /// origin decides how much an agent may do unattended, and a spawn that
+    /// forgot to say where it came from would quietly inherit the most
+    /// permissive answer.
+    /// </summary>
+    private IReadOnlyList<AgentTaskRecord> SpawnAgents(
+        IReadOnlyList<string> goals,
+        AgentSpawnOrigin origin)
+    {
+        if (AgentTasks is null || goals.Count == 0)
+        {
+            return [];
+        }
+
+        var started = new List<AgentTaskRecord>();
+        foreach (var goal in goals)
+        {
+            if (string.IsNullOrWhiteSpace(goal))
+            {
+                continue;
+            }
+
+            try
+            {
+                var task = AgentTasks.SpawnTask(goal.Trim(), origin: origin);
+                started.Add(task);
+                _log.Info($"Agent {task.Id} spawned ({origin}): {task.Goal}");
+            }
+            catch (Exception exception)
+            {
+                // One goal failing must not lose the others, and must not take
+                // down the turn that asked for them.
+                _log.Error($"Could not spawn an agent for '{goal}'.", exception);
+            }
+        }
+
+        return started;
+    }
+
+    /// <summary>
+    /// The last few exchanges, verbatim, so a follow-up can be understood as
+    /// one.
+    ///
+    /// Kept short deliberately. This is not memory — that is what ChatRecall is
+    /// for — it is just enough of the immediate thread that "tidy my downloads"
+    /// still reads as the answer to the question Metis asked a moment ago.
+    /// </summary>
+    private string? DescribeRecentTurns()
+    {
+        var turns = _currentChat.Turns;
+        if (turns.Count == 0)
+        {
+            return null;
+        }
+
+        var recent = turns.Count <= RecentTurnsKept ? turns : turns.Skip(turns.Count - RecentTurnsKept).ToList();
+        var lines = recent
+            .Where(turn => !string.IsNullOrWhiteSpace(turn.Text))
+            .Select(turn => $"{(turn.IsUser ? "user" : "metis")}: {Truncate(turn.Text.Trim(), 400)}");
+
+        var joined = string.Join(Environment.NewLine, lines);
+        return string.IsNullOrWhiteSpace(joined) ? null : joined;
+    }
+
+    /// <summary>How many exchanges of the live conversation travel with a request.</summary>
+    private const int RecentTurnsKept = 6;
+
+    private static string Truncate(string value, int maximum) =>
+        value.Length <= maximum ? value : value[..maximum] + "…";
+
+    /// <summary>
+    /// Goes and finds the one thing the model said it could not confirm.
+    ///
+    /// This is the whole of the difference between a chatbot and something
+    /// worth trusting on screen. Metis used to get one look, one guess, and no
+    /// way to say "I am not sure" — so when the screenshot was ambiguous it
+    /// answered confidently anyway, and a confident wrong mark is worse than no
+    /// mark. Now the model can decline to guess, and Metis asks Windows
+    /// directly through the accessibility tree, which knows what every control
+    /// is actually called.
+    ///
+    /// Deliberately local: no second round trip, no extra tokens, and typically
+    /// under a fifth of a second. When the lookup fails the answer says so
+    /// rather than papering over it, because "I cannot see it, is it open?" is
+    /// a useful sentence and an invented location is not.
+    /// </summary>
+    private async Task<AssistantPlan> TakeSecondLookAsync(
+        AssistantPlan plan,
+        ScreenCapture? capture,
+        CancellationToken cancellationToken)
+    {
+        var wanted = plan.LookFor?.Trim();
+        if (string.IsNullOrWhiteSpace(wanted) || capture is null)
+        {
+            return plan;
+        }
+
+        UiElementHit? hit = null;
+        try
+        {
+            hit = await _uiAutomation.FindElementAsync(wanted, cancellationToken);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception exception)
+        {
+            _log.Error($"The second look for '{wanted}' failed.", exception);
+        }
+
+        if (hit is null)
+        {
+            _log.Info($"Second look: '{wanted}' is not on screen. Saying so rather than guessing.");
+            return plan with
+            {
+                SpokenText = $"{plan.SpokenText} I can't see {wanted} on your screen at the moment — "
+                             + "open it or scroll to it and ask me again.",
+                NeedsAnotherLook = false
+            };
+        }
+
+        _log.Info($"Second look found '{hit.Name}' at ({hit.ScreenX},{hit.ScreenY}).");
+
+        // Found it. The mark is placed from what Windows reported rather than
+        // from anything the model estimated, so the coordinates are measured
+        // rather than guessed.
+        _lessonFallbackTarget = null;
+        return plan with
+        {
+            ElementName = string.IsNullOrWhiteSpace(hit.Name) ? wanted : hit.Name,
+            ScopeName = "control",
+            NeedsAnotherLook = false
+        };
+    }
+
+    /// <summary>
+    /// Raised when the user clicks a Windows notification or one of its
+    /// buttons. The interface listens for this to bring the right task up.
+    /// </summary>
+    public event EventHandler<string>? AgentNotificationOpened;
+
+    /// <summary>
+    /// Acts on a notification the user pressed.
+    ///
+    /// The arguments are the short strings the toast was built with -
+    /// "approve:agent-1234", "deny:agent-1234", "agent:agent-1234" - so that
+    /// answering an approval never requires finding the window first, which for
+    /// a background agent is most of the friction.
+    /// </summary>
+    private void HandleNotificationAction(string? arguments)
+    {
+        if (string.IsNullOrWhiteSpace(arguments) || AgentTasks is null)
+        {
+            return;
+        }
+
+        var parts = arguments.Split(':', 2);
+        if (parts.Length != 2 || string.IsNullOrWhiteSpace(parts[1]))
+        {
+            return;
+        }
+
+        var taskId = parts[1];
+
+        switch (parts[0].ToLowerInvariant())
+        {
+            case "approve":
+                AgentTasks.ApproveAction(taskId, true);
+                _log.Info($"Approved {taskId} from a notification.");
+                break;
+
+            case "deny":
+                AgentTasks.ApproveAction(taskId, false);
+                _log.Info($"Denied {taskId} from a notification.");
+                break;
+
+            default:
+                AgentNotificationOpened?.Invoke(this, taskId);
+                break;
+        }
+    }
+
+    /// <summary>One sentence naming what was just handed over.</summary>
+    private static string DescribeSpawn(IReadOnlyList<AgentTaskRecord> tasks) => tasks.Count switch
+    {
+        0 => "I couldn't start that one, sorry.",
+        1 => $"I've set an agent going on that: {tasks[0].Goal}. It'll work in the background while we carry on.",
+        _ => $"I've set {tasks.Count} agents going. They'll work in the background while we carry on."
+    };
+
     public string MemoryPath => _memory.MemoryPath;
     public bool HasGeminiKey => !string.IsNullOrWhiteSpace(_secretStore.ReadGeminiApiKey());
     public bool HasOpenAiKey => !string.IsNullOrWhiteSpace(_secretStore.ReadOpenAiApiKey());
@@ -294,6 +612,8 @@ public sealed class MetisRuntime : IDisposable
         _recorder.LevelChanged += OnAudioLevelChanged;
         _pushToTalk.Pressed += OnPushToTalkPressed;
         _pushToTalk.Released += OnPushToTalkReleased;
+        _pushToTalk.DirectAgentVoicePressed += OnDirectAgentVoicePressed;
+        _pushToTalk.DirectAgentVoiceReleased += OnDirectAgentVoiceReleased;
         _pushToTalk.EmergencyStopPressed += OnEmergencyStopPressed;
         _pushToTalk.CancelPressed += (_, _) => TraceCancelKeyPressed?.Invoke(this, EventArgs.Empty);
         _pushToTalk.ContextActivationPressed += OnContextActivationPressed;
@@ -301,6 +621,7 @@ public sealed class MetisRuntime : IDisposable
         _pushToTalk.ContextActivationUpgraded += OnContextActivationUpgraded;
         _pushToTalk.ActiveListeningToggled += OnActiveListeningToggled;
         _pushToTalk.ContextShortcutsEnabled = Settings.ContextShortcutsEnabled;
+        _pushToTalk.DirectAgentShortcutsEnabled = Settings.DirectAgentShortcutsEnabled;
         try
         {
             _pushToTalk.Start();
@@ -344,6 +665,7 @@ public sealed class MetisRuntime : IDisposable
         await _settingsStore.SaveAsync(normalized, cancellationToken);
         Settings = normalized;
         _pushToTalk.ContextShortcutsEnabled = Settings.ContextShortcutsEnabled;
+        _pushToTalk.DirectAgentShortcutsEnabled = Settings.DirectAgentShortcutsEnabled;
         ReloadSoundPack();
         ReloadUserSkills();
         ConfigureCaptureProfile();
@@ -473,6 +795,46 @@ public sealed class MetisRuntime : IDisposable
         var result = await _windowsVoice.TestAsync(Settings.WindowsVoiceName, cancellationToken);
         SetStatus(result.Message);
         return result;
+    }
+
+    public async Task<ProviderTestResult> PreviewVoiceAsync(
+        string? voiceName = null,
+        string? speechModel = null,
+        CancellationToken cancellationToken = default)
+    {
+        ThrowIfDisposed();
+        var voice = string.IsNullOrWhiteSpace(voiceName) ? (string.IsNullOrWhiteSpace(Settings.VoiceName) ? "Kore" : Settings.VoiceName) : voiceName;
+        var model = string.IsNullOrWhiteSpace(speechModel)
+            ? (string.IsNullOrWhiteSpace(Settings.SpeechModel) ? ModelCatalog.DefaultGeminiSpeechModel : Settings.SpeechModel)
+            : speechModel;
+        SetStatus($"Testing Gemini voice preview ({voice})…");
+
+        var sw = Stopwatch.StartNew();
+        try
+        {
+            var key = RequireApiKey();
+            var sampleText = $"Hello! I'm Metis, using the {voice} voice on {model}.";
+            var audio = await _gemini.SynthesizeSpeechAsync(
+                key,
+                model,
+                Metis.AI.GeminiRequestBuilder.NormalizeVoice(voice),
+                sampleText,
+                cancellationToken);
+
+            if (audio is not null && audio.PcmData.Length > 0)
+            {
+                await _audioPlayback.PlayAsync(audio, AudioPriority.Speech, cancellationToken);
+                SetStatus($"Voice preview played successfully ({voice})");
+                return new ProviderTestResult(model, true, $"Voice preview played successfully ({voice}).", sw.Elapsed);
+            }
+
+            return new ProviderTestResult(model, false, "No audio data was returned from voice synthesis.", sw.Elapsed);
+        }
+        catch (Exception ex)
+        {
+            SetStatus($"Voice preview error: {ex.Message}");
+            return new ProviderTestResult(model, false, ex.Message, sw.Elapsed);
+        }
     }
 
     /// <summary>
@@ -863,7 +1225,220 @@ public sealed class MetisRuntime : IDisposable
 
         _pendingActivation = ActivationKind.PushToTalk;
         _pendingPointer = null;
-        _ = CompleteVoiceTurnAsync();
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await CompleteVoiceTurnAsync().ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                _log.Error("Voice turn failed unexpectedly", ex);
+            }
+        });
+    }
+
+    private void OnDirectAgentVoicePressed(object? sender, EventArgs e)
+    {
+        if (_disposed || _recorder.IsRecording || _turnGate.CurrentCount == 0)
+        {
+            return;
+        }
+
+        if (!HasConfiguredProviderKey())
+        {
+            ReportError($"Add a {ProviderDisplayName(Settings.AiProvider)} API key in Setup before using voice input.");
+            return;
+        }
+
+        try
+        {
+            _pendingPointer = null;
+            PlayCue(MetisSound.RecordingStarted);
+            _recorder.Start(Settings.PreferredMicrophoneId);
+            State.Force(AssistantState.Listening);
+            SetActivity(MetisActivityKind.Listening, "Listening for agent task");
+            SetStatus("Listening for Agent Goal — release shortcut to dispatch");
+        }
+        catch (Exception exception)
+        {
+            ReportException("Metis could not start the microphone for agent task", exception);
+        }
+    }
+
+    private void OnDirectAgentVoiceReleased(object? sender, EventArgs e)
+    {
+        if (!_recorder.IsRecording)
+        {
+            return;
+        }
+
+        _pendingActivation = ActivationKind.DirectAgent;
+        _pendingPointer = null;
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await CompleteDirectAgentVoiceTurnAsync().ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                _log.Error("Direct agent voice turn failed unexpectedly", ex);
+            }
+        });
+    }
+
+    private async Task CompleteDirectAgentVoiceTurnAsync()
+    {
+        try
+        {
+            var recording = await _recorder.StopAsync();
+            if (recording is null || recording.Duration < TimeSpan.FromMilliseconds(250))
+            {
+                State.Force(AssistantState.Idle);
+                SetStatus("No speech captured — hold the shortcut a little longer");
+                return;
+            }
+
+            PlayCue(MetisSound.RequestSent);
+            MessageAdded?.Invoke(
+                this,
+                new AssistantMessage(
+                    AssistantRole.User,
+                    $"Direct Agent Voice ({recording.Duration.TotalSeconds:0.0}s)",
+                    DateTimeOffset.Now));
+
+            State.Force(AssistantState.Thinking);
+            SetStatus("Transcribing agent goal…");
+
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+            string? transcribedText = null;
+
+            try
+            {
+                transcribedText = await TranscribeAsync(recording, cts.Token);
+            }
+            catch (Exception ex)
+            {
+                _log.Error("Direct agent voice transcription failed", ex);
+            }
+
+            if (string.IsNullOrWhiteSpace(transcribedText))
+            {
+                try
+                {
+                    var geminiKey = _secretStore.ReadGeminiApiKey();
+                    var openAiKey = _secretStore.ReadOpenAiApiKey();
+                    if (Settings.AiProvider == "Gemini" && !string.IsNullOrWhiteSpace(geminiKey))
+                    {
+                        var req = new GeminiRequest(
+                            "Transcribe the spoken audio verbatim. Return ONLY the transcription text, nothing else.",
+                            RecordedAudioWav: recording.WavBytes);
+                        var resp = await _gemini.GenerateAsync(geminiKey, Settings.ReasoningModel, req, cts.Token);
+                        transcribedText = resp.Text.Trim();
+                    }
+                    else if (Settings.AiProvider == "OpenAI" && !string.IsNullOrWhiteSpace(openAiKey))
+                    {
+                        var req = new GeminiRequest(
+                            "Transcribe the spoken audio verbatim. Return ONLY the transcription text, nothing else.",
+                            RecordedAudioWav: recording.WavBytes);
+                        var resp = await _openAi.GenerateAsync(openAiKey, Settings.OpenAiReasoningModel, Settings.OpenAiTranscriptionModel, req, cts.Token);
+                        transcribedText = (!string.IsNullOrWhiteSpace(resp.Transcript) ? resp.Transcript : resp.Text).Trim();
+                    }
+                }
+                catch (Exception cloudEx)
+                {
+                    _log.Error("Direct agent voice cloud transcription fallback failed", cloudEx);
+                }
+            }
+
+            if (string.IsNullOrWhiteSpace(transcribedText))
+            {
+                State.Force(AssistantState.Idle);
+                SetStatus("Could not transcribe voice goal — check your speech provider or microphone");
+                ReportError("Could not transcribe agent task voice recording.");
+                return;
+            }
+
+            _log.Info($"Direct agent voice transcribed as: \"{transcribedText}\"");
+
+            // The chord itself says this is a spawn, so there is no intent to
+            // work out — only a spoken run-up to trim off, so the worker is
+            // given "tidy my downloads" rather than "spawn an agent to tidy my
+            // downloads", which would be an instruction about instructing
+            // itself.
+            List<string> goals = [];
+            var spokenGoal = AgentIntentDetector.StripSpokenSpawnPrefix(transcribedText);
+            if (!string.IsNullOrWhiteSpace(spokenGoal))
+            {
+                goals.Add(spokenGoal);
+            }
+
+            if (goals.Count == 0)
+            {
+                State.Force(AssistantState.Idle);
+                SetStatus("No clear goal detected from voice input.");
+                return;
+            }
+
+            RecordChatTurn("user", transcribedText, null);
+
+            // SlashCommand rather than ModelProposed: the user held the agent
+            // shortcut and dictated the goal, which is as direct an instruction
+            // as typing it.
+            var spawnedTasks = SpawnAgents(goals, AgentSpawnOrigin.SlashCommand);
+
+            var spokenReply = spawnedTasks.Count switch
+            {
+                1 => $"I've spawned a background agent for you to {goals[0]}. It's working autonomously in the background now.",
+                _ => $"I've spawned {spawnedTasks.Count} background agents for you. They are working autonomously in the background."
+            };
+
+            var fullReply = spokenReply + (spawnedTasks.Count == 1 ? $"\n\nTask ID: `{spawnedTasks[0].Id}`" : "");
+            RecordChatTurn("metis", fullReply, null);
+            MessageAdded?.Invoke(this, new AssistantMessage(AssistantRole.Metis, fullReply, DateTimeOffset.Now));
+
+            PlayCue(MetisSound.RequestSent);
+
+            if (Settings.SpeechEnabled)
+            {
+                SetStatus("Speaking…");
+                State.Force(AssistantState.Speaking);
+                var speech = await SynthesizeTextAsync(spokenReply, answeringProvider: null, cts.Token);
+                if (speech is not null)
+                {
+                    var duration = GetAudioDuration(speech) ?? CompanionSpeech.ReadingDuration(spokenReply);
+                    SetActivity(MetisActivityKind.Speaking, spokenReply);
+                    StartCompanionResponse(spokenReply, duration, showBubble: true);
+                    await _audioPlayback.PlayAsync(speech, AudioPriority.Speech, cts.Token);
+                    await Task.Delay(duration, cts.Token);
+                }
+                else
+                {
+                    SetActivity(MetisActivityKind.Speaking, spokenReply);
+                    StartCompanionResponse(spokenReply, null, showBubble: true);
+                    await Task.Delay(CompanionSpeech.ReadingDuration(spokenReply), cts.Token);
+                }
+            }
+            else
+            {
+                SetActivity(MetisActivityKind.Speaking, spokenReply);
+                StartCompanionResponse(spokenReply, null, showBubble: true);
+                await Task.Delay(CompanionSpeech.ReadingDuration(spokenReply), cts.Token);
+            }
+
+            SetStatus("I'm ready. Ask me about your screen, or tell me what to do.");
+            State.Force(AssistantState.Success);
+            SetActivity(MetisActivityKind.Complete, "Done");
+            PlayCue(MetisSound.TaskComplete);
+            await Task.Delay(GuidanceTuning.Scale(TimeSpan.FromSeconds(1.2)), cts.Token);
+            SetActivity(MetisActivityKind.Idle, string.Empty);
+            State.Force(AssistantState.Idle);
+        }
+        catch (Exception exception)
+        {
+            ReportException("Metis could not dispatch direct agent voice task", exception);
+        }
     }
 
     /// <summary>
@@ -974,6 +1549,19 @@ public sealed class MetisRuntime : IDisposable
     }
 
     /// <summary>
+    /// Accepts a single point tapped during tracing. Resolves as a point inspect
+    /// on the control under that coordinate.
+    /// </summary>
+    public void SetTappedPoint(GuidancePoint point)
+    {
+        _pendingTrace = null;
+        _pendingPointer = new PointerContext(point.ScreenX, point.ScreenY, 0, 0);
+        _pendingActivation = ActivationKind.Inspect;
+        _log.Info($"Inspected point at {point.ScreenX},{point.ScreenY}.");
+        _ = RunTurnAsync("Explain what this control is on screen.", null, CancellationToken.None);
+    }
+
+    /// <summary>
     /// Shift arrived after the hold began, so what started as a voice request
     /// is really a trace. The microphone is closed and discarded, and the pen
     /// comes out — otherwise the chord's behaviour would depend on which of
@@ -1031,7 +1619,17 @@ public sealed class MetisRuntime : IDisposable
             _pendingPointer = null;
         }
 
-        _ = CompleteVoiceTurnAsync();
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await CompleteVoiceTurnAsync().ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                _log.Error("Context voice turn failed unexpectedly", ex);
+            }
+        });
     }
 
     private void OnEmergencyStopPressed(object? sender, EventArgs e)
@@ -1039,6 +1637,7 @@ public sealed class MetisRuntime : IDisposable
         // Keep the low-level hook callback extremely short: cancel and drain
         // the action path immediately, then perform UI/audio cleanup off-hook.
         _turnCancellation?.Cancel();
+        AgentTasks.CancelAll();
         ThreadPool.QueueUserWorkItem(_ =>
         {
             PlayCue(MetisSound.Stopped);
@@ -1091,6 +1690,7 @@ public sealed class MetisRuntime : IDisposable
             return;
         }
 
+        _lastVoiceError = null;
         _turnCancellation?.Dispose();
         _turnCancellation = CancellationTokenSource.CreateLinkedTokenSource(externalCancellation);
         _turnCancellation.CancelAfter(recording is null
@@ -1207,10 +1807,67 @@ public sealed class MetisRuntime : IDisposable
                     "Choose AssemblyAI under Voice & input, then try the shortcut again.");
             }
 
+            // Only the slash commands short-circuit the model now. Every other
+            // way of asking for an agent -- "have an agent tidy my downloads",
+            // or "spawn one" followed by "to do what?" and an answer -- reaches
+            // the model, which can read the conversation and put the goal in its
+            // reply. The regex could do neither, and when it missed, the request
+            // fell through to a teaching prompt that forbids claiming to do
+            // anything, so Metis described the agent instead of starting it.
+            // That is the bug this replaces.
+            if (AgentIntentDetector.TryExtractExplicitCommand(effectivePrompt, out var slashGoal) &&
+                !string.IsNullOrWhiteSpace(slashGoal))
+            {
+                RecordChatTurn("user", effectivePrompt, screenshot?.WindowTitle);
+                var spawnedTasks = SpawnAgents([slashGoal!], AgentSpawnOrigin.SlashCommand);
+                var spokenReply = DescribeSpawn(spawnedTasks);
+                var fullReply = spokenReply + (spawnedTasks.Count == 1 ? $"\n\nTask ID: `{spawnedTasks[0].Id}`" : "");
+                RecordChatTurn("metis", fullReply, screenshot?.WindowTitle);
+                MessageAdded?.Invoke(this, new AssistantMessage(AssistantRole.Metis, fullReply, DateTimeOffset.Now));
+
+                if (Settings.SpeechEnabled)
+                {
+                    SetStatus("Speaking…");
+                    State.Force(AssistantState.Speaking);
+                    var speech = await SynthesizeTextAsync(spokenReply, answeringProvider: null, cancellationToken);
+                    if (speech is not null)
+                    {
+                        var duration = GetAudioDuration(speech) ?? CompanionSpeech.ReadingDuration(spokenReply);
+                        SetActivity(MetisActivityKind.Speaking, spokenReply);
+                        StartCompanionResponse(spokenReply, duration, showBubble: true);
+                        await _audioPlayback.PlayAsync(speech, AudioPriority.Speech, cancellationToken);
+                        await Task.Delay(duration, cancellationToken);
+                    }
+                    else
+                    {
+                        SetActivity(MetisActivityKind.Speaking, spokenReply);
+                        StartCompanionResponse(spokenReply, null, showBubble: true);
+                        await Task.Delay(CompanionSpeech.ReadingDuration(spokenReply), cancellationToken);
+                    }
+                }
+                else
+                {
+                    SetActivity(MetisActivityKind.Speaking, spokenReply);
+                    StartCompanionResponse(spokenReply, null, showBubble: true);
+                    await Task.Delay(CompanionSpeech.ReadingDuration(spokenReply), cancellationToken);
+                }
+
+                SetStatus("I'm ready. Ask me about your screen, or tell me what to do.");
+                State.Force(AssistantState.Success);
+                SetActivity(MetisActivityKind.Complete, "Done");
+                PlayCue(MetisSound.TaskComplete);
+                await Task.Delay(GuidanceTuning.Scale(TimeSpan.FromSeconds(1.2)), cancellationToken);
+                SetActivity(MetisActivityKind.Idle, string.Empty);
+                State.Force(AssistantState.Idle);
+                return;
+            }
+
+            var region = BuildRegion(pendingTrace, screenshot);
             var pointer = await BuildPointerContextAsync(
                 pendingPointer,
                 activation,
                 screenshot,
+                pendingTrace,
                 cancellationToken);
             var task = _taskContext.BeginTurn(
                 effectivePrompt,
@@ -1227,7 +1884,6 @@ public sealed class MetisRuntime : IDisposable
 
             RecordChatTurn("user", effectivePrompt, screenshot?.WindowTitle);
 
-            var region = BuildRegion(pendingTrace, screenshot);
             if (region is not null && screenshot is not null)
             {
                 // Send only what was circled. Sharper answers, and a fraction
@@ -1286,6 +1942,8 @@ public sealed class MetisRuntime : IDisposable
                 _taskContext.Describe(),
                 skillContext,
                 taughtSkills,
+                recall,
+                DescribeRecentTurns(),
                 region,
                 _academicTeaching,
                 Settings.UserName);
@@ -1339,12 +1997,46 @@ public sealed class MetisRuntime : IDisposable
 
             if (screenGroundingRequired && !plan.ScreenObserved)
             {
-                throw new InvalidOperationException(
-                    "The AI did not confirm that it inspected Metis's current screenshot, so no screen answer was trusted.");
+                if (screenshot is not null && (plan.HasAnnotation || plan.LessonSteps.Count > 0))
+                {
+                    plan = plan with { ScreenObserved = true };
+                }
+                else
+                {
+                    throw new InvalidOperationException(
+                        "The AI did not confirm that it inspected Metis's current screenshot, so no screen answer was trusted.");
+                }
+            }
+
+            // The model said it could not confirm what it was being asked
+            // about. Go and look, rather than answering anyway.
+            if (plan.WantsSecondLook)
+            {
+                plan = await TakeSecondLookAsync(plan, screenshot, cancellationToken);
+            }
+
+            // Work the model decided to hand over. This runs before the lesson
+            // branch below, because a reply can legitimately do both: start an
+            // agent on the long job and teach the user something while it runs.
+            //
+            // The agents start immediately rather than behind a confirmation,
+            // because being asked to confirm what you just asked for is the
+            // thing that made the old flow feel like a chatbot. What protects
+            // the user instead is what the agent may do once running: a
+            // model-proposed agent is held at AskApproval whatever the autonomy
+            // setting says, so it pauses before anything destructive, and it
+            // appears in the drawer where it can be stopped.
+            if (plan.AgentsToSpawn.Count > 0)
+            {
+                // No event needed to announce these: AgentTaskManager.TaskCreated
+                // already posts a line in the chat and lights the agent dots for
+                // every spawn, whichever path started it.
+                SpawnAgents(plan.AgentsToSpawn, AgentSpawnOrigin.ModelProposed);
             }
 
             var bubbleCue = string.IsNullOrWhiteSpace(plan.BubbleCue) ? string.Empty : plan.BubbleCue.Trim();
             _log.Info($"Assistant reply received: {plan.LessonSteps.Count} lesson step(s), " +
+                      $"{plan.AgentsToSpawn.Count} agent(s) requested, " +
                       $"{(plan.HasAnnotation ? "an annotation" : "no annotation")}, " +
                       $"screen context {(screenshot is null ? "unavailable" : "available")}.");
 
@@ -1375,19 +2067,19 @@ public sealed class MetisRuntime : IDisposable
 
             // Answer in the way you were asked. A typed question gets a written
             // reply beside the cursor; speaking to Metis gets speech back.
-            var speakReply = Settings.SpeechEnabled && activation != ActivationKind.Typed;
+            var speakReply = Settings.SpeechEnabled;
             if (speakReply)
             {
                 SetStatus("Preparing Metis's voice…");
                 try
                 {
-                    var audio = await SynthesizeWithProviderAsync(response, cancellationToken);
+                    var audio = await SynthesizeWithProviderAsync(response, plan, cancellationToken);
                     if (audio is not null)
                     {
                         State.Force(AssistantState.Speaking);
-                        SetActivity(MetisActivityKind.Speaking, "Speaking");
-                        SetStatus("Speaking…");
                         var spokenLine = CompanionSpeech.ChooseLine(plan.SpokenText, bubbleCue);
+                        SetActivity(MetisActivityKind.Speaking, spokenLine ?? "Speaking");
+                        SetStatus("Speaking…");
                         if (spokenLine is not null)
                         {
                             StartCompanionResponse(spokenLine, GetAudioDuration(audio), showBubble: true);
@@ -1401,7 +2093,9 @@ public sealed class MetisRuntime : IDisposable
                         _log.Info(
                             $"No speech audio came back for the reply (voice '{Settings.TextToSpeechProvider}', " +
                             $"provider '{response.Provider}'), so the answer was shown but not spoken.");
-                        finalStatus += " — voice was unavailable";
+                        finalStatus += _lastVoiceError is not null
+                            ? $" — voice was unavailable: {_lastVoiceError}"
+                            : " — voice was unavailable";
                     }
                 }
                 catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -1411,7 +2105,7 @@ public sealed class MetisRuntime : IDisposable
                 catch (Exception speechError)
                 {
                     _log.Error("Speech output failed; the text answer remains available.", speechError);
-                    finalStatus += " — speech failed, text still works";
+                    finalStatus += $" — speech failed ({speechError.Message}), text still works";
                 }
             }
 
@@ -1428,6 +2122,10 @@ public sealed class MetisRuntime : IDisposable
             if (!companionResponseStarted && !willPoint)
             {
                 var writtenLine = CompanionSpeech.ChooseWrittenLine(plan.SpokenText, bubbleCue);
+                if (writtenLine is not null)
+                {
+                    SetActivity(MetisActivityKind.Speaking, writtenLine);
+                }
                 StartCompanionResponse(
                     writtenLine ?? string.Empty,
                     CompanionSpeech.ReadingDuration(writtenLine),
@@ -1479,6 +2177,7 @@ public sealed class MetisRuntime : IDisposable
         PointerContext? pointer,
         ActivationKind activation,
         ScreenCapture? capture,
+        IReadOnlyList<GuidancePoint>? pendingTrace,
         CancellationToken cancellationToken)
     {
         if (pointer is null || capture is null)
@@ -1503,30 +2202,56 @@ public sealed class MetisRuntime : IDisposable
         string? hovered = null;
         if (activation == ActivationKind.Inspect)
         {
-            try
+            if (pendingTrace is { Count: >= 3 })
             {
-                hovered = await _uiAutomation.DescribeElementAtAsync(
+                var (rx, ry, rw, rh) = TracePath.Bounds(pendingTrace);
+                try
+                {
+                    hovered = await _uiAutomation.DescribeRegionAsync(
+                        capture,
+                        rx,
+                        ry,
+                        rw,
+                        rh,
+                        cancellationToken);
+                }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                {
+                    throw;
+                }
+                catch (Exception exception)
+                {
+                    _log.Error("The elements in the traced region could not be read; continuing with vision only.", exception);
+                }
+
+                // The lasso overlay mark for the whole traced area is already visible on screen,
+                // so we do not point an arrow to just the center point.
+            }
+            else
+            {
+                try
+                {
+                    hovered = await _uiAutomation.DescribeElementAtAsync(
+                        pointer.ScreenX,
+                        pointer.ScreenY,
+                        cancellationToken);
+                }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                {
+                    throw;
+                }
+                catch (Exception exception)
+                {
+                    _log.Error("The control under the pointer could not be read; continuing with vision only.", exception);
+                }
+
+                // Draw toward the pointer so the user can see exactly what Metis
+                // resolved "this" to before it answers.
+                ShowPointerArrow(
                     pointer.ScreenX,
                     pointer.ScreenY,
-                    cancellationToken);
+                    hovered is null ? "Looking here" : null);
             }
-            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-            {
-                throw;
-            }
-            catch (Exception exception)
-            {
-                _log.Error("The control under the pointer could not be read; continuing with vision only.", exception);
-            }
-
-            // Draw toward the pointer so the user can see exactly what Metis
-            // resolved "this" to before it answers. The same hand-drawn arrow
-            // is used when Metis points something out, so the gesture means the
-            // same thing in both directions.
-            ShowPointerArrow(
-                pointer.ScreenX,
-                pointer.ScreenY,
-                hovered is null ? "Looking here" : null);
         }
 
         return pointer with { NormalizedX = normalizedX, NormalizedY = normalizedY, HoveredElement = hovered };
@@ -1619,19 +2344,49 @@ public sealed class MetisRuntime : IDisposable
                 }
 
                 LessonChanged?.Invoke(this, lesson);
+                SetStatus($"Step {lesson.StepNumber} of {lesson.Steps.Count}: {step.Instruction}");
+
+                // What the screen looked like before the learner was asked, so
+                // "has it changed?" has something to be a change from.
+                var titleBefore = _lastLessonCapture?.WindowTitle;
+                var nextStep = lesson.CurrentIndex + 1 < lesson.Steps.Count
+                    ? lesson.Steps[lesson.CurrentIndex + 1]
+                    : null;
+                var nextTargetBefore = await IsElementPresentAsync(nextStep?.ElementName, cancellationToken);
+
                 var held = await PresentLessonStepAsync(lesson, step, cancellationToken);
 
-                // Metis does not wait to be caught up with. It says the step,
-                // holds the mark long enough to be followed, then carries on —
-                // because a walkthrough that stops until you have done each
-                // thing cannot be listened to while you work, which is the
-                // whole point of being talked through something.
+                // Metis still does not stop dead. It says the step and holds the
+                // mark long enough to be followed, because a walkthrough that
+                // blocks until each thing is done cannot be listened to while
+                // you work, which is the whole point of being talked through
+                // something.
                 await Task.Delay(held, cancellationToken);
 
-                // Read the screen again before marking the next step. Whatever
-                // has happened in between — the user acting, a dialog opening,
-                // the app moving on — the next mark is placed against what is
-                // there now rather than against a screenshot from a minute ago.
+                // Then it looks. This is the part that used to be missing: the
+                // screen was re-read between steps only to re-place the mark,
+                // and never to ask whether the learner had actually kept up. So
+                // a lesson marched on regardless, and every mark after the one
+                // that was missed pointed at a screen nobody was on.
+                var progress = await ReadStepProgressAsync(
+                    step, nextStep, nextTargetBefore, titleBefore, cancellationToken);
+
+                if (progress == StepProgress.NotYet && lesson.AttemptsOnCurrentStep < MaxLessonNudges)
+                {
+                    lesson = lesson.Retry();
+                    LessonChanged?.Invoke(this, lesson);
+                    await NudgeLearnerAsync(lesson, step, cancellationToken);
+                    continue;
+                }
+
+                if (progress == StepProgress.NotYet)
+                {
+                    // Nudged as often as is useful. Carrying on beats standing
+                    // over someone repeating myself, and they may simply be
+                    // doing it a different way.
+                    _log.Info($"Step {lesson.StepNumber} was never confirmed. Moving on.");
+                }
+
                 lesson = lesson.Advance();
                 if (!lesson.IsFinished)
                 {
@@ -1651,6 +2406,15 @@ public sealed class MetisRuntime : IDisposable
         {
             CompanionDetachRequested?.Invoke(this, false);
             GuidanceOverlayRequested?.Invoke(this, GuidanceOverlayRequest.Clear);
+
+            if (_lastVoiceError is not null)
+            {
+                SetStatus($"Ready — voice synthesis failed: {_lastVoiceError}");
+            }
+            else
+            {
+                SetStatus("I'm ready. Ask me about your screen, or tell me what to do.");
+            }
         }
     }
 
@@ -1660,6 +2424,143 @@ public sealed class MetisRuntime : IDisposable
     /// the next mark is placed against a slightly older screen rather than not
     /// drawn at all.
     /// </summary>
+    /// <summary>
+    /// How many times Metis will point something out again before moving on.
+    ///
+    /// Two. The first nudge catches the common case, which is the learner not
+    /// having noticed the mark; the second re-explains. A third would be
+    /// standing over someone repeating myself, and they may simply be doing it
+    /// another way.
+    /// </summary>
+    private const int MaxLessonNudges = 2;
+
+    /// <summary>How long to keep watching for a step to take effect before nudging.</summary>
+    private static readonly TimeSpan StepWatchBudget = TimeSpan.FromSeconds(9);
+
+    /// <summary>How often to look while waiting.</summary>
+    private static readonly TimeSpan StepWatchInterval = TimeSpan.FromMilliseconds(700);
+
+    /// <summary>
+    /// Watches the screen for the step to take effect.
+    ///
+    /// Polls locally — no model call, nothing to pay for, and a hard budget so
+    /// it cannot hang. Returns as soon as there is an answer, which for a
+    /// learner who did the step immediately is usually the first look.
+    /// </summary>
+    private async Task<StepProgress> ReadStepProgressAsync(
+        LessonStep step,
+        LessonStep? nextStep,
+        bool nextTargetBefore,
+        string? titleBefore,
+        CancellationToken cancellationToken)
+    {
+        if (!Settings.LessonWaitsForLearner || !StepCompletionEvidence.CanBeChecked(step, nextStep))
+        {
+            return StepProgress.Unknowable;
+        }
+
+        var deadline = DateTimeOffset.UtcNow + StepWatchBudget;
+        var last = StepProgress.Unknowable;
+
+        while (DateTimeOffset.UtcNow < deadline && !cancellationToken.IsCancellationRequested)
+        {
+            await RefreshLessonCaptureAsync(cancellationToken);
+
+            string? elements = null;
+            try
+            {
+                if (_lastLessonCapture is not null)
+                {
+                    elements = await _uiAutomation.DescribeWindowAsync(_lastLessonCapture, cancellationToken);
+                }
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception exception)
+            {
+                // Being unable to read the screen is not evidence the learner
+                // failed, so it must never be reported as such.
+                _log.Error("Metis could not read the screen while checking a step.", exception);
+                return StepProgress.Unknowable;
+            }
+
+            last = StepCompletionEvidence.Read(
+                step,
+                nextStep,
+                await IsElementPresentAsync(nextStep?.ElementName, cancellationToken),
+                nextTargetBefore,
+                _lastLessonCapture?.WindowTitle,
+                titleBefore,
+                elements);
+
+            if (last != StepProgress.NotYet)
+            {
+                return last;
+            }
+
+            await Task.Delay(StepWatchInterval, cancellationToken);
+        }
+
+        return last;
+    }
+
+    /// <summary>Whether a named control can be found on screen right now.</summary>
+    private async Task<bool> IsElementPresentAsync(string? elementName, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(elementName))
+        {
+            return false;
+        }
+
+        try
+        {
+            return await _uiAutomation.FindElementAsync(elementName, cancellationToken) is not null;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Points the step out again, a little differently each time.
+    ///
+    /// The first attempt re-marks it and says something short, because the
+    /// usual reason a step has not happened is that the mark was not noticed.
+    /// The second gives the reason and says what to look for, because by then
+    /// the likelier problem is that the instruction was not understood.
+    /// </summary>
+    private async Task NudgeLearnerAsync(LessonState lesson, LessonStep step, CancellationToken cancellationToken)
+    {
+        var line = lesson.AttemptsOnCurrentStep <= 1
+            ? $"It's this one — {step.TargetLabel ?? step.ElementName ?? "here"}."
+            : BuildSecondNudge(step);
+
+        await RefreshLessonCaptureAsync(cancellationToken);
+        await PresentLessonStepAsync(lesson, step with { Instruction = line }, cancellationToken);
+    }
+
+    private static string BuildSecondNudge(LessonStep step)
+    {
+        var why = string.IsNullOrWhiteSpace(step.Why) ? null : step.Why!.Trim().TrimEnd('.');
+        var done = string.IsNullOrWhiteSpace(step.DoneWhen) ? null : step.DoneWhen!.Trim().TrimEnd('.');
+
+        if (why is not null && done is not null)
+        {
+            return $"{step.Instruction} {why}. You'll know it worked when {char.ToLowerInvariant(done[0])}{done[1..]}.";
+        }
+
+        return done is not null
+            ? $"{step.Instruction} You'll know it worked when {char.ToLowerInvariant(done[0])}{done[1..]}."
+            : step.Instruction;
+    }
+
     private async Task RefreshLessonCaptureAsync(CancellationToken cancellationToken)
     {
         try
@@ -1910,11 +2811,12 @@ public sealed class MetisRuntime : IDisposable
 
     private async Task SpeakLessonLineAsync(string line, CancellationToken cancellationToken)
     {
-        // With speech off there is no clip to pace against, so the words reveal
-        // at the reading estimate, as before.
         if (!Settings.SpeechEnabled)
         {
+            SetActivity(MetisActivityKind.Speaking, line);
             StartCompanionResponse(line, null, showBubble: true);
+            await Task.Delay(CompanionSpeech.ReadingDuration(line), cancellationToken);
+            SetActivity(MetisActivityKind.Idle, string.Empty);
             return;
         }
 
@@ -1929,18 +2831,28 @@ public sealed class MetisRuntime : IDisposable
             var audio = await SynthesizeTextAsync(line, null, cancellationToken);
             if (audio is not null)
             {
-                StartCompanionResponse(line, GetAudioDuration(audio), showBubble: true);
+                var duration = GetAudioDuration(audio) ?? CompanionSpeech.ReadingDuration(line);
+                SetActivity(MetisActivityKind.Speaking, line);
+                StartCompanionResponse(line, duration, showBubble: true);
                 await _audioPlayback.PlayAsync(audio, AudioPriority.Speech, cancellationToken);
+                await Task.Delay(duration, cancellationToken);
+                SetActivity(MetisActivityKind.Idle, string.Empty);
             }
             else
             {
+                SetActivity(MetisActivityKind.Speaking, line);
                 StartCompanionResponse(line, null, showBubble: true);
+                await Task.Delay(CompanionSpeech.ReadingDuration(line), cancellationToken);
+                SetActivity(MetisActivityKind.Idle, string.Empty);
                 _log.Info($"No speech audio came back for a lesson step, so it was shown but not spoken: \"{line}\"");
             }
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
+            SetActivity(MetisActivityKind.Speaking, line);
             StartCompanionResponse(line, null, showBubble: true);
+            await Task.Delay(CompanionSpeech.ReadingDuration(line), cancellationToken);
+            SetActivity(MetisActivityKind.Idle, string.Empty);
             _log.Error("Metis could not speak a lesson line.", exception);
         }
     }
@@ -2552,105 +3464,135 @@ public sealed class MetisRuntime : IDisposable
 
     private Task<SpeechAudio?> SynthesizeWithProviderAsync(
         ProviderTurnResult response,
-        CancellationToken cancellationToken) =>
-        SynthesizeTextAsync(response.Text, response.Provider, cancellationToken);
+        AssistantPlan? plan,
+        CancellationToken cancellationToken)
+    {
+        var textToSpeak = !string.IsNullOrWhiteSpace(plan?.SpokenText)
+            ? plan.SpokenText
+            : response.Text;
+        return SynthesizeTextAsync(textToSpeak, response.Provider, cancellationToken);
+    }
 
     /// <summary>
-    /// Speaks any line through whichever voice the user chose.
-    ///
-    /// This used to exist only for the main reply. Lesson steps and spoken
-    /// errors called Piper directly, so on a machine set to any other voice —
-    /// which is most machines, since Piper needs a separate download — every
-    /// step of a walkthrough and every spoken error was silent, and the log
-    /// filled with "the Piper executable was not found". The reply worked, so
-    /// it read as the voice cutting out rather than as a setting being ignored.
+    /// Speaks any line through whichever voice the user chose, with automatic
+    /// fallback to Windows offline voice if the primary cloud service fails.
     /// </summary>
     private async Task<SpeechAudio?> SynthesizeTextAsync(
         string text,
         string? answeringProvider,
         CancellationToken cancellationToken)
     {
-        if (string.IsNullOrWhiteSpace(text))
+        _lastVoiceError = null;
+        var spokenText = CompanionSpeech.CleanForSpeech(text);
+        if (string.IsNullOrWhiteSpace(spokenText))
         {
             return null;
         }
 
-        var response = new ProviderTurnResult(answeringProvider ?? Settings.AiProvider, string.Empty, text);
+        var provider = answeringProvider ?? Settings.AiProvider;
 
-        if (Settings.TextToSpeechProvider == "Windows")
+        try
         {
-            return await _windowsVoice.SynthesizeSpeechAsync(
-                Settings.WindowsVoiceName,
-                response.Text,
-                cancellationToken);
-        }
+            if (Settings.TextToSpeechProvider == "Piper")
+            {
+                return await _piper.SynthesizeSpeechAsync(
+                    ResolveLocalPath(Settings.PiperExecutablePath),
+                    ResolveLocalPath(Settings.PiperVoiceModelPath),
+                    spokenText,
+                    cancellationToken);
+            }
 
-        if (Settings.TextToSpeechProvider == "Piper")
+            if (Settings.TextToSpeechProvider == "Chatterbox-Nano")
+            {
+                return await _chatterboxNano.SynthesizeSpeechAsync(
+                    Settings.ChatterboxEndpoint,
+                    Settings.ChatterboxModel,
+                    Settings.ChatterboxVoice,
+                    spokenText,
+                    cancellationToken);
+            }
+
+            if (Settings.TextToSpeechProvider == "ElevenLabs")
+            {
+                return await _elevenLabs.SynthesizeSpeechAsync(
+                    RequireElevenLabsApiKey(),
+                    Settings.ElevenLabsModel,
+                    Settings.ElevenLabsVoiceId,
+                    spokenText,
+                    cancellationToken);
+            }
+
+            if (Settings.TextToSpeechProvider == "Native")
+            {
+                if (HasGeminiKey)
+                {
+                    _log.Info("Using Gemini for Native TTS.");
+                    return await _gemini.SynthesizeSpeechAsync(
+                        RequireApiKey(),
+                        string.IsNullOrWhiteSpace(Settings.SpeechModel)
+                            ? ModelCatalog.DefaultGeminiSpeechModel
+                            : Settings.SpeechModel,
+                        Metis.AI.GeminiRequestBuilder.NormalizeVoice(Settings.VoiceName),
+                        spokenText,
+                        cancellationToken);
+                }
+
+                if (HasOpenAiKey)
+                {
+                    _log.Info("Using OpenAI for Native TTS.");
+                    return await _openAi.SynthesizeSpeechAsync(
+                        RequireOpenAiApiKey(),
+                        Settings.OpenAiSpeechModel,
+                        Settings.OpenAiVoiceName,
+                        spokenText,
+                        cancellationToken);
+                }
+            }
+
+            if (provider == "OpenAI")
+            {
+                return await _openAi.SynthesizeSpeechAsync(
+                    RequireOpenAiApiKey(),
+                    Settings.OpenAiSpeechModel,
+                    Settings.OpenAiVoiceName,
+                    spokenText,
+                    cancellationToken);
+            }
+
+            if (provider == "Gemini" || HasGeminiKey)
+            {
+                return await _gemini.SynthesizeSpeechAsync(
+                    RequireApiKey(),
+                    Settings.SpeechModel,
+                    Settings.VoiceName,
+                    spokenText,
+                    cancellationToken);
+            }
+
+            if (HasOpenAiKey)
+            {
+                return await _openAi.SynthesizeSpeechAsync(
+                    RequireOpenAiApiKey(),
+                    Settings.OpenAiSpeechModel,
+                    Settings.OpenAiVoiceName,
+                    spokenText,
+                    cancellationToken);
+            }
+
+            _lastVoiceError = "No API key configured for speech synthesis (Gemini or OpenAI)";
+            return null;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
-            return await _piper.SynthesizeSpeechAsync(
-                ResolveLocalPath(Settings.PiperExecutablePath),
-                ResolveLocalPath(Settings.PiperVoiceModelPath),
-                response.Text,
-                cancellationToken);
+            throw;
         }
-
-        if (Settings.TextToSpeechProvider == "Chatterbox-Nano")
+        catch (Exception primaryEx)
         {
-            return await _chatterboxNano.SynthesizeSpeechAsync(
-                Settings.ChatterboxEndpoint,
-                Settings.ChatterboxModel,
-                Settings.ChatterboxVoice,
-                response.Text,
-                cancellationToken);
+            _log.Error($"Text-to-speech failed ({Settings.TextToSpeechProvider} / {provider}): {primaryEx.Message}", primaryEx);
+            _lastVoiceError = primaryEx.Message;
+            SetStatus($"Voice synthesis error: {primaryEx.Message}");
+            return null;
         }
-
-        if (Settings.TextToSpeechProvider == "ElevenLabs")
-        {
-            return await _elevenLabs.SynthesizeSpeechAsync(
-                RequireElevenLabsApiKey(),
-                Settings.ElevenLabsModel,
-                Settings.ElevenLabsVoiceId,
-                response.Text,
-                cancellationToken);
-        }
-
-        if (response.Provider == "OpenAI")
-        {
-            return await _openAi.SynthesizeSpeechAsync(
-                RequireOpenAiApiKey(),
-                Settings.OpenAiSpeechModel,
-                Settings.OpenAiVoiceName,
-                response.Text,
-                cancellationToken);
-        }
-
-        if (response.Provider == "Gemini" || HasGeminiKey)
-        {
-            return await _gemini.SynthesizeSpeechAsync(
-                RequireApiKey(),
-                Settings.SpeechModel,
-                Settings.VoiceName,
-                response.Text,
-                cancellationToken);
-        }
-
-        if (HasOpenAiKey)
-        {
-            return await _openAi.SynthesizeSpeechAsync(
-                RequireOpenAiApiKey(),
-                Settings.OpenAiSpeechModel,
-                Settings.OpenAiVoiceName,
-                response.Text,
-                cancellationToken);
-        }
-
-        // Nothing matched: no offline voice selected, and no cloud key to fall
-        // back on. Silent by necessity, but no longer silent about being
-        // silent — this path produced no audio and no explanation anywhere.
-        _log.Info(
-            $"No voice is available: text-to-speech is set to '{Settings.TextToSpeechProvider}' and no usable " +
-            $"provider key was found for '{response.Provider}'. Nothing was spoken.");
-        return null;
     }
 
     private void OnAudioLevelChanged(object? sender, float level) => AudioLevelChanged?.Invoke(this, level);
@@ -2674,15 +3616,15 @@ public sealed class MetisRuntime : IDisposable
     /// </summary>
     private static string ResolveLocalPath(string path)
     {
-        var trimmed = path.Trim().Trim('"');
-        if (trimmed.Length == 0)
+        if (string.IsNullOrWhiteSpace(path))
         {
-            return trimmed;
+            return path;
         }
 
-        if (Path.IsPathFullyQualified(trimmed))
+        var trimmed = path.Trim().Trim('"');
+        if (Path.IsPathRooted(trimmed))
         {
-            return Path.GetFullPath(trimmed);
+            return trimmed;
         }
 
         var beside = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, trimmed));
@@ -2712,7 +3654,30 @@ public sealed class MetisRuntime : IDisposable
 
     private static TimeSpan? GetAudioDuration(SpeechAudio audio)
     {
-        var bytesPerSecond = audio.SampleRate * audio.Channels * (audio.BitsPerSample / 8d);
+        if (audio == null || audio.PcmData.Length == 0)
+        {
+            return null;
+        }
+
+        try
+        {
+            if (audio.PcmData.Length >= 12 &&
+                audio.PcmData[0] == 0x52 && audio.PcmData[1] == 0x49 &&
+                audio.PcmData[2] == 0x46 && audio.PcmData[3] == 0x46)
+            {
+                using var ms = new MemoryStream(audio.PcmData, false);
+                using var reader = new WaveFileReader(ms);
+                return reader.TotalTime;
+            }
+        }
+        catch
+        {
+        }
+
+        var sampleRate = audio.SampleRate > 0 ? audio.SampleRate : 24000;
+        var channels = audio.Channels > 0 ? audio.Channels : 1;
+        var bitsPerSample = audio.BitsPerSample > 0 ? audio.BitsPerSample : 16;
+        var bytesPerSecond = sampleRate * channels * (bitsPerSample / 8d);
         return bytesPerSecond <= 0
             ? null
             : TimeSpan.FromSeconds(audio.PcmData.Length / bytesPerSecond);
@@ -2868,7 +3833,7 @@ public sealed class MetisRuntime : IDisposable
     /// the keyboard hook is never held up. Failures are silent: a missing sound
     /// is never worth interrupting the user over.
     /// </summary>
-    private void PlayCue(MetisSound sound)
+    public void PlayCue(MetisSound sound)
     {
         if (_disposed || !Settings.ActivationSoundsEnabled)
         {
@@ -3121,7 +4086,10 @@ public sealed class MetisRuntime : IDisposable
         _turnCancellation?.Dispose();
         _pushToTalk.Pressed -= OnPushToTalkPressed;
         _pushToTalk.Released -= OnPushToTalkReleased;
+        _pushToTalk.DirectAgentVoicePressed -= OnDirectAgentVoicePressed;
+        _pushToTalk.DirectAgentVoiceReleased -= OnDirectAgentVoiceReleased;
         _pushToTalk.EmergencyStopPressed -= OnEmergencyStopPressed;
+        _pushToTalk.ActiveListeningToggled -= OnActiveListeningToggled;
         _pushToTalk.ContextActivationPressed -= OnContextActivationPressed;
         _pushToTalk.ContextActivationReleased -= OnContextActivationReleased;
         _pushToTalk.ContextActivationUpgraded -= OnContextActivationUpgraded;
@@ -3137,6 +4105,7 @@ public sealed class MetisRuntime : IDisposable
         (_chatterboxNano as IDisposable)?.Dispose();
         (_settingsStore as IDisposable)?.Dispose();
         (_memory as IDisposable)?.Dispose();
+        AgentTasks.Dispose();
         _turnGate.Dispose();
     }
 }

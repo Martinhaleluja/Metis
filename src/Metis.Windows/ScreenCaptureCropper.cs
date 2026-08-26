@@ -55,7 +55,7 @@ public static class ScreenCaptureCropper
 
             // Cropping to nearly the whole screen saves nothing and only risks
             // clipping context the answer needs.
-            if ((long)width * height > (long)image.Width * image.Height * 0.8)
+            if ((long)width * height > (long)image.Width * image.Height * 0.95)
             {
                 return capture;
             }

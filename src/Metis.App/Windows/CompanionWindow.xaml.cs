@@ -120,12 +120,12 @@ public partial class CompanionWindow : Window
         InitializeComponent();
         _runtime = runtime;
         ApplySettings(runtime.Settings);
-        runtime.SettingsChanged += (_, settings) => Dispatcher.Invoke(() => ApplySettings(settings));
+        runtime.SettingsChanged += (_, settings) => Dispatcher.InvokeAsync(() => ApplySettings(settings));
         runtime.State.Changed += RuntimeState_OnChanged;
         runtime.AudioLevelChanged += Runtime_OnAudioLevelChanged;
         runtime.CompanionResponseStarted += Runtime_OnCompanionResponseStarted;
         runtime.CompanionGuidanceRequested += Runtime_OnCompanionGuidanceRequested;
-        runtime.CompanionDemoRequested += (_, demo) => Dispatcher.Invoke(() => _ = PlayDemoAsync(demo));
+        runtime.CompanionDemoRequested += (_, demo) => Dispatcher.InvokeAsync(() => _ = PlayDemoAsync(demo));
 
         _spinnerAnimation = new DoubleAnimation(0, 360, TimeSpan.FromSeconds(0.75))
         {
@@ -136,7 +136,17 @@ public partial class CompanionWindow : Window
         {
             Interval = TimeSpan.FromMilliseconds(16)
         };
-        _followTimer.Tick += (_, _) => Tick();
+        _followTimer.Tick += (_, _) =>
+        {
+            try
+            {
+                Tick();
+            }
+            catch
+            {
+                // Protect render/motion tick loop from unhandled crashes
+            }
+        };
         _followTimer.Start();
 
         _bubbleTimer = new DispatcherTimer
@@ -154,21 +164,35 @@ public partial class CompanionWindow : Window
         _bubbleHideTimer = new DispatcherTimer { Interval = TransientDisplay };
         _bubbleHideTimer.Tick += (_, _) =>
         {
-            _bubbleHideTimer.Stop();
-            HideSpeech();
+            try
+            {
+                _bubbleHideTimer.Stop();
+                HideSpeech();
+            }
+            catch
+            {
+                // Protect speech hide timer
+            }
         };
 
         _errorResetTimer = new DispatcherTimer { Interval = TransientDisplay };
         _errorResetTimer.Tick += (_, _) =>
         {
-            _errorResetTimer.Stop();
-            RestoreRestingAppearance();
+            try
+            {
+                _errorResetTimer.Stop();
+                RestoreRestingAppearance();
+            }
+            catch
+            {
+                // Protect error reset timer
+            }
         };
 
         // Subscribed after the timers exist, because ending a lesson stops the
         // guidance hold and sends the companion home — both of which reach for
         // state this constructor has only just finished building.
-        runtime.CompanionDetachRequested += (_, detached) => Dispatcher.Invoke(() =>
+        runtime.CompanionDetachRequested += (_, detached) => Dispatcher.InvokeAsync(() =>
         {
             _teachingDetached = detached;
             if (!detached)
@@ -254,7 +278,7 @@ public partial class CompanionWindow : Window
         return brush;
     }
 
-    private void RuntimeState_OnChanged(object? sender, AssistantState state) => Dispatcher.Invoke(() =>
+    private void RuntimeState_OnChanged(object? sender, AssistantState state) => Dispatcher.InvokeAsync(() =>
     {
         WavePanel.Visibility = state == AssistantState.Listening ? Visibility.Visible : Visibility.Collapsed;
         ThinkingRing.Visibility = state == AssistantState.Thinking ? Visibility.Visible : Visibility.Collapsed;
@@ -285,7 +309,7 @@ public partial class CompanionWindow : Window
     });
 
     private void Runtime_OnCompanionResponseStarted(object? sender, CompanionResponse response) =>
-        Dispatcher.Invoke(() =>
+        Dispatcher.InvokeAsync(() =>
         {
             if (response.ShowBubble && !string.IsNullOrWhiteSpace(response.Text))
             {
@@ -298,7 +322,7 @@ public partial class CompanionWindow : Window
         });
 
     private void Runtime_OnCompanionGuidanceRequested(object? sender, CompanionGuidance guidance) =>
-        Dispatcher.Invoke(() =>
+        Dispatcher.InvokeAsync(() =>
         {
             _guidanceScreenX = guidance.ScreenX;
             _guidanceScreenY = guidance.ScreenY;
@@ -325,19 +349,26 @@ public partial class CompanionWindow : Window
     /// </summary>
     private void GuidanceTimer_OnTick(object? sender, EventArgs e)
     {
-        _guidanceTimer.Stop();
-        HideSpeech();
-
-        if (_teachingDetached)
+        try
         {
-            // Mid-lesson the companion stays beside the control the learner is
-            // working on. Flying home between steps would pull their eye back
-            // to the pointer and away from the thing they are meant to be
-            // looking at.
-            return;
-        }
+            _guidanceTimer.Stop();
+            HideSpeech();
 
-        BeginReturnFlight();
+            if (_teachingDetached)
+            {
+                // Mid-lesson the companion stays beside the control the learner is
+                // working on. Flying home between steps would pull their eye back
+                // to the pointer and away from the thing they are meant to be
+                // looking at.
+                return;
+            }
+
+            BeginReturnFlight();
+        }
+        catch
+        {
+            // Protect timer handler
+        }
     }
 
     private void BeginReturnFlight()
@@ -737,19 +768,33 @@ public partial class CompanionWindow : Window
 
     private void BubbleTimer_OnTick(object? sender, EventArgs e)
     {
-        if (_revealedWords >= _wordEnds.Count)
+        try
+        {
+            if (_revealedWords >= _wordEnds.Count)
+            {
+                _bubbleTimer.Stop();
+
+                // The countdown starts when the last word lands, not when writing
+                // began, so a long answer still gets its full reading time.
+                _bubbleHideTimer.Stop();
+                _bubbleHideTimer.Start();
+                return;
+            }
+
+            if (_revealedWords < _wordEnds.Count && _wordEnds[_revealedWords] <= _pendingSpeech.Length)
+            {
+                SpeechText.Text = _pendingSpeech[.._wordEnds[_revealedWords]];
+                _revealedWords++;
+            }
+            else
+            {
+                _bubbleTimer.Stop();
+            }
+        }
+        catch
         {
             _bubbleTimer.Stop();
-
-            // The countdown starts when the last word lands, not when writing
-            // began, so a long answer still gets its full reading time.
-            _bubbleHideTimer.Stop();
-            _bubbleHideTimer.Start();
-            return;
         }
-
-        SpeechText.Text = _pendingSpeech[.._wordEnds[_revealedWords]];
-        _revealedWords++;
     }
 
     /// <summary>

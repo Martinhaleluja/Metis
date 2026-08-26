@@ -185,33 +185,33 @@
 
                 <!-- 4 · Shortcuts. This is the taught-by-doing part of the guide. -->
                 <StackPanel x:Name="Step4" Visibility="Collapsed" VerticalAlignment="Center">
-                    <TextBlock Style="{StaticResource DisplayText}" FontSize="26" Text="Five keys to remember." />
+                    <TextBlock Style="{StaticResource DisplayText}" FontSize="26" Text="Keys to remember." />
                     <StackPanel Margin="0,22,0,0">
                         <Grid Margin="0,0,0,12">
                             <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="190" />
+                                <ColumnDefinition Width="220" />
                                 <ColumnDefinition Width="*" />
                             </Grid.ColumnDefinitions>
                             <Border Style="{StaticResource KeycapChip}" HorizontalAlignment="Left">
-                                <TextBlock Style="{StaticResource KeycapText}" Text="Ctrl + Shift + 1" />
+                                <TextBlock Style="{StaticResource KeycapText}" Text="Ctrl + Shift + 1  /  Ctrl + Shift + A" />
                             </Border>
                             <TextBlock Grid.Column="1" VerticalAlignment="Center" Style="{StaticResource LeadText}"
-                                       Text="Hold to talk" />
+                                       Text="Hold to talk · Spawn autonomous voice agent" />
                         </Grid>
                         <Grid Margin="0,0,0,12">
                             <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="190" />
+                                <ColumnDefinition Width="220" />
                                 <ColumnDefinition Width="*" />
                             </Grid.ColumnDefinitions>
                             <Border Style="{StaticResource KeycapChip}" HorizontalAlignment="Left">
                                 <TextBlock Style="{StaticResource KeycapText}" Text="Ctrl + Alt" />
                             </Border>
                             <TextBlock Grid.Column="1" VerticalAlignment="Center" Style="{StaticResource LeadText}"
-                                       Text="Ask about what's on screen" />
+                                       Text="Ask about what's on screen (Context)" />
                         </Grid>
                         <Grid Margin="0,0,0,12">
                             <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="190" />
+                                <ColumnDefinition Width="220" />
                                 <ColumnDefinition Width="*" />
                             </Grid.ColumnDefinitions>
                             <Border Style="{StaticResource KeycapChip}" HorizontalAlignment="Left">
@@ -222,34 +222,34 @@
                         </Grid>
                         <Grid Margin="0,0,0,12">
                             <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="190" />
+                                <ColumnDefinition Width="220" />
                                 <ColumnDefinition Width="*" />
                             </Grid.ColumnDefinitions>
                             <Border Style="{StaticResource KeycapChip}" HorizontalAlignment="Left">
                                 <TextBlock Style="{StaticResource KeycapText}" Text="Ctrl + Space" />
                             </Border>
                             <TextBlock Grid.Column="1" VerticalAlignment="Center" Style="{StaticResource LeadText}"
-                                       Text="Listen hands-free until you say the wake word" />
+                                       Text="Continuous listen hands-free until wake word" />
                         </Grid>
                         <Grid>
                             <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="190" />
+                                <ColumnDefinition Width="220" />
                                 <ColumnDefinition Width="*" />
                             </Grid.ColumnDefinitions>
                             <Border Style="{StaticResource KeycapChip}" HorizontalAlignment="Left">
                                 <TextBlock Style="{StaticResource KeycapText}" Text="F12" />
                             </Border>
                             <TextBlock Grid.Column="1" VerticalAlignment="Center" Style="{StaticResource LeadText}"
-                                       Text="Stop the guidance and clear the screen" />
+                                       Text="Stop guidance and emergency stop all agents" />
                         </Grid>
                     </StackPanel>
 
                     <Border Style="{StaticResource UtilityCard}" Margin="0,22,0,0" Padding="16">
                         <StackPanel>
                             <CheckBox x:Name="ContextShortcutsCheck" IsChecked="True"
-                                      Content="Enable the Ctrl+Alt shortcuts" />
+                                      Content="Enable the Ctrl+Alt screen shortcuts" />
                             <TextBlock Style="{StaticResource CaptionText}" Margin="48,6,0,0"
-                                       Text="Ctrl+Space needs speech to text set up before it can hear the wake word. Nothing is sent anywhere until it does. F12 stays on either way, and while Metis is running other apps will not receive it." />
+                                       Text="Ctrl+Space listens in background for the wake word. F12 cancels guidance and all running agents instantly." />
                         </StackPanel>
                     </Border>
                 </StackPanel>

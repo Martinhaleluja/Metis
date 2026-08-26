@@ -25,6 +25,15 @@ public sealed class FlaUiAutomationService : IUiAutomationService
         CancellationToken cancellationToken = default) =>
         Task.Run(() => DescribeElementAt(screenX, screenY, cancellationToken), cancellationToken);
 
+    public Task<string?> DescribeRegionAsync(
+        ScreenCapture capture,
+        int screenLeft,
+        int screenTop,
+        int screenWidth,
+        int screenHeight,
+        CancellationToken cancellationToken = default) =>
+        Task.Run(() => DescribeRegion(capture, screenLeft, screenTop, screenWidth, screenHeight, cancellationToken), cancellationToken);
+
     public Task<UiElementHit?> FindElementAsync(
         string query,
         CancellationToken cancellationToken = default) =>
@@ -127,6 +136,98 @@ public sealed class FlaUiAutomationService : IUiAutomationService
         {
             // Inspect degrades to vision only; the caller reports that the
             // pointer target could not be resolved instead of inventing one.
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Walks the accessibility tree to discover and describe all visible elements
+    /// situated within or intersecting the specified screen region/rectangle.
+    /// </summary>
+    private static string? DescribeRegion(
+        ScreenCapture capture,
+        int screenLeft,
+        int screenTop,
+        int screenWidth,
+        int screenHeight,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var targetRect = new System.Drawing.Rectangle(screenLeft, screenTop, Math.Max(1, screenWidth), Math.Max(1, screenHeight));
+            using var automation = new UIA3Automation();
+            var root = capture.WindowHandle == 0
+                ? automation.GetDesktop()
+                : automation.FromHandle(new nint(capture.WindowHandle));
+
+            var queue = new Queue<AutomationElement>();
+            var elementsInRegion = new List<string>();
+            queue.Enqueue(root);
+
+            while (queue.Count > 0 && elementsInRegion.Count < 30)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                var element = queue.Dequeue();
+
+                try
+                {
+                    var bounds = element.BoundingRectangle;
+                    if (bounds.Width > 0 && bounds.Height > 0)
+                    {
+                        var elemRect = new System.Drawing.Rectangle((int)bounds.Left, (int)bounds.Top, (int)bounds.Width, (int)bounds.Height);
+                        if (targetRect.IntersectsWith(elemRect))
+                        {
+                            var name = element.Name?.Trim();
+                            var automationId = element.AutomationId?.Trim();
+                            var controlType = element.ControlType.ToString();
+
+                            if (!string.IsNullOrWhiteSpace(name) || !string.IsNullOrWhiteSpace(automationId))
+                            {
+                                var label = string.IsNullOrWhiteSpace(name) ? automationId : name;
+                                var desc = $"{controlType} \"{Shorten(label, 60)}\"";
+                                if (!elementsInRegion.Contains(desc))
+                                {
+                                    elementsInRegion.Add(desc);
+                                }
+                            }
+                        }
+                    }
+                }
+                catch
+                {
+                    // Stale or inaccessible element
+                }
+
+                AutomationElement[] children;
+                try
+                {
+                    children = element.FindAllChildren();
+                }
+                catch
+                {
+                    continue;
+                }
+
+                foreach (var child in children)
+                {
+                    if (queue.Count + elementsInRegion.Count >= 200)
+                    {
+                        break;
+                    }
+
+                    queue.Enqueue(child);
+                }
+            }
+
+            return elementsInRegion.Count == 0 ? null : string.Join(", ", elementsInRegion);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch
+        {
             return null;
         }
     }

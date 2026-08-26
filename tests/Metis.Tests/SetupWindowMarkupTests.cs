@@ -23,7 +23,7 @@ public sealed class SetupWindowMarkupTests
         // a voice model the installer does not carry, so it is unavailable on a
         // fresh install and cannot be the offline option a user is steered to.
         Assert.Equal(
-            ["Native", "Windows", "Piper", "Chatterbox-Nano", "ElevenLabs"],
+            ["Native", "Piper", "Chatterbox-Nano", "ElevenLabs"],
             ComboValues(document, "TextToSpeechProviderBox"));
     }
 
@@ -55,7 +55,6 @@ public sealed class SetupWindowMarkupTests
         AssertDescendsFrom(document, "OpenAiTranscriptionModelBox", "NativeSpeechToTextCard");
         AssertDescendsFrom(document, "WhisperCppModelPathBox", "WhisperCppCard");
         AssertDescendsFrom(document, "AssemblyAiModelBox", "AssemblyAiCard");
-        AssertDescendsFrom(document, "SpeechModelBox", "NativeTextToSpeechCard");
         AssertDescendsFrom(document, "OpenAiSpeechModelBox", "NativeTextToSpeechCard");
         AssertDescendsFrom(document, "PiperVoiceModelPathBox", "PiperCard");
         AssertDescendsFrom(document, "ChatterboxEndpointBox", "ChatterboxNanoCard");

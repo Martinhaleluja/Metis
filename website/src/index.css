@@ -1,46 +1,45 @@
 @import "tailwindcss";
 
-/* ---------------------------------------------------------------------------
-   Metis brand tokens.
+/* -------------------------------------------------------
+   Metis — Retro Windows Design System (90s → 2000s)
 
-   One light palette. The site is white by decision, so there is no dark
-   variant and no `prefers-color-scheme` branch to fall out of sync with.
-
-   The neutrals are the ones the Windows app already uses (#1D1D1F, #F5F5F7),
-   and the accent is a blue in the same family as the product mark, chosen at a
-   value where white label text on a filled button clears WCAG AA at 4.7:1.
-   The lighter sky pair is lifted off the mark and is used for glow and
-   gradient only, never for text or a control.
-
-   Radius is a locked two-tier system: containers are 20px, anything the user
-   can click or type into is a full pill.
---------------------------------------------------------------------------- */
+   White page background. Retro chrome as accent surfaces.
+   The palette bridges Win95 gray through XP blue to WMP11
+   dark. Typography stays modern and readable; retro flavor
+   comes from window chrome and structure, not from forcing
+   everything into a pixel font.
+   ------------------------------------------------------- */
 
 :root {
   color-scheme: light;
 
   --page: #ffffff;
-  --surface: #ffffff;
-  --surface-sunken: #f5f5f7;
+  --surface: #f5f5f7;
+  --surface-sunken: #ececec;
   --ink: #1d1d1f;
   --ink-muted: #6e6e73;
   --line: #d2d2d7;
-  --accent: #0071e3;
-  --accent-hover: #005bbb;
+
+  --accent: #0078d4;
+  --accent-hover: #005a9e;
   --accent-contrast: #ffffff;
-  --accent-wash: #eef6ff;
+  --accent-wash: #e8f4fd;
+
   --sky: #56ccff;
   --sky-soft: #caeeff;
   --danger: #d70015;
 
-  /* Translucent chrome. Kept as tokens so the reduced-transparency and
-     high-contrast fallbacks below have one place to override. */
-  --material: rgb(255 255 255 / 0.72);
+  --win-gray: #c0c0c0;
+  --win-teal: #008080;
+  --win-navy: #000080;
+
+  --material: rgb(255 255 255 / 0.85);
   --material-blur: blur(20px) saturate(180%);
   --material-edge: rgb(255 255 255 / 0.6);
 
-  --shadow-card: 0 1px 2px rgb(29 29 31 / 0.04), 0 12px 32px -12px rgb(29 29 31 / 0.12);
-  --shadow-float: 0 2px 6px rgb(29 29 31 / 0.06), 0 24px 60px -20px rgb(29 29 31 / 0.18);
+  --shadow-card: 0 1px 2px rgb(0 0 0 / 0.05), 0 8px 20px -8px rgb(0 0 0 / 0.1);
+  --shadow-float: 0 2px 6px rgb(0 0 0 / 0.08), 0 16px 48px -16px rgb(0 0 0 / 0.15);
+  --shadow-retro: 3px 3px 0 #000;
 }
 
 @theme inline {
@@ -57,12 +56,16 @@
   --color-sky: var(--sky);
   --color-sky-soft: var(--sky-soft);
   --color-danger: var(--danger);
+  --color-win-gray: var(--win-gray);
+  --color-win-teal: var(--win-teal);
+  --color-win-navy: var(--win-navy);
 
   --font-display: "Outfit Variable", ui-sans-serif, system-ui, sans-serif;
   --font-sans: "Work Sans Variable", ui-sans-serif, system-ui, sans-serif;
+  --font-system: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+  --font-mono: Consolas, "Courier New", Courier, monospace;
 
   --radius-container: 20px;
-
   --shadow-card: var(--shadow-card);
   --shadow-float: var(--shadow-float);
 }
@@ -80,28 +83,22 @@ body {
   font-optical-sizing: auto;
 }
 
-/* ---------------------------------------------------------------------------
-   Type scale.
-
-   Tracking is size-specific rather than one value everywhere: large text reads
-   too loose as it grows and wants negative tracking, body sits near zero, and
-   small caps-ish labels want a touch of positive. Leading moves the other way,
-   tight on display and open on body. Sizes are in rem and clamp on the
-   viewport so a larger browser text setting scales the layout with the text.
---------------------------------------------------------------------------- */
+/* -------------------------------------------------------
+   Type Scale
+   ------------------------------------------------------- */
 
 .type-display {
   font-family: var(--font-display);
-  font-weight: 600;
+  font-weight: 700;
   font-size: clamp(2.25rem, 1.35rem + 3.6vw, 3.75rem);
   line-height: 1.04;
-  letter-spacing: -0.028em;
+  letter-spacing: -0.03em;
 }
 
 .type-title {
   font-family: var(--font-display);
   font-weight: 600;
-  font-size: clamp(1.875rem, 1.25rem + 2.2vw, 2.75rem);
+  font-size: clamp(1.75rem, 1.15rem + 2.2vw, 2.5rem);
   line-height: 1.1;
   letter-spacing: -0.022em;
 }
@@ -109,7 +106,7 @@ body {
 .type-heading {
   font-family: var(--font-display);
   font-weight: 600;
-  font-size: 1.3125rem;
+  font-size: 1.25rem;
   line-height: 1.28;
   letter-spacing: -0.012em;
 }
@@ -117,7 +114,6 @@ body {
 .type-body {
   font-size: 1.0625rem;
   line-height: 1.55;
-  letter-spacing: 0;
 }
 
 .type-caption {
@@ -126,41 +122,10 @@ body {
   letter-spacing: 0.004em;
 }
 
-/* ---------------------------------------------------------------------------
-   Materials. Translucent chrome that content scrolls underneath, with a bright
-   top edge so it reads as light catching a real surface.
---------------------------------------------------------------------------- */
+/* -------------------------------------------------------
+   Focus & Selection
+   ------------------------------------------------------- */
 
-.material {
-  background: var(--material);
-  backdrop-filter: var(--material-blur);
-  -webkit-backdrop-filter: var(--material-blur);
-  border: 1px solid var(--material-edge);
-  box-shadow: var(--shadow-card);
-}
-
-/* Small floating labels sit on top of arbitrary colour, so they carry a
-   near-opaque backing rather than trusting the blur to do the work. */
-.material-strong {
-  background: rgb(255 255 255 / 0.94);
-  backdrop-filter: var(--material-blur);
-  -webkit-backdrop-filter: var(--material-blur);
-  border: 1px solid var(--line);
-  box-shadow: var(--shadow-card);
-}
-
-/* A soft scroll edge where floating chrome overlaps content, instead of a
-   hard 1px divider under the header. */
-.scroll-edge {
-  position: fixed;
-  inset: 0 0 auto 0;
-  height: 96px;
-  z-index: 40;
-  pointer-events: none;
-  background: linear-gradient(to bottom, var(--page) 12%, rgb(255 255 255 / 0) 100%);
-}
-
-/* Keyboard focus stays visible everywhere; pointer presses stay quiet. */
 :focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 3px;
@@ -172,16 +137,214 @@ body {
   color: var(--accent-contrast);
 }
 
-.grain-plate {
-  position: fixed;
-  inset: 0;
-  z-index: 60;
-  pointer-events: none;
-  opacity: 0.02;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)'/%3E%3C/svg%3E");
+/* -------------------------------------------------------
+   Material (nav overlays)
+   ------------------------------------------------------- */
+
+.material {
+  background: var(--material);
+  backdrop-filter: var(--material-blur);
+  -webkit-backdrop-filter: var(--material-blur);
+  border: 1px solid var(--material-edge);
+  box-shadow: var(--shadow-card);
 }
 
-/* Press feedback belongs on pointer-down and has to be immediate. */
+.material-strong {
+  background: rgb(255 255 255 / 0.94);
+  backdrop-filter: var(--material-blur);
+  -webkit-backdrop-filter: var(--material-blur);
+  border: 1px solid var(--line);
+  box-shadow: var(--shadow-card);
+}
+
+/* -------------------------------------------------------
+   Windows 95/98 Chrome
+   ------------------------------------------------------- */
+
+.win95-window {
+  background-color: #c0c0c0;
+  color: #000;
+  border-top: 2px solid #fff;
+  border-left: 2px solid #fff;
+  border-right: 2px solid #808080;
+  border-bottom: 2px solid #808080;
+  box-shadow: 1px 1px 0 0 #000, inset -1px -1px 0 0 #dfdfdf;
+  padding: 3px;
+}
+
+.win95-titlebar {
+  background: linear-gradient(90deg, #000080, #1084d0);
+  color: #fff;
+  font-family: var(--font-system);
+  font-weight: 700;
+  font-size: 12px;
+  padding: 3px 6px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  user-select: none;
+}
+
+.win95-button {
+  background-color: #c0c0c0;
+  border-top: 2px solid #fff;
+  border-left: 2px solid #fff;
+  border-right: 2px solid #808080;
+  border-bottom: 2px solid #808080;
+  box-shadow: 1px 1px 0 0 #000;
+  color: #000;
+  font-family: var(--font-system);
+  font-size: 12px;
+  font-weight: 700;
+  padding: 2px 8px;
+  cursor: pointer;
+}
+
+.win95-button:active {
+  border-top-color: #808080;
+  border-left-color: #808080;
+  border-right-color: #fff;
+  border-bottom-color: #fff;
+  box-shadow: inset 1px 1px 0 0 #000;
+  padding: 3px 7px 1px 9px;
+}
+
+.win95-field {
+  background-color: #fff;
+  color: #000;
+  border-top: 2px solid #808080;
+  border-left: 2px solid #808080;
+  border-right: 2px solid #fff;
+  border-bottom: 2px solid #fff;
+  box-shadow: inset 1px 1px 0 0 #000;
+}
+
+/* -------------------------------------------------------
+   Windows XP Luna
+   ------------------------------------------------------- */
+
+.xp-window {
+  background-color: #ece9d8;
+  border: 3px solid #0054e3;
+  border-top-width: 0;
+  border-radius: 8px 8px 0 0;
+  box-shadow: 0 6px 20px rgb(0 0 0 / 0.15);
+  overflow: hidden;
+}
+
+.xp-titlebar {
+  background: linear-gradient(to bottom, #0054e3, #2b7afc 9%, #0054e3 18%, #003ca5 92%, #002375);
+  color: #fff;
+  font-family: "Trebuchet MS", var(--font-system);
+  font-weight: 700;
+  text-shadow: 1px 1px 2px #002375;
+  padding: 6px 12px;
+  border-radius: 7px 7px 0 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  user-select: none;
+}
+
+.xp-button-close {
+  background: linear-gradient(to bottom, #f37c5f, #e14e2c 10%, #d83d1b 40%, #c42907 90%, #a21a00);
+  border: 1px solid #7c1200;
+  box-shadow: inset 1px 1px 1px #ff9e87, 0 1px 2px rgba(0, 0, 0, 0.3);
+  border-radius: 3px;
+  width: 21px;
+  height: 21px;
+  color: white;
+  display: grid;
+  place-items: center;
+  font-weight: 900;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.xp-button-win {
+  background: linear-gradient(to bottom, #fcfcfc, #e0e0e0 40%, #ccc);
+  border: 1.5px solid #0054e3;
+  color: #003ca5;
+  font-weight: 700;
+  border-radius: 3px;
+  padding: 3px 12px;
+  box-shadow: inset 0 1px 0 white, 0 1px 1px rgba(0, 0, 0, 0.15);
+  cursor: pointer;
+}
+
+.xp-button-win:active {
+  background: #d4d0c8;
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.2);
+}
+
+/* -------------------------------------------------------
+   WMP 11 Dark Frame
+   ------------------------------------------------------- */
+
+.wmp11-frame {
+  background: linear-gradient(180deg, #1e2430, #0d0f14);
+  border: 1px solid #333d4f;
+  border-radius: 12px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.35),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  overflow: hidden;
+}
+
+.wmp11-titlebar {
+  background: linear-gradient(90deg, #1d222b, #15181e);
+  border-bottom: 1px solid #282f3a;
+  padding: 8px 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-family: var(--font-system);
+  font-size: 11px;
+  color: #8a9bbc;
+  user-select: none;
+}
+
+.wmp11-controls {
+  background: linear-gradient(180deg, #1c212a, #0b0c0f);
+  border-top: 1px solid #2c3444;
+  padding: 10px 16px;
+}
+
+.wmp11-play {
+  background: radial-gradient(
+    circle at center,
+    #5bbaff,
+    #0070d6 50%,
+    #004d9c 90%,
+    #002d61
+  );
+  border: 2px solid #8ccaff;
+  box-shadow: 0 0 8px rgba(86, 204, 255, 0.5),
+    inset 0 1px 3px rgba(255, 255, 255, 0.4);
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  color: white;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  transition: filter 0.15s, transform 0.1s;
+}
+
+.wmp11-play:hover {
+  filter: brightness(1.15);
+  box-shadow: 0 0 12px rgba(86, 204, 255, 0.7),
+    inset 0 1px 3px rgba(255, 255, 255, 0.4);
+}
+
+.wmp11-play:active {
+  transform: scale(0.96);
+  filter: brightness(0.9);
+}
+
+/* -------------------------------------------------------
+   Press feedback
+   ------------------------------------------------------- */
+
 .press {
   transition: transform 100ms ease-out;
 }
@@ -189,9 +352,9 @@ body {
   transform: scale(0.97);
 }
 
-/* ---------------------------------------------------------------------------
-   Ambient motion. Only runs when the visitor has not asked for less of it.
---------------------------------------------------------------------------- */
+/* -------------------------------------------------------
+   Animations
+   ------------------------------------------------------- */
 
 @media (prefers-reduced-motion: no-preference) {
   @keyframes metis-drift {
@@ -223,9 +386,6 @@ body {
     animation: metis-halo 7s ease-in-out infinite;
   }
 
-  /* The track holds the logo list twice, so translating exactly half its width
-     lands on an identical frame and the loop has no seam. Transform only, so
-     it stays on the compositor. */
   @keyframes metis-marquee {
     from {
       transform: translate3d(0, 0, 0);
@@ -240,14 +400,26 @@ body {
     will-change: transform;
   }
 
-  /* Hovering hands control back: the strip holds still so a logo can be read. */
   .marquee:hover .marquee-track,
   .marquee:focus-within .marquee-track {
     animation-play-state: paused;
   }
+
+  @keyframes blink-cursor {
+    0%,
+    100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0;
+    }
+  }
+
+  .blink {
+    animation: blink-cursor 1s step-end infinite;
+  }
 }
 
-/* Reduced motion keeps the feedback, drops the travel. */
 @media (prefers-reduced-motion: reduce) {
   html {
     scroll-behavior: auto;
@@ -258,10 +430,9 @@ body {
   }
 }
 
-/* Frostier and solid rather than translucent, when asked. */
 @media (prefers-reduced-transparency: reduce) {
   :root {
-    --material: #ffffff;
+    --material: #fff;
     --material-blur: none;
     --material-edge: var(--line);
   }
@@ -271,10 +442,9 @@ body {
   }
 }
 
-/* Near-solid surfaces with a defined border at higher contrast. */
 @media (prefers-contrast: more) {
   :root {
-    --material: #ffffff;
+    --material: #fff;
     --material-blur: none;
     --material-edge: var(--ink);
     --ink-muted: #4a4a4f;

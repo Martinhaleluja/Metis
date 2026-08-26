@@ -13,12 +13,22 @@ namespace Metis.AI;
 public sealed partial class GeminiProvider : IGeminiProvider, IDisposable
 {
     private const string ApiRoot = "https://generativelanguage.googleapis.com/v1beta/";
+    /// <summary>
+    /// What to try when the chosen reasoning model will not answer.
+    ///
+    /// Every entry was checked against the live API. The tail of this list used
+    /// to be gemini-2.5-flash, gemini-2.5-pro, gemini-1.5-flash and
+    /// gemini-2.0-flash, all of which Google has since withdrawn — they answer
+    /// 404. A fallback chain whose lower half is dead does not degrade, it just
+    /// takes longer to fail, so they are gone rather than left as padding.
+    /// </summary>
     private static readonly string[] PreferredFreeFriendlyModels =
     [
+        "gemini-3.7-flash",
+        "gemini-3.6-flash",
         "gemini-3.5-flash",
-        "gemini-3.1-flash",
-        "gemini-2.5-flash",
-        "gemini-2.5-flash-lite"
+        "gemini-3.5-flash-lite",
+        "gemini-3.1-flash-lite"
     ];
     private static readonly byte[] DiagnosticPng = Convert.FromBase64String(
         "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=");
@@ -199,6 +209,34 @@ public sealed partial class GeminiProvider : IGeminiProvider, IDisposable
         return wave;
     }
 
+    /// <summary>
+    /// The model Metis speaks with unless told otherwise. Verified against the
+    /// live API: it returns 24 kHz mono PCM and is reachable on an ordinary AI
+    /// Studio key.
+    /// </summary>
+    private const string DefaultSpeechModel = "gemini-2.5-flash-preview-tts";
+
+    /// <summary>
+    /// Every model here can actually emit audio, and that is the entire point.
+    ///
+    /// This list previously held gemini-2.0-flash, gemini-2.0-flash-exp and
+    /// gemini-2.5-flash. None of the three can produce speech — they are text
+    /// models, and asking one for responseModalities AUDIO is not a request it
+    /// can satisfy. Two of them have since been withdrawn outright and answer
+    /// 404. So the first attempt failed, then all three fallbacks failed, and
+    /// voice was silent for every user with no way to configure around it.
+    ///
+    /// The rule this encodes: a fallback list for speech may only contain
+    /// speech models. Ordered cheapest-and-most-available first, because the
+    /// pro tier is quota-limited on a free key.
+    /// </summary>
+    private static readonly string[] SpeechFallbackModels =
+    [
+        "gemini-2.5-flash-preview-tts",
+        "gemini-3.1-flash-tts-preview",
+        "gemini-2.5-pro-preview-tts",
+    ];
+
     public async Task<SpeechAudio?> SynthesizeSpeechAsync(
         string apiKey,
         string model,
@@ -208,6 +246,11 @@ public sealed partial class GeminiProvider : IGeminiProvider, IDisposable
     {
         ThrowIfDisposed();
         ValidateKey(apiKey);
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return null;
+        }
+
         var normalizedModel = NormalizeSpeechModel(model);
         var payload = GeminiRequestBuilder.BuildSpeechJson(voiceName, text);
         
@@ -216,18 +259,46 @@ public sealed partial class GeminiProvider : IGeminiProvider, IDisposable
         {
             body = await SendForJsonAsync(apiKey, normalizedModel, payload, cancellationToken).ConfigureAwait(false);
         }
-        catch (GeminiProviderException ex) when (ex.Kind is GeminiErrorKind.InvalidRequest or GeminiErrorKind.EmptyResponse
-                                              && normalizedModel != "gemini-2.0-flash")
+        catch (GeminiProviderException ex) when (ex.Kind is GeminiErrorKind.InvalidRequest or GeminiErrorKind.EmptyResponse or GeminiErrorKind.ModelUnavailable or GeminiErrorKind.QuotaOrRateLimit or GeminiErrorKind.ServiceUnavailable)
         {
-            // Fallback to default gemini-2.0-flash if the requested model returns 404 or unsupported response modality
-            normalizedModel = "gemini-2.0-flash";
-            body = await SendForJsonAsync(apiKey, normalizedModel, payload, cancellationToken).ConfigureAwait(false);
+            var succeeded = false;
+            string? fallbackBody = null;
+            GeminiProviderException? lastException = ex;
+
+            foreach (var fallback in SpeechFallbackModels)
+            {
+                if (string.Equals(fallback, normalizedModel, StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                try
+                {
+                    normalizedModel = fallback;
+                    fallbackBody = await SendForJsonAsync(apiKey, normalizedModel, payload, cancellationToken).ConfigureAwait(false);
+                    succeeded = true;
+                    break;
+                }
+                catch (GeminiProviderException fallbackEx)
+                {
+                    lastException = fallbackEx;
+                    // Continue to next fallback
+                }
+            }
+
+            if (!succeeded || fallbackBody is null)
+            {
+                throw lastException ?? ex;
+            }
+
+            body = fallbackBody;
         }
 
         using var document = ParseJson(body);
         foreach (var part in EnumerateResponseParts(document.RootElement))
         {
-            if (!part.TryGetProperty("inlineData", out var inlineData))
+            if (!part.TryGetProperty("inlineData", out var inlineData) &&
+                !part.TryGetProperty("inline_data", out inlineData))
             {
                 continue;
             }
@@ -241,7 +312,7 @@ public sealed partial class GeminiProvider : IGeminiProvider, IDisposable
             try
             {
                 var bytes = Convert.FromBase64String(encoded);
-                var mimeType = GetString(inlineData, "mimeType") ?? "audio/L16;codec=pcm;rate=24000";
+                var mimeType = GetString(inlineData, "mimeType") ?? GetString(inlineData, "mime_type") ?? "audio/L16;codec=pcm;rate=24000";
                 return ParseSpeechAudio(bytes, mimeType);
             }
             catch (FormatException exception)
@@ -590,51 +661,8 @@ public sealed partial class GeminiProvider : IGeminiProvider, IDisposable
         }
     }
 
-    private static SpeechAudio ParseSpeechAudio(byte[] bytes, string mimeType)
-    {
-        if (bytes.Length > 44 &&
-            bytes.AsSpan(0, 4).SequenceEqual("RIFF"u8) &&
-            bytes.AsSpan(8, 4).SequenceEqual("WAVE"u8))
-        {
-            var offset = 12;
-            var channels = 1;
-            var sampleRate = 24000;
-            var bits = 16;
-            while (offset + 8 <= bytes.Length)
-            {
-                var chunkId = bytes.AsSpan(offset, 4);
-                var chunkLength = BinaryPrimitives.ReadInt32LittleEndian(bytes.AsSpan(offset + 4, 4));
-                if (chunkLength < 0 || offset + 8 + chunkLength > bytes.Length)
-                {
-                    break;
-                }
-
-                if (chunkId.SequenceEqual("fmt "u8) && chunkLength >= 16)
-                {
-                    channels = BinaryPrimitives.ReadInt16LittleEndian(bytes.AsSpan(offset + 10, 2));
-                    sampleRate = BinaryPrimitives.ReadInt32LittleEndian(bytes.AsSpan(offset + 12, 4));
-                    bits = BinaryPrimitives.ReadInt16LittleEndian(bytes.AsSpan(offset + 22, 2));
-                }
-                else if (chunkId.SequenceEqual("data"u8))
-                {
-                    return new SpeechAudio(
-                        bytes.AsSpan(offset + 8, chunkLength).ToArray(),
-                        sampleRate,
-                        channels,
-                        bits,
-                        mimeType);
-                }
-
-                offset += 8 + chunkLength + (chunkLength & 1);
-            }
-        }
-
-        var rateMatch = SampleRateRegex().Match(mimeType);
-        var rate = rateMatch.Success && int.TryParse(rateMatch.Groups[1].Value, out var parsedRate)
-            ? parsedRate
-            : 24000;
-        return new SpeechAudio(bytes, rate, 1, 16, mimeType);
-    }
+    private static SpeechAudio ParseSpeechAudio(byte[] bytes, string mimeType) =>
+        AudioPayloadParser.Parse(bytes, mimeType);
 
     private static string? GetString(JsonElement element, string propertyName) =>
         element.TryGetProperty(propertyName, out var value) && value.ValueKind == JsonValueKind.String
@@ -678,23 +706,40 @@ public sealed partial class GeminiProvider : IGeminiProvider, IDisposable
         return normalized;
     }
 
+    /// <summary>
+    /// Settles which model a speech request is actually sent to.
+    ///
+    /// A model that cannot emit audio is not a speech model, whatever a
+    /// settings file says — so anything that is not a text-to-speech model is
+    /// replaced rather than attempted. That is not second-guessing the user: it
+    /// is the difference between speaking and failing, and there is no reading
+    /// of "use gemini-2.0-flash for speech" under which the request could have
+    /// worked.
+    ///
+    /// It matters for upgrades as much as for defaults. Copies of Metis in the
+    /// field have a text model saved in settings.json from when this method
+    /// returned one unconditionally; changing the default alone would leave
+    /// every one of them silent.
+    /// </summary>
     private static string NormalizeSpeechModel(string? model)
     {
-        var normalized = string.IsNullOrWhiteSpace(model) ? "gemini-2.0-flash" : model.Trim();
-        if (normalized.StartsWith("models/", StringComparison.OrdinalIgnoreCase))
+        var trimmed = (model ?? string.Empty).Trim();
+
+        if (trimmed.StartsWith("models/", StringComparison.OrdinalIgnoreCase))
         {
-            normalized = normalized["models/".Length..];
+            trimmed = trimmed["models/".Length..];
         }
 
-        if (normalized.Contains("preview-tts", StringComparison.OrdinalIgnoreCase) ||
-            normalized.Equals("auto", StringComparison.OrdinalIgnoreCase))
-        {
-            normalized = "gemini-2.0-flash";
-        }
-
-        ValidateModel(normalized);
-        return normalized;
+        return IsSpeechCapable(trimmed) ? trimmed : DefaultSpeechModel;
     }
+
+    /// <summary>
+    /// Google names every text-to-speech model with "tts" in it, and names no
+    /// other model that way. Matching on the name rather than a fixed list is
+    /// what lets a model released after this build still be chosen.
+    /// </summary>
+    private static bool IsSpeechCapable(string model) =>
+        model.Contains("tts", StringComparison.OrdinalIgnoreCase);
 
     private static void ValidateModel(string model)
     {

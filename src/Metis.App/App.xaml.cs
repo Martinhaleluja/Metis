@@ -31,6 +31,52 @@ public partial class App : System.Windows.Application
     {
         base.OnStartup(e);
 
+        // Catch exceptions that escape from background Task threads (including fire-and-forget tasks
+        // that are not awaited). Without this the process silently terminates on any unhandled exception
+        // in a Task continuation or a fire-and-forget async method.
+        AppDomain.CurrentDomain.UnhandledException += (_, args) =>
+        {
+            try
+            {
+                var ex = args.ExceptionObject as Exception;
+                var report = TryWriteStartupReport(ex ?? new Exception(args.ExceptionObject?.ToString() ?? "Unknown error"));
+                if (_runtime is not null)
+                {
+                    _runtime.Log.Error("Unhandled AppDomain exception", ex ?? new Exception(args.ExceptionObject?.ToString()));
+                }
+            }
+            catch
+            {
+                // Never throw from an unhandled exception handler
+            }
+        };
+
+        TaskScheduler.UnobservedTaskException += (_, args) =>
+        {
+            try
+            {
+                args.SetObserved();
+                _runtime?.Log.Error("Unobserved Task exception caught and suppressed", args.Exception);
+            }
+            catch
+            {
+                // Never throw from an unhandled exception handler
+            }
+        };
+
+        DispatcherUnhandledException += (_, args) =>
+        {
+            try
+            {
+                _runtime?.Log.Error("Unhandled WPF Dispatcher exception caught", args.Exception);
+                args.Handled = true;
+            }
+            catch
+            {
+                // Never throw from an unhandled exception handler
+            }
+        };
+
         _singleInstance = new Mutex(true, "Local\\Metis.Desktop.Companion", out var isFirstInstance);
         _ownsSingleInstance = isFirstInstance;
         if (!isFirstInstance)
@@ -63,6 +109,18 @@ public partial class App : System.Windows.Application
             _notchWindow.Chat.Attach(_runtime);
             _notchWindow.ConnectChat();
             _notchWindow.ChatSetupRequested += (_, _) => ShowSetup();
+            _notchWindow.AgentDrawer.Attach(_runtime);
+            _notchWindow.ConnectAgentDrawer(_runtime);
+            _notchWindow.ConnectSpawnAgent(_runtime);
+
+            // Clicking a Windows notification brings the agent it is about up
+            // on screen, rather than merely putting Metis in the foreground and
+            // leaving the user to find what it was telling them about.
+            _runtime.AgentNotificationOpened += (_, _) => Dispatcher.Invoke(() =>
+            {
+                _notchWindow?.OpenAgentDrawer();
+                _notchWindow?.AgentDrawer.RefreshTasks();
+            });
 
             // The pen comes out with the chord, and the notch becomes the tool
             // picker. A quick hold-and-drag still commits on release; touching
@@ -109,6 +167,12 @@ public partial class App : System.Windows.Application
             {
                 _runtime.Log.Info($"Trace committed with the {_traceWindow.LastCommittedTool} tool.");
                 _runtime.SetTracedRegion(path);
+            });
+
+            _traceWindow.TapCompleted += (_, point) => Dispatcher.Invoke(() =>
+            {
+                _runtime.Log.Info($"Tap committed on trace overlay at {point.ScreenX},{point.ScreenY}.");
+                _runtime.SetTappedPoint(point);
             });
 
             _notchWindow.TraceToolPicked += (_, tool) => Dispatcher.Invoke(() =>
@@ -473,6 +537,8 @@ public partial class App : System.Windows.Application
     /// </summary>
     private void ContinueStartup(string[] args)
     {
+        ShowWhatsNewIfUpdated();
+
         if (args.Contains("--onboarding", StringComparer.OrdinalIgnoreCase))
         {
             ShowOnboarding();
@@ -527,6 +593,53 @@ public partial class App : System.Windows.Application
                 _runtime?.Log.Error("Background update check encountered an error.", exception);
             }
         });
+    }
+
+    /// <summary>
+    /// Shows the release notes once, after an update.
+    ///
+    /// Metis updates itself in the background for testers, so a build with new
+    /// behaviour otherwise just appears one morning with no explanation. This
+    /// release in particular adds agents that write files and drive a browser,
+    /// which is not something anyone should meet by surprise.
+    ///
+    /// The recorded version is written before the window opens rather than
+    /// after it is dismissed: if the notes throw, or the user closes them from
+    /// the taskbar, the alternative is showing them again on every single
+    /// launch forever, which is worse than missing them once.
+    /// </summary>
+    private void ShowWhatsNewIfUpdated()
+    {
+        if (_runtime is null || !WhatsNewWindow.ShouldShow(_runtime.Settings.LastSeenVersion))
+        {
+            RememberThisVersion();
+            return;
+        }
+
+        RememberThisVersion();
+
+        try
+        {
+            var window = new WhatsNewWindow { Owner = null };
+            window.Show();
+            window.Activate();
+        }
+        catch (Exception exception)
+        {
+            _runtime.Log.Error("The release notes could not be shown.", exception);
+        }
+    }
+
+    private void RememberThisVersion()
+    {
+        if (_runtime is null ||
+            string.Equals(_runtime.Settings.LastSeenVersion, WhatsNewWindow.Version, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        _ = _runtime.SaveSettingsAsync(
+            _runtime.Settings with { LastSeenVersion = WhatsNewWindow.Version }, null, null);
     }
 
     /// <summary>
@@ -594,10 +707,10 @@ public partial class App : System.Windows.Application
     }
 
     private void Runtime_OnGuidanceOverlayRequested(object? sender, GuidanceOverlayRequest request) =>
-        Dispatcher.Invoke(() => _overlayWindow?.Show(request));
+        Dispatcher.InvokeAsync(() => _overlayWindow?.Show(request));
 
     private void Runtime_OnActivityChanged(object? sender, MetisActivity activity) =>
-        Dispatcher.Invoke(() =>
+        Dispatcher.InvokeAsync(() =>
         {
             // The notch stays quiet while the toolbar is up, so a trace flag
             // left set by mistake would mute it for the rest of the session.
