@@ -17,7 +17,14 @@ public sealed record UpdateCheck(
     string? Version = null,
     Uri? Installer = null,
     string? Notes = null,
-    string? Problem = null);
+    string? Problem = null,
+
+    /// <summary>
+    /// The SHA-256 the downloaded installer must match, when the release
+    /// publishes one. Null means the release said nothing, which is not the
+    /// same as saying the file is fine.
+    /// </summary>
+    string? Sha256 = null);
 
 /// <summary>
 /// Keeps testers on the newest build without anyone having to hand them an
@@ -109,7 +116,12 @@ public sealed class UpdateService(IDiagnosticLog log, HttpClient? httpClient = n
                 }
 
                 var notes = root.TryGetProperty("body", out var body) ? body.GetString() : null;
-                return new UpdateCheck(true, AppVersion.Parse(tag)?.ToString(3), installer, notes);
+                return new UpdateCheck(
+                    true,
+                    AppVersion.Parse(tag)?.ToString(3),
+                    installer,
+                    notes,
+                    Sha256: FindPublishedChecksum(notes));
             }
             finally
             {
@@ -125,6 +137,44 @@ public sealed class UpdateService(IDiagnosticLog log, HttpClient? httpClient = n
             // stops working. Being unable to reach GitHub is an ordinary state.
             return new UpdateCheck(false, Problem: exception.Message);
         }
+    }
+
+    private static async Task<string> ComputeSha256Async(string path, CancellationToken cancellationToken)
+    {
+        await using var file = File.OpenRead(path);
+        var hash = await System.Security.Cryptography.SHA256
+            .HashDataAsync(file, cancellationToken)
+            .ConfigureAwait(false);
+        return Convert.ToHexString(hash).ToLowerInvariant();
+    }
+
+    /// <summary>
+    /// Reads the installer's SHA-256 out of the release notes.
+    ///
+    /// Metis downloads an executable and runs it with no prompt, which is
+    /// exactly the shape of a supply-chain problem: anyone who could replace
+    /// that asset would be running code on every machine that has Metis
+    /// installed, under its name. The transport is HTTPS to GitHub, which is
+    /// worth something, but it is not a check on the file itself.
+    ///
+    /// The notes carry it rather than a second asset so publishing a release
+    /// stays one upload, and the line the build script writes is the line this
+    /// looks for.
+    /// </summary>
+    public static string? FindPublishedChecksum(string? releaseNotes)
+    {
+        if (string.IsNullOrWhiteSpace(releaseNotes))
+        {
+            return null;
+        }
+
+        var match = System.Text.RegularExpressions.Regex.Match(
+            releaseNotes,
+            "SHA-?256[^A-Fa-f0-9]{0,20}([A-Fa-f0-9]{64})",
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase,
+            TimeSpan.FromSeconds(1));
+
+        return match.Success ? match.Groups[1].Value.ToLowerInvariant() : null;
     }
 
     /// <summary>
@@ -231,7 +281,32 @@ public sealed class UpdateService(IDiagnosticLog log, HttpClient? httpClient = n
                 }
             }
 
-            _log.Info($"Update {check.Version} downloaded to {target}. Starting the installer.");
+            // The file is about to be executed, so this is the last moment
+            // anything can check it is the file that was published.
+            var actual = await ComputeSha256Async(target, cancellationToken).ConfigureAwait(false);
+            if (check.Sha256 is { Length: 64 } expected)
+            {
+                if (!string.Equals(actual, expected, StringComparison.OrdinalIgnoreCase))
+                {
+                    File.Delete(target);
+                    _log.Error(
+                        $"The downloaded installer for {check.Version} did not match the checksum in the release " +
+                        $"(expected {expected}, got {actual}). It was deleted and not run.");
+                    return false;
+                }
+
+                _log.Info($"Update {check.Version} matches the published checksum. Starting the installer.");
+            }
+            else
+            {
+                // Not a reason to refuse the update — that would break every
+                // release published before checksums existed — but it is a
+                // reason to say so, because it is the difference between a
+                // verified installer and one that is merely well-transported.
+                _log.Info(
+                    $"Update {check.Version} publishes no SHA-256, so the download could not be verified " +
+                    $"(its hash is {actual}). Starting the installer.");
+            }
 
             Process.Start(new ProcessStartInfo(target)
             {

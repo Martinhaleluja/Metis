@@ -87,6 +87,16 @@ public static class AgentWorkspace
             return PathDecision.Deny($"That path cannot be read as a path. {exception.Message}");
         }
 
+        // Checked before anything else can allow it. Granting an agent access
+        // to your own folders is a reasonable thing to do; it is never an
+        // instruction to hand over the keys to everything else you own, and an
+        // agent that reads a browser profile or an SSH key can act as you
+        // everywhere, long after the task it was given has finished.
+        if (IsCredentialStore(full) is { } refusal)
+        {
+            return PathDecision.Deny(refusal);
+        }
+
         if (allowOutside || IsUnder(root, full))
         {
             return PathDecision.Allow(full);
@@ -123,4 +133,70 @@ public static class AgentWorkspace
         var prefix = trimmedRoot + Path.DirectorySeparatorChar;
         return trimmedCandidate.StartsWith(prefix, StringComparison.OrdinalIgnoreCase);
     }
+
+    /// <summary>
+    /// Names the reason a path is off limits to every agent, or null when it is
+    /// ordinary.
+    ///
+    /// These are the places a credential lives. None of them is somewhere a
+    /// legitimate task needs to go, and all of them are somewhere a task that
+    /// has been talked into misbehaving would like to. The list is matched on
+    /// the resolved absolute path, so it cannot be walked around with "..".
+    /// </summary>
+    private static string? IsCredentialStore(string fullPath)
+    {
+        var path = fullPath.Replace(Path.AltDirectorySeparatorChar, Path.DirectorySeparatorChar);
+        var name = Path.GetFileName(path);
+
+        foreach (var (fragment, what) in ForbiddenFragments)
+        {
+            if (path.Contains(fragment, StringComparison.OrdinalIgnoreCase))
+            {
+                return $"'{fullPath}' is off limits: it is {what}. No agent may read or write there.";
+            }
+        }
+
+        foreach (var (fileName, what) in ForbiddenFileNames)
+        {
+            if (string.Equals(name, fileName, StringComparison.OrdinalIgnoreCase))
+            {
+                return $"'{fullPath}' is off limits: it is {what}. No agent may read or write there.";
+            }
+        }
+
+        // .env, .env.local, .env.production and the rest of the family.
+        return name.StartsWith(".env", StringComparison.OrdinalIgnoreCase)
+            ? $"'{fullPath}' is off limits: environment files usually hold secrets. No agent may read or write there."
+            : null;
+    }
+
+    private static readonly (string Fragment, string What)[] ForbiddenFragments =
+    [
+        (Path.DirectorySeparatorChar + ".ssh" + Path.DirectorySeparatorChar, "an SSH key store"),
+        (Path.DirectorySeparatorChar + ".aws" + Path.DirectorySeparatorChar, "an AWS credential store"),
+        (Path.DirectorySeparatorChar + ".gnupg" + Path.DirectorySeparatorChar, "a GnuPG key store"),
+        (Path.DirectorySeparatorChar + ".azure" + Path.DirectorySeparatorChar, "an Azure credential store"),
+        (Path.DirectorySeparatorChar + ".kube" + Path.DirectorySeparatorChar, "a Kubernetes credential store"),
+        (Path.DirectorySeparatorChar + "User Data" + Path.DirectorySeparatorChar, "a browser profile, which holds saved passwords and session cookies"),
+        (Path.DirectorySeparatorChar + "Mozilla" + Path.DirectorySeparatorChar + "Firefox" + Path.DirectorySeparatorChar, "a browser profile, which holds saved passwords and session cookies"),
+        (Path.DirectorySeparatorChar + "Microsoft" + Path.DirectorySeparatorChar + "Credentials" + Path.DirectorySeparatorChar, "the Windows credential store"),
+        (Path.DirectorySeparatorChar + "Microsoft" + Path.DirectorySeparatorChar + "Protect" + Path.DirectorySeparatorChar, "the Windows data-protection key store"),
+        (Path.DirectorySeparatorChar + "System32" + Path.DirectorySeparatorChar + "config" + Path.DirectorySeparatorChar, "the Windows registry hive store"),
+        (Path.DirectorySeparatorChar + "Metis" + Path.DirectorySeparatorChar + "logs" + Path.DirectorySeparatorChar, "Metis's own diagnostics"),
+        (Path.DirectorySeparatorChar + "Metis" + Path.DirectorySeparatorChar + "chats" + Path.DirectorySeparatorChar, "Metis's own record of what it has been shown")
+    ];
+
+    private static readonly (string FileName, string What)[] ForbiddenFileNames =
+    [
+        (".netrc", "a stored login file"),
+        ("_netrc", "a stored login file"),
+        (".npmrc", "a file that usually holds a registry token"),
+        (".pypirc", "a file that usually holds a registry token"),
+        (".git-credentials", "a stored Git login file"),
+        ("id_rsa", "a private key"),
+        ("id_ed25519", "a private key"),
+        ("credentials", "a credential file"),
+        ("settings.json", "Metis's own settings"),
+        ("memory.json", "Metis's own memory of the user")
+    ];
 }

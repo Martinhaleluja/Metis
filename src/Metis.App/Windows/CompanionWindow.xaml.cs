@@ -147,7 +147,23 @@ public partial class CompanionWindow : Window
                 // Protect render/motion tick loop from unhandled crashes
             }
         };
-        _followTimer.Start();
+
+        // Sixty times a second, at render priority, for as long as Metis is
+        // running — this used to start here and never stop, so a hidden
+        // companion still woke the UI thread on every frame and competed with
+        // whatever the user was actually doing. It now runs only while there is
+        // something on screen to move.
+        IsVisibleChanged += (_, _) =>
+        {
+            if (IsVisible)
+            {
+                _followTimer.Start();
+            }
+            else
+            {
+                _followTimer.Stop();
+            }
+        };
 
         _bubbleTimer = new DispatcherTimer
         {

@@ -41,10 +41,7 @@ public sealed partial class GeminiProvider : IGeminiProvider, IDisposable
     public GeminiProvider(HttpClient? httpClient = null)
     {
         _ownsClient = httpClient is null;
-        _httpClient = httpClient ?? new HttpClient
-        {
-            Timeout = TimeSpan.FromSeconds(65)
-        };
+        _httpClient = httpClient ?? MetisHttp.CreateClient(TimeSpan.FromSeconds(65));
     }
 
     public async Task<GeminiResponse> GenerateAsync(
@@ -56,6 +53,7 @@ public sealed partial class GeminiProvider : IGeminiProvider, IDisposable
     {
         ThrowIfDisposed();
         ValidateKey(apiKey);
+        LastUsage = null;
         var normalizedModel = NormalizeModel(model);
 
         if (string.Equals(normalizedModel, "auto", StringComparison.OrdinalIgnoreCase))
@@ -75,7 +73,7 @@ public sealed partial class GeminiProvider : IGeminiProvider, IDisposable
                 rawResponse,
                 request.ScreenshotBytes is { Length: > 0 },
                 request.Prompt);
-            return new GeminiResponse(plan.SpokenText, normalizedModel, plan);
+            return new GeminiResponse(plan.SpokenText, normalizedModel, plan, LastUsage);
         }
         catch (GeminiProviderException exception) when (exception.Kind == GeminiErrorKind.ModelUnavailable)
         {
@@ -90,7 +88,7 @@ public sealed partial class GeminiProvider : IGeminiProvider, IDisposable
                 rawResponse,
                 request.ScreenshotBytes is { Length: > 0 },
                 request.Prompt);
-            return new GeminiResponse(plan.SpokenText, fallback, plan);
+            return new GeminiResponse(plan.SpokenText, fallback, plan, LastUsage);
         }
     }
 
@@ -480,6 +478,12 @@ public sealed partial class GeminiProvider : IGeminiProvider, IDisposable
                 {
                     blockReason = GetString(feedback, "blockReason");
                 }
+
+                // Usage arrives on the closing frames, so the last one wins.
+                if (ReadUsage(element) is { } usage)
+                {
+                    LastUsage = usage;
+                }
             },
             cancellationToken).ConfigureAwait(false);
 
@@ -716,6 +720,35 @@ public sealed partial class GeminiProvider : IGeminiProvider, IDisposable
                 innerException: exception);
         }
     }
+
+    /// <summary>
+    /// What the last generate cost, as the API reported it. Diagnostics only:
+    /// one request is in flight at a time on this path, and nothing depends on
+    /// it beyond a line in the log.
+    /// </summary>
+    internal ModelUsageReport? LastUsage { get; private set; }
+
+    private static ModelUsageReport? ReadUsage(JsonElement root)
+    {
+        if (root.ValueKind != JsonValueKind.Object ||
+            !root.TryGetProperty("usageMetadata", out var usage) ||
+            usage.ValueKind != JsonValueKind.Object)
+        {
+            return null;
+        }
+
+        return new ModelUsageReport(
+            ReadInt(usage, "promptTokenCount"),
+            ReadInt(usage, "thoughtsTokenCount"),
+            ReadInt(usage, "candidatesTokenCount"));
+    }
+
+    private static int ReadInt(JsonElement element, string propertyName) =>
+        element.TryGetProperty(propertyName, out var value) &&
+        value.ValueKind == JsonValueKind.Number &&
+        value.TryGetInt32(out var number)
+            ? number
+            : 0;
 
     private static IEnumerable<JsonElement> EnumerateResponseParts(JsonElement root)
     {

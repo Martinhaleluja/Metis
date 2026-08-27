@@ -52,6 +52,24 @@ public sealed class MetisRuntime : IDisposable
     private readonly IMemoryService _memory;
     private readonly TaskContextTracker _taskContext = new();
     private readonly SemaphoreSlim _turnGate = new(1, 1);
+
+    /// <summary>
+    /// Counts turns so a turn can tell whether it is still the one being waited
+    /// on. Needed because the gate is released once the answer is on screen,
+    /// which lets a turn's delivery — speech, marks, a lesson — outlive the
+    /// start of the next one.
+    /// </summary>
+    private int _turnSequence;
+
+    /// <summary>
+    /// The skill-memory document, held between turns. Null means "read it".
+    /// See <see cref="DescribeSkillsAsync"/>.
+    /// </summary>
+    private MemoryDocument? _cachedMemory;
+
+    /// <summary>Serialises the background chat-session writes. See <see cref="SaveCurrentChat"/>.</summary>
+    private readonly object _chatSaveGate = new();
+    private Task _chatSaveChain = Task.CompletedTask;
     private SoundPack _soundPack = new(null);
     private FileSkillStore _skillStore = new(null);
     private IReadOnlyList<SkillPack> _userSkills = [];
@@ -1180,6 +1198,7 @@ public sealed class MetisRuntime : IDisposable
     {
         ThrowIfDisposed();
         await _memory.ClearAsync(cancellationToken);
+        InvalidateMemoryCache();
         _taskContext.Complete();
         SetStatus("Cleared what Metis remembered about your skills and tasks");
         _log.Info("Skill and task memory cleared at the user's request.");
@@ -1708,6 +1727,40 @@ public sealed class MetisRuntime : IDisposable
     }
 
     /// <summary>
+    /// Where one turn's time went, written to the log when it finishes.
+    ///
+    /// Every number is milliseconds from the start of the turn, so the gaps
+    /// between them are the stages. <see cref="FirstWordMs"/> is the one that
+    /// matters most: it is how long the user looked at nothing.
+    /// </summary>
+    private sealed class TurnTimings
+    {
+        public long CaptureMs { get; set; }
+        public long AutomationMs { get; set; }
+        public long RequestBuiltMs { get; set; }
+        public long FirstWordMs { get; set; } = -1;
+        public long AnswerMs { get; set; }
+        public int ImageKiB { get; set; }
+        public int PromptChars { get; set; }
+
+        public string Describe(
+            long totalMs,
+            string provider,
+            string model,
+            bool streamed,
+            ModelUsageReport? usage) =>
+            $"Turn timing: capture {CaptureMs}ms, screen names {AutomationMs}ms, " +
+            $"request built {RequestBuiltMs}ms, " +
+            $"first word {(FirstWordMs < 0 ? "not streamed" : FirstWordMs + "ms")}, " +
+            $"answer {AnswerMs}ms, total {totalMs}ms; " +
+            $"image {ImageKiB} KiB, prompt {PromptChars} chars" +
+            (usage is null
+                ? string.Empty
+                : $"; tokens in {usage.PromptTokens}, thinking {usage.ThoughtTokens}, out {usage.OutputTokens}") +
+            $"; {provider} {model}{(streamed ? " streamed" : " buffered")}.";
+    }
+
+    /// <summary>
     /// A capture that carries the coordinate space and no pixels, for work that
     /// only needs to know where the screen is.
     /// </summary>
@@ -1775,12 +1828,59 @@ public sealed class MetisRuntime : IDisposable
         }
 
         _lastVoiceError = null;
-        _turnCancellation?.Dispose();
+
+        // The previous turn may still be finishing out loud. The gate is now
+        // released as soon as its answer is on screen, so this one can start
+        // while the last is still speaking or walking through a lesson — and
+        // asking something new is a clear instruction to stop doing that.
+        // Cancelling rather than only disposing is what actually stops it:
+        // disposing a token source never signals its token, so the old speech
+        // would have played on underneath the new answer.
+        var previousTurn = _turnCancellation;
         _turnCancellation = CancellationTokenSource.CreateLinkedTokenSource(externalCancellation);
+        if (previousTurn is not null)
+        {
+            try
+            {
+                previousTurn.Cancel();
+            }
+            catch (ObjectDisposedException)
+            {
+                // Already finished and cleaned up.
+            }
+
+            previousTurn.Dispose();
+        }
+
         _turnCancellation.CancelAfter(recording is null
             ? TimeSpan.FromSeconds(75)
             : TimeSpan.FromSeconds(120));
         var cancellationToken = _turnCancellation.Token;
+        var turnNumber = ++_turnSequence;
+
+        // Releasing the gate early means this method can still be running for
+        // the previous turn, so its tail must not write status or state over
+        // the newer one's.
+        var gateReleased = false;
+        void ReleaseTurnGate()
+        {
+            if (gateReleased)
+            {
+                return;
+            }
+
+            gateReleased = true;
+            _turnGate.Release();
+        }
+
+        // One line per turn saying where the time went. There was no timing on
+        // this path at all — the only stopwatches in the codebase were in the
+        // provider self-tests — so how long a turn took could only be inferred
+        // from the gap between two unrelated log lines, and the stages inside
+        // it could not be seen at all.
+        var turnClock = Stopwatch.StartNew();
+        var timings = new TurnTimings();
+
         var activation = _pendingActivation;
         var pendingPointer = _pendingPointer;
         var pendingTrace = _pendingTrace;
@@ -1852,8 +1952,14 @@ public sealed class MetisRuntime : IDisposable
                               $"at encoded {screenshot.Width}x{screenshot.Height}; " +
                               $"full bounds left={screenshot.ScreenLeft}, top={screenshot.ScreenTop}, " +
                               $"width={screenshot.SourceWidth}, height={screenshot.SourceHeight}; " +
-                              $"{screenshot.ImageBytes.Length / 1024d:0.0} KiB {screenshot.ImageMimeType}.");
+                              $"{screenshot.ImageBytes.Length / 1024d:0.0} KiB {screenshot.ImageMimeType}" +
+                              (screenshot.WithheldRegions > 0
+                                  ? $"; {screenshot.WithheldRegions} region(s) withheld as private."
+                                  : "."));
                 }
+
+                timings.CaptureMs = turnClock.ElapsedMilliseconds;
+                timings.ImageKiB = (int)Math.Round((screenshot?.ImageBytes.Length ?? 0) / 1024d);
 
                 if (automationTask is not null)
                 {
@@ -1863,6 +1969,8 @@ public sealed class MetisRuntime : IDisposable
                 {
                     automationContext = await DescribeScreenAsync(screenshot, cancellationToken);
                 }
+
+                timings.AutomationMs = turnClock.ElapsedMilliseconds;
 
                 // The scan was started against the bounds the capture said it
                 // would use. If the capture then failed there is no image for
@@ -2040,7 +2148,8 @@ public sealed class MetisRuntime : IDisposable
                 DescribeRecentTurns(),
                 region,
                 _academicTeaching,
-                Settings.UserName);
+                Settings.UserName,
+                screenshot?.WithheldRegions ?? 0);
             SetActivity(MetisActivityKind.Thinking, "Thinking");
 
             // The answer goes on screen as it is written rather than when it is
@@ -2048,15 +2157,37 @@ public sealed class MetisRuntime : IDisposable
             // structured reply the user could not see any of — the sentence
             // itself is ready long before the lesson steps and coordinates that
             // follow it.
+            timings.RequestBuiltMs = turnClock.ElapsedMilliseconds;
+            timings.PromptChars = effectivePrompt.Length + (automationContext?.Length ?? 0);
+
             var answerStream = new TurnTextStream(
-                () => ResponseStreamStarted?.Invoke(this, EventArgs.Empty),
+                () =>
+                {
+                    timings.FirstWordMs = turnClock.ElapsedMilliseconds;
+                    ResponseStreamStarted?.Invoke(this, EventArgs.Empty);
+                },
                 delta => ResponseTextDelta?.Invoke(this, delta));
             var response = await GenerateWithSelectedProviderAsync(request, answerStream, cancellationToken);
+            timings.AnswerMs = turnClock.ElapsedMilliseconds;
+            _log.Info(timings.Describe(
+                turnClock.ElapsedMilliseconds,
+                response.Provider,
+                response.Model,
+                answerStream.HasPublished,
+                response.Usage));
 
             MessageAdded?.Invoke(
                 this,
                 new AssistantMessage(AssistantRole.Metis, response.Text, DateTimeOffset.Now));
             RecordChatTurn("metis", response.Text, screenshot?.WindowTitle);
+
+            // The answer is on screen, so Metis is ready for the next question.
+            // Everything below — synthesising the voice, saying it, marking the
+            // screen, walking a lesson — is the reply being delivered, not the
+            // reply being worked out, and the gate used to be held for all of
+            // it. That was routinely eight to ten seconds of the app refusing
+            // to listen while the user was already reading its answer.
+            ReleaseTurnGate();
 
             var finalStatus = $"Answered with {response.Provider} {response.Model}";
 
@@ -2155,8 +2286,12 @@ public sealed class MetisRuntime : IDisposable
                     new LessonState(plan.Goal ?? spokenRequest, plan.LessonSteps),
                     cancellationToken);
 
-                SetActivity(MetisActivityKind.Idle, string.Empty);
-                State.Force(AssistantState.Idle);
+                if (IsCurrentTurn(turnNumber))
+                {
+                    SetActivity(MetisActivityKind.Idle, string.Empty);
+                    State.Force(AssistantState.Idle);
+                }
+
                 return;
             }
 
@@ -2237,32 +2372,55 @@ public sealed class MetisRuntime : IDisposable
 
             await RecordTurnMemoryAsync(task, plan, screenshot?.WindowTitle, true, CancellationToken.None);
 
-            State.Force(AssistantState.Success);
-            SetActivity(MetisActivityKind.Complete, "Done");
-            PlayCue(MetisSound.TaskComplete);
-            SetStatus(finalStatus);
+            if (IsCurrentTurn(turnNumber))
+            {
+                State.Force(AssistantState.Success);
+                SetActivity(MetisActivityKind.Complete, "Done");
+                PlayCue(MetisSound.TaskComplete);
+                SetStatus(finalStatus);
 
-            // The "Done" state used to be held here for 1.2s before going idle,
-            // and because the turn gate is not released until this method
-            // returns, that was a second of the app refusing the next question
-            // for the sake of an indicator. The state change is enough.
-            SetActivity(MetisActivityKind.Idle, string.Empty);
-            State.Force(AssistantState.Idle);
+                // The "Done" state used to be held here for 1.2s before going
+                // idle, and because the gate was not released until this method
+                // returned, that was a second of the app refusing the next
+                // question for the sake of an indicator.
+                SetActivity(MetisActivityKind.Idle, string.Empty);
+                State.Force(AssistantState.Idle);
+            }
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
-            State.Force(AssistantState.Idle);
-            SetStatus("Request stopped or timed out");
+            // A turn is also cancelled when the user asks something else while
+            // it is still speaking, and in that case the newer turn owns the
+            // status line — saying "stopped" over its "Thinking…" would report
+            // the interruption as a failure.
+            if (IsCurrentTurn(turnNumber))
+            {
+                State.Force(AssistantState.Idle);
+                SetStatus("Request stopped or timed out");
+            }
         }
         catch (Exception exception)
         {
-            ReportException("Metis could not get an answer", exception);
+            if (IsCurrentTurn(turnNumber))
+            {
+                ReportException("Metis could not get an answer", exception);
+            }
+            else
+            {
+                _log.Error("A superseded turn failed while finishing; the newer turn was left alone.", exception);
+            }
         }
         finally
         {
-            _turnGate.Release();
+            ReleaseTurnGate();
         }
     }
+
+    /// <summary>
+    /// Whether the given turn is still the one the user is waiting on. False
+    /// once a newer question has been asked over the top of it.
+    /// </summary>
+    private bool IsCurrentTurn(int turnNumber) => _turnSequence == turnNumber;
 
     private string RequireApiKey()
     {
@@ -2364,6 +2522,15 @@ public sealed class MetisRuntime : IDisposable
         return pointer with { NormalizedX = normalizedX, NormalizedY = normalizedY, HoveredElement = hovered };
     }
 
+    /// <summary>
+    /// Describes what Metis has learned that is relevant to this application.
+    ///
+    /// The memory document is cached between turns. It was being read from
+    /// disk and deserialized on the request path of every single turn, and it
+    /// only changes when Metis itself writes to it — which happens here, in
+    /// this process, so the cache can simply be dropped at those points rather
+    /// than being timed or watched.
+    /// </summary>
     private async Task<string?> DescribeSkillsAsync(string? application, CancellationToken cancellationToken)
     {
         if (!Settings.MemoryEnabled)
@@ -2373,7 +2540,7 @@ public sealed class MetisRuntime : IDisposable
 
         try
         {
-            var document = await _memory.LoadAsync(cancellationToken);
+            var document = _cachedMemory ??= await _memory.LoadAsync(cancellationToken);
             return document.Skills.Count == 0
                 ? null
                 : SkillMemoryEngine.Describe(document.Skills, application);
@@ -2384,6 +2551,12 @@ public sealed class MetisRuntime : IDisposable
             return null;
         }
     }
+
+    /// <summary>
+    /// Forgets the cached memory document, so the next turn reads it again.
+    /// Called wherever Metis writes to memory.
+    /// </summary>
+    private void InvalidateMemoryCache() => _cachedMemory = null;
 
     /// <summary>
     /// Records what the turn taught and what it accomplished. Only the goal and
@@ -2412,6 +2585,7 @@ public sealed class MetisRuntime : IDisposable
                 success,
                 plan.SpokenText,
                 cancellationToken);
+            InvalidateMemoryCache();
 
             if (!string.IsNullOrWhiteSpace(plan.Goal))
             {
@@ -2423,6 +2597,7 @@ public sealed class MetisRuntime : IDisposable
                     success,
                     neededGuidance: true,
                     cancellationToken);
+                InvalidateMemoryCache();
                 AnnounceProgress(progress);
             }
         }
@@ -2983,6 +3158,7 @@ public sealed class MetisRuntime : IDisposable
             succeeded: true,
             neededGuidance: true,
             cancellationToken);
+        InvalidateMemoryCache();
         AnnounceProgress(progress);
     }
 
@@ -3611,7 +3787,7 @@ public sealed class MetisRuntime : IDisposable
             request,
             onTextDelta,
             cancellationToken);
-        return new ProviderTurnResult("Gemini", response.Model, response.Text, response.Plan);
+        return new ProviderTurnResult("Gemini", response.Model, response.Text, response.Plan, response.Usage);
     }
 
     private async Task<ProviderTurnResult> GenerateWithOpenAiAsync(
@@ -3798,11 +3974,28 @@ public sealed class MetisRuntime : IDisposable
 
     private void OnAudioLevelChanged(object? sender, float level) => AudioLevelChanged?.Invoke(this, level);
 
+    /// <summary>
+    /// Tells the capture service how much detail to keep and what it must not
+    /// look at. Called whenever settings change, so a newly excluded
+    /// application takes effect on the next question rather than the next
+    /// restart.
+    /// </summary>
     private void ConfigureCaptureProfile()
     {
-        if (_capture is VirtualDesktopCaptureService virtualDesktopCapture)
+        if (_capture is not VirtualDesktopCaptureService virtualDesktopCapture)
         {
-            virtualDesktopCapture.UseCompactLocalProfile(Settings.AiProvider == "Ollama");
+            return;
+        }
+
+        virtualDesktopCapture.UseCompactLocalProfile(Settings.AiProvider == "Ollama");
+        virtualDesktopCapture.ExcludedApplications = Settings.ExcludedApplicationList;
+
+        // Windows marks a protected window for us, but nothing marks a password
+        // box. That answer only exists in the accessibility tree, so the capture
+        // service is given a way to ask it.
+        if (_uiAutomation is FlaUiAutomationService automation)
+        {
+            virtualDesktopCapture.ReadFocusedPasswordField = automation.FindFocusedPasswordFieldRegion;
         }
     }
 
@@ -4183,6 +4376,20 @@ public sealed class MetisRuntime : IDisposable
         SaveCurrentChat();
     }
 
+    /// <summary>
+    /// Keeps the in-memory chat list current and writes the session to disk.
+    ///
+    /// The write is handed to the thread pool rather than done here. This is
+    /// called twice per turn — once for the question and once for the answer —
+    /// from a method whose continuations run on the UI thread, and it rewrites
+    /// the whole session as one <c>File.WriteAllText</c>. The first of those
+    /// two writes sat directly between the user's keystroke and the request
+    /// going out; the second sat between the answer arriving and the bubble
+    /// being drawn.
+    ///
+    /// The list update stays here, on the caller's thread, so the ordering
+    /// callers depend on is unchanged; only the file write moves.
+    /// </summary>
     private void SaveCurrentChat()
     {
         if (!Settings.ChatMemoryEnabled || _currentChat.IsEmpty)
@@ -4190,10 +4397,33 @@ public sealed class MetisRuntime : IDisposable
             return;
         }
 
-        _chatStore.Save(_currentChat);
-        _chatSessions.RemoveAll(session => session.Id == _currentChat.Id);
-        _chatSessions.Insert(0, _currentChat);
+        var session = _currentChat;
+        _chatSessions.RemoveAll(existing => existing.Id == session.Id);
+        _chatSessions.Insert(0, session);
         ChatsChanged?.Invoke(this, EventArgs.Empty);
+
+        // Chained rather than simply queued, so the two saves in a turn land in
+        // the order they were made. Two independent writes to the same file can
+        // finish in either order, and the loser is the question's copy being
+        // written over the answer's.
+        lock (_chatSaveGate)
+        {
+            _chatSaveChain = _chatSaveChain.ContinueWith(
+                _ =>
+                {
+                    try
+                    {
+                        _chatStore.Save(session);
+                    }
+                    catch (Exception exception)
+                    {
+                        _log.Error("The chat could not be saved in the background.", exception);
+                    }
+                },
+                CancellationToken.None,
+                TaskContinuationOptions.None,
+                TaskScheduler.Default);
+        }
     }
 
     /// <summary>
@@ -4326,5 +4556,6 @@ internal sealed record ProviderTurnResult(
     string Provider,
     string Model,
     string Text,
-    AssistantPlan? Plan = null);
+    AssistantPlan? Plan = null,
+    ModelUsageReport? Usage = null);
 

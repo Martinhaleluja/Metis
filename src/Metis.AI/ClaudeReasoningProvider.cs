@@ -25,7 +25,7 @@ public sealed class ClaudeReasoningProvider : IReasoningProvider, IDisposable
     public ClaudeReasoningProvider(HttpClient? httpClient = null)
     {
         _ownsClient = httpClient is null;
-        _httpClient = httpClient ?? new HttpClient { Timeout = TimeSpan.FromSeconds(75) };
+        _httpClient = httpClient ?? MetisHttp.CreateClient(TimeSpan.FromSeconds(75));
     }
 
     public ReasoningProviderDescriptor Descriptor { get; } = new(

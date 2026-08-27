@@ -183,12 +183,25 @@ public sealed partial class FileDiagnosticLog : IDiagnosticLog, IDisposable
         _bytesWritten = 0;
     }
 
+    /// <summary>
+    /// Removes anything key-shaped before it reaches the file.
+    ///
+    /// The log is the one artefact a user is most likely to send someone when
+    /// something goes wrong, which makes it the most likely way for a secret to
+    /// leave the machine. Provider errors quote the request back, and Metis
+    /// holds keys for six services, so every shape they use is stripped here
+    /// rather than trusting each provider not to echo one.
+    /// </summary>
     private static string Redact(string value)
     {
         var redacted = KeyQueryRegex().Replace(value, "$1[redacted]");
         redacted = KeyHeaderRegex().Replace(redacted, "$1[redacted]");
+        redacted = BearerRegex().Replace(redacted, "$1[redacted]");
         redacted = AqTokenRegex().Replace(redacted, "[redacted-token]");
         redacted = AizaTokenRegex().Replace(redacted, "[redacted-token]");
+        redacted = AnthropicKeyRegex().Replace(redacted, "[redacted-key]");
+        redacted = OpenAiKeyRegex().Replace(redacted, "[redacted-key]");
+        redacted = JwtRegex().Replace(redacted, "[redacted-token]");
         return redacted;
     }
 
@@ -214,4 +227,24 @@ public sealed partial class FileDiagnosticLog : IDiagnosticLog, IDisposable
 
     [GeneratedRegex("AIza[A-Za-z0-9_-]{20,}", RegexOptions.CultureInvariant)]
     private static partial Regex AizaTokenRegex();
+
+    // Anthropic. Matched before the OpenAI shape below, which would otherwise
+    // claim the "sk-" prefix and leave "ant-..." in the file.
+    [GeneratedRegex("sk-ant-[A-Za-z0-9_-]{20,}", RegexOptions.CultureInvariant)]
+    private static partial Regex AnthropicKeyRegex();
+
+    // OpenAI, and OpenRouter, which uses the same shape.
+    [GeneratedRegex("sk-(?:proj-|or-)?[A-Za-z0-9_-]{20,}", RegexOptions.CultureInvariant)]
+    private static partial Regex OpenAiKeyRegex();
+
+    // Supabase session tokens, and any other JWT that finds its way in.
+    [GeneratedRegex("eyJ[A-Za-z0-9_-]{10,}\\.[A-Za-z0-9_-]{10,}\\.[A-Za-z0-9_-]{10,}", RegexOptions.CultureInvariant)]
+    private static partial Regex JwtRegex();
+
+    // AssemblyAI and ElevenLabs send their key in a plain header rather than a
+    // recognisable prefix, so the header name is what identifies it.
+    [GeneratedRegex(
+        "((?:authorization|xi-api-key|x-api-key)\\s*[:=]\\s*(?:Bearer\\s+)?)[^\\s,;\"]+",
+        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    private static partial Regex BearerRegex();
 }

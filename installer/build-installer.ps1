@@ -1,7 +1,7 @@
 ﻿[CmdletBinding()]
 param(
     [ValidatePattern('^\d+\.\d+\.\d+$')]
-    [string]$Version = '3.14.0',
+    [string]$Version = '3.15.0',
     [ValidateSet('Debug', 'Release')]
     [string]$Configuration = 'Release',
     [switch]$SkipTests,
@@ -258,3 +258,12 @@ if (-not (Test-Path -LiteralPath $setupPath)) {
 
 $setup = Get-Item -LiteralPath $setupPath
 Write-Host "Created $($setup.FullName) ($([Math]::Round($setup.Length / 1MB, 1)) MiB)"
+
+# Metis downloads this file and runs it without asking, so the release has to
+# say which file it meant. UpdateService reads this line out of the release
+# notes and refuses to run an installer that does not match it.
+$hash = (Get-FileHash -LiteralPath $setupPath -Algorithm SHA256).Hash.ToLowerInvariant()
+Set-Content -LiteralPath "$setupPath.sha256" -Value $hash -Encoding ascii
+Write-Host ''
+Write-Host 'Paste this line into the GitHub release notes:'
+Write-Host "SHA-256: $hash"

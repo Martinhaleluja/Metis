@@ -21,10 +21,7 @@ public sealed class OpenAiProvider : IOpenAiProvider, IDisposable
     public OpenAiProvider(HttpClient? httpClient = null)
     {
         _ownsClient = httpClient is null;
-        _httpClient = httpClient ?? new HttpClient
-        {
-            Timeout = TimeSpan.FromSeconds(75)
-        };
+        _httpClient = httpClient ?? MetisHttp.CreateClient(TimeSpan.FromSeconds(75));
     }
 
     public async Task<OpenAiResponse> GenerateAsync(
