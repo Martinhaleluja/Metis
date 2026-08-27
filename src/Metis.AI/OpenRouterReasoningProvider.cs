@@ -38,7 +38,7 @@ public sealed class OpenRouterReasoningProvider : IReasoningProvider, IDisposabl
             "/v1",
             ProviderId);
         _ownsClient = httpClient is null;
-        _httpClient = httpClient ?? new HttpClient { Timeout = TimeSpan.FromSeconds(120) };
+        _httpClient = httpClient ?? MetisHttp.CreateClient(TimeSpan.FromSeconds(120));
     }
 
     public ReasoningProviderDescriptor Descriptor { get; } = new(

@@ -32,7 +32,7 @@ public sealed class OpenClawReasoningProvider : IReasoningProvider, IDisposable
             "/v1",
             ProviderId);
         _ownsClient = httpClient is null;
-        _httpClient = httpClient ?? new HttpClient { Timeout = TimeSpan.FromSeconds(90) };
+        _httpClient = httpClient ?? MetisHttp.CreateClient(TimeSpan.FromSeconds(90));
     }
 
     public ReasoningProviderDescriptor Descriptor { get; } = new(

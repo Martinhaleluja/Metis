@@ -20,7 +20,7 @@ public sealed class ElevenLabsProvider : IElevenLabsProvider, IDisposable
     public ElevenLabsProvider(HttpClient? httpClient = null)
     {
         _ownsClient = httpClient is null;
-        _httpClient = httpClient ?? new HttpClient { Timeout = TimeSpan.FromSeconds(45) };
+        _httpClient = httpClient ?? MetisHttp.CreateClient(TimeSpan.FromSeconds(45));
     }
 
     public async Task<SpeechAudio?> SynthesizeSpeechAsync(

@@ -33,7 +33,7 @@ public sealed class OllamaReasoningProvider : IReasoningProvider, IDisposable
             "/api",
             ProviderId);
         _ownsClient = httpClient is null;
-        _httpClient = httpClient ?? new HttpClient { Timeout = TimeSpan.FromSeconds(120) };
+        _httpClient = httpClient ?? MetisHttp.CreateClient(TimeSpan.FromSeconds(120));
         _contextTokens = Math.Clamp(contextTokens, 2048, 4096);
         _enableThinking = enableThinking;
     }

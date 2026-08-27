@@ -6,6 +6,17 @@
     <LangVersion>latest</LangVersion>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <Deterministic>true</Deterministic>
+
+    <!--
+      Start-up cost. A published Metis was paying full just-in-time compilation
+      on first use of every path, which lands on the user as a slow first
+      question: the capture, the JPEG encoder, the automation session and the
+      HTTP stack are all touched for the first time inside that turn.
+      ReadyToRun ships precompiled native code for them, and TieredPGO lets the
+      hot paths keep improving over a session.
+    -->
+    <PublishReadyToRun>true</PublishReadyToRun>
+    <TieredPGO>true</TieredPGO>
   </PropertyGroup>
 </Project>
 
