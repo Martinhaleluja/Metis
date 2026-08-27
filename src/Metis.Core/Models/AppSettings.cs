@@ -57,6 +57,29 @@ public sealed record AppSettings
     public bool SpeechEnabled { get; init; } = true;
     public bool StartWithWindows { get; init; }
     public bool CaptureActiveWindow { get; init; } = true;
+
+    /// <summary>
+    /// Applications Metis must never photograph, one per line, matched against
+    /// the process name or the window title.
+    ///
+    /// Windows already lets a program mark its own windows as not-for-capture,
+    /// and Metis honours that. This is for everything else: the accounting
+    /// package, the medical record, the group chat — ordinary software that is
+    /// none of a cloud model's business.
+    ///
+    /// Held as text rather than a list because settings are compared by value
+    /// to decide whether anything changed, and two lists with the same contents
+    /// are not equal to one another. A list here would make every settings
+    /// document look different from every other one.
+    /// </summary>
+    public string ExcludedApplications { get; init; } = string.Empty;
+
+    /// <summary>The same list, split into entries. Not stored.</summary>
+    [System.Text.Json.Serialization.JsonIgnore]
+    public IReadOnlyList<string> ExcludedApplicationList =>
+        [.. ExcludedApplications
+            .Split([(char)13, (char)10], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Distinct(StringComparer.OrdinalIgnoreCase)];
     public bool FullDesktopControl { get; init; } = true;
     public string? PreferredMicrophoneId { get; init; }
 

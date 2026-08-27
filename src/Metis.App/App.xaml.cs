@@ -104,6 +104,16 @@ public partial class App : System.Windows.Application
             _notchWindow = new NotchWindow { DebugLog = message => _runtime.Log.Info(message) };
             _traceWindow = new TraceOverlayWindow();
 
+            // None of Metis's own surfaces belong in a screenshot — least of all
+            // the chat, which is open for the whole of a turn and was being sent
+            // to the model inside the very picture it was being asked about.
+            _companionWindow.KeepOutOfScreenCaptures(_runtime.Log);
+            _preferencesWindow.KeepOutOfScreenCaptures(_runtime.Log);
+            _onboardingWindow.KeepOutOfScreenCaptures(_runtime.Log);
+            _overlayWindow.KeepOutOfScreenCaptures(_runtime.Log);
+            _notchWindow.KeepOutOfScreenCaptures(_runtime.Log);
+            _traceWindow.KeepOutOfScreenCaptures(_runtime.Log);
+
             // The chat is part of the notch rather than a window of its own, so
             // it is wired here and never shown or hidden as a separate thing.
             _notchWindow.Chat.Attach(_runtime);
@@ -352,6 +362,7 @@ public partial class App : System.Windows.Application
         if (_accountWindow is null)
         {
             _accountWindow = new AccountWindow(_runtime, new CredentialStoreSessionAccess());
+            _accountWindow.KeepOutOfScreenCaptures(_runtime.Log);
             _accountWindow.Closed += (_, _) => _accountWindow = null;
         }
 
@@ -621,6 +632,7 @@ public partial class App : System.Windows.Application
         try
         {
             var window = new WhatsNewWindow { Owner = null };
+            window.KeepOutOfScreenCaptures(_runtime.Log);
             window.Show();
             window.Activate();
         }

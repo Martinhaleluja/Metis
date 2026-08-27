@@ -252,9 +252,18 @@ public partial class OnboardingWindow : System.Windows.Window
     private void UpdateCaptureExplanation()
     {
         var local = LocalChoice.IsChecked == true;
+
+        // The second sentence is the one that matters and the one most
+        // assistants leave out. A picture of the whole desktop is not only the
+        // user's own information — it is whatever a colleague wrote, whatever a
+        // client sent — and consent to "a picture of my screen" is not consent
+        // to upload that. Saying so is the difference between a permission the
+        // user actually gave and one they were assumed to have given.
         CaptureExplanation.Text = local
             ? "When you ask a question, Metis takes a picture of your whole desktop — every monitor — and processes it on this PC. Nothing is sent anywhere. It doesn't watch continuously, and it doesn't record."
-            : $"When you ask a question, Metis takes a picture of your whole desktop — every monitor — and sends it to {SelectedProvider()} to answer. It doesn't watch continuously, and it doesn't record.";
+            : $"When you ask a question, Metis takes a picture of your whole desktop — every monitor — and sends it to {SelectedProvider()} to answer. That picture can include other people's messages and documents, so only turn this on for a screen you are comfortable sharing. It doesn't watch continuously, and it doesn't record."
+              + Environment.NewLine + Environment.NewLine
+              + "Apps that mark themselves private — banking apps, password managers, view-once photos in WhatsApp and Signal — are blacked out before anything is sent, password boxes are never read, and you can name other apps to hide in Settings.";
     }
 
     private void BrainChoice_OnChanged(object sender, RoutedEventArgs e)

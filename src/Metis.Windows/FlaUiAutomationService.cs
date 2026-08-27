@@ -82,21 +82,109 @@ public sealed class FlaUiAutomationService : IUiAutomationService, IDisposable
         CancellationToken cancellationToken = default) =>
         Task.Run(() => FindElement(query, cancellationToken), cancellationToken);
 
-    private static string? DescribeWindow(ScreenCapture capture, CancellationToken cancellationToken)
+    /// <summary>
+    /// Whether this element is a password box.
+    ///
+    /// Windows' accessibility layer marks these, and it is the only reliable
+    /// way to know: a password field looks like any other text box from the
+    /// outside, and its contents are exactly what must never be read, described
+    /// or sent anywhere.
+    /// </summary>
+    private static bool IsPasswordField(AutomationElement element)
     {
         try
         {
-            using var automation = new UIA3Automation();
+            // Asked only of controls that could hold typed text. Every property
+            // read here is a cross-process call into whichever application owns
+            // the window, and the snapshot walks up to a hundred and twenty
+            // elements — asking all of them cost well over a second and pushed
+            // the walk into its own time budget, which then truncated the list
+            // of controls Metis had to point with. A password box is an Edit
+            // everywhere Windows draws one; Custom and Document are allowed
+            // through because some frameworks report their fields that way.
+            var controlType = element.ControlType;
+            if (controlType is not (FlaUI.Core.Definitions.ControlType.Edit
+                or FlaUI.Core.Definitions.ControlType.Custom
+                or FlaUI.Core.Definitions.ControlType.Document))
+            {
+                return false;
+            }
+
+            return element.Properties.IsPassword.TryGetValue(out var isPassword) && isPassword;
+        }
+        catch
+        {
+            // An element that will not answer is treated as a password field
+            // rather than as an ordinary one. The cost of being wrong in this
+            // direction is a missing control name; in the other it is a
+            // password in a prompt.
+            return true;
+        }
+    }
+
+    /// <summary>
+    /// The password box the user is typing into, if there is one, as a region to
+    /// paint out of the screenshot.
+    ///
+    /// Only the focused field, and deliberately so. A password box that is not
+    /// focused is showing dots, which give nothing away; the one being typed
+    /// into is the one that may have been switched to plain text by a
+    /// "show password" control. One accessibility call, so it is cheap enough
+    /// to sit on the capture path.
+    /// </summary>
+    public ProtectedRegion? FindFocusedPasswordFieldRegion()
+    {
+        try
+        {
+            var focused = _automation.Value.FocusedElement();
+            if (focused is null || !IsPasswordField(focused))
+            {
+                return null;
+            }
+
+            var bounds = focused.BoundingRectangle;
+            if (bounds.Width <= 0 || bounds.Height <= 0)
+            {
+                return null;
+            }
+
+            return new ProtectedRegion(
+                (int)bounds.Left,
+                (int)bounds.Top,
+                (int)bounds.Width,
+                (int)bounds.Height,
+                ProtectedRegionReason.PasswordField);
+        }
+        catch
+        {
+            // Best effort. The accessibility tree is not always reachable, and
+            // a missing redaction here is covered by never reading the field's
+            // contents in the first place.
+            return null;
+        }
+    }
+
+    private string? DescribeWindow(ScreenCapture capture, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var automation = _automation.Value;
             var root = capture.WindowHandle == 0
                 ? automation.GetDesktop()
                 : automation.FromHandle(new nint(capture.WindowHandle));
             var queue = new Queue<AutomationElement>();
             var descriptors = new List<UiElementDescriptor>(MaximumSnapshotElements);
             queue.Enqueue(root);
+            var budget = Stopwatch.StartNew();
 
             while (queue.Count > 0 && descriptors.Count < MaximumSnapshotElements)
             {
                 cancellationToken.ThrowIfCancellationRequested();
+                if (budget.Elapsed > SnapshotBudget)
+                {
+                    break;
+                }
+
                 var element = queue.Dequeue();
                 AddDescriptor(element, capture, descriptors);
 
@@ -144,7 +232,7 @@ public sealed class FlaUiAutomationService : IUiAutomationService, IDisposable
     /// still contains it, then describes that element and the ancestors that
     /// give it meaning ("Bold" inside "Formatting toolbar").
     /// </summary>
-    private static string? DescribeElementAt(int screenX, int screenY, CancellationToken cancellationToken)
+    private string? DescribeElementAt(int screenX, int screenY, CancellationToken cancellationToken)
     {
         try
         {
@@ -155,7 +243,7 @@ public sealed class FlaUiAutomationService : IUiAutomationService, IDisposable
                 return null;
             }
 
-            using var automation = new UIA3Automation();
+            var automation = _automation.Value;
             var root = automation.FromHandle(window);
             var chain = FindElementChain(root, new System.Drawing.Point(screenX, screenY), cancellationToken);
             if (chain.Count == 0)
@@ -187,7 +275,7 @@ public sealed class FlaUiAutomationService : IUiAutomationService, IDisposable
     /// Walks the accessibility tree to discover and describe all visible elements
     /// situated within or intersecting the specified screen region/rectangle.
     /// </summary>
-    private static string? DescribeRegion(
+    private string? DescribeRegion(
         ScreenCapture capture,
         int screenLeft,
         int screenTop,
@@ -199,18 +287,24 @@ public sealed class FlaUiAutomationService : IUiAutomationService, IDisposable
         {
             cancellationToken.ThrowIfCancellationRequested();
             var targetRect = new System.Drawing.Rectangle(screenLeft, screenTop, Math.Max(1, screenWidth), Math.Max(1, screenHeight));
-            using var automation = new UIA3Automation();
+            var automation = _automation.Value;
             var root = capture.WindowHandle == 0
                 ? automation.GetDesktop()
                 : automation.FromHandle(new nint(capture.WindowHandle));
 
             var queue = new Queue<AutomationElement>();
             var elementsInRegion = new List<string>();
+            var budget = Stopwatch.StartNew();
             queue.Enqueue(root);
 
             while (queue.Count > 0 && elementsInRegion.Count < 30)
             {
                 cancellationToken.ThrowIfCancellationRequested();
+                if (budget.Elapsed > SnapshotBudget)
+                {
+                    break;
+                }
+
                 var element = queue.Dequeue();
 
                 try
@@ -221,9 +315,20 @@ public sealed class FlaUiAutomationService : IUiAutomationService, IDisposable
                         var elemRect = new System.Drawing.Rectangle((int)bounds.Left, (int)bounds.Top, (int)bounds.Width, (int)bounds.Height);
                         if (targetRect.IntersectsWith(elemRect))
                         {
+                            var controlType = element.ControlType.ToString();
+                            if (IsPasswordField(element))
+                            {
+                                var withheld = $"{controlType} (password field, contents withheld)";
+                                if (!elementsInRegion.Contains(withheld))
+                                {
+                                    elementsInRegion.Add(withheld);
+                                }
+
+                                continue;
+                            }
+
                             var name = element.Name?.Trim();
                             var automationId = element.AutomationId?.Trim();
-                            var controlType = element.ControlType.ToString();
 
                             if (!string.IsNullOrWhiteSpace(name) || !string.IsNullOrWhiteSpace(automationId))
                             {
@@ -281,7 +386,7 @@ public sealed class FlaUiAutomationService : IUiAutomationService, IDisposable
     /// its controls are, so when the model declines to give coordinates this
     /// still finds the thing the user asked about — and finds it precisely.
     /// </summary>
-    private static UiElementHit? FindElement(string query, CancellationToken cancellationToken)
+    private UiElementHit? FindElement(string query, CancellationToken cancellationToken)
     {
         var terms = query
             .ToLowerInvariant()
@@ -297,7 +402,7 @@ public sealed class FlaUiAutomationService : IUiAutomationService, IDisposable
         try
         {
             cancellationToken.ThrowIfCancellationRequested();
-            using var automation = new UIA3Automation();
+            var automation = _automation.Value;
 
             // Search the window the user is actually in. Falling back to the
             // whole desktop would match controls in Metis's own windows or in
@@ -448,8 +553,13 @@ public sealed class FlaUiAutomationService : IUiAutomationService, IDisposable
     {
         try
         {
-            var name = Shorten(element.Name?.Trim(), 90);
             var controlType = element.ControlType.ToString();
+            if (IsPasswordField(element))
+            {
+                return $"{controlType} (password field, contents withheld)";
+            }
+
+            var name = Shorten(element.Name?.Trim(), 90);
             var automationId = Shorten(element.AutomationId?.Trim(), 90);
             if (string.IsNullOrWhiteSpace(name) && string.IsNullOrWhiteSpace(automationId))
             {
@@ -513,6 +623,36 @@ public sealed class FlaUiAutomationService : IUiAutomationService, IDisposable
         return chain;
     }
 
+    /// <summary>
+    /// Records that a password box is at this spot, and nothing about it.
+    /// Metis can still point at it; it cannot describe it.
+    /// </summary>
+    private static void AddPasswordPlaceholder(
+        AutomationElement element,
+        ScreenCapture capture,
+        ICollection<UiElementDescriptor> descriptors)
+    {
+        try
+        {
+            var bounds = element.BoundingRectangle;
+            var sourceWidth = Math.Max(1, capture.SourceWidth > 0 ? capture.SourceWidth : capture.Width);
+            var sourceHeight = Math.Max(1, capture.SourceHeight > 0 ? capture.SourceHeight : capture.Height);
+            var centerX = bounds.Left + (bounds.Width / 2d);
+            var centerY = bounds.Top + (bounds.Height / 2d);
+            descriptors.Add(new UiElementDescriptor(
+                null,
+                "password field (contents withheld)",
+                element.ControlType.ToString(),
+                Math.Clamp((int)Math.Round((centerX - capture.ScreenLeft) / sourceWidth * 1000d), 0, 1000),
+                Math.Clamp((int)Math.Round((centerY - capture.ScreenTop) / sourceHeight * 1000d), 0, 1000),
+                element.IsEnabled));
+        }
+        catch
+        {
+            // If it cannot even be measured, leaving it out entirely is right.
+        }
+    }
+
     private static void AddDescriptor(
         AutomationElement element,
         ScreenCapture capture,
@@ -522,6 +662,16 @@ public sealed class FlaUiAutomationService : IUiAutomationService, IDisposable
         {
             if (element.Properties.ProcessId.ValueOrDefault == Environment.ProcessId)
             {
+                return;
+            }
+
+            // A password box is reported as being there and nothing else. The
+            // model needs to know a login field exists so it can point at it;
+            // it must never learn the automation id, the label, or anything
+            // else that could carry what was typed.
+            if (IsPasswordField(element))
+            {
+                AddPasswordPlaceholder(element, capture, descriptors);
                 return;
             }
 

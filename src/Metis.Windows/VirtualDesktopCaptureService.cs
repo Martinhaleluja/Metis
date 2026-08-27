@@ -42,6 +42,7 @@ public sealed class VirtualDesktopCaptureService : IScreenCaptureService
     private const string CaptureMimeType = "image/jpeg";
     private volatile bool _compactLocalProfile;
     private readonly Func<Rectangle> _readVirtualScreenBounds;
+    private readonly Func<IReadOnlyList<ProtectedRegion>> _readProtectedRegions;
 
     /// <summary>
     /// Creates a capture service reading the live virtual desktop bounds.
@@ -53,11 +54,43 @@ public sealed class VirtualDesktopCaptureService : IScreenCaptureService
     /// awareness, so code that reads it once to predict a capture and again
     /// inside the capture can legitimately get two different desktops.
     /// </param>
-    public VirtualDesktopCaptureService(Func<Rectangle>? readVirtualScreenBounds = null) =>
+    public VirtualDesktopCaptureService(
+        Func<Rectangle>? readVirtualScreenBounds = null,
+        Func<IReadOnlyList<ProtectedRegion>>? readProtectedRegions = null)
+    {
         _readVirtualScreenBounds = readVirtualScreenBounds ??
                                    (static () => System.Windows.Forms.SystemInformation.VirtualScreen);
+        _readProtectedRegions = readProtectedRegions ?? DefaultProtectedRegions;
+    }
 
     public void UseCompactLocalProfile(bool enabled) => _compactLocalProfile = enabled;
+
+    /// <summary>
+    /// The applications the user has told Metis never to look at. Read on every
+    /// capture rather than held, so a change in Settings takes effect on the
+    /// next question rather than the next restart.
+    /// </summary>
+    public IReadOnlyCollection<string> ExcludedApplications { get; set; } = [];
+
+    /// <summary>
+    /// The password box the user is typing into, if anything can tell us. Set by
+    /// the runtime once the accessibility service exists, because a password
+    /// field is the one protected region Windows does not mark for us.
+    /// </summary>
+    public Func<ProtectedRegion?>? ReadFocusedPasswordField { get; set; }
+
+    private IReadOnlyList<ProtectedRegion> DefaultProtectedRegions()
+    {
+        var regions = new List<ProtectedRegion>(
+            CaptureGuard.FindProtectedRegions(ExcludedApplications, out _));
+
+        if (ReadFocusedPasswordField?.Invoke() is { } focusedPassword)
+        {
+            regions.Add(focusedPassword);
+        }
+
+        return regions;
+    }
 
     public Task<ScreenCapture?> CaptureActiveWindowAsync(CancellationToken cancellationToken = default) =>
         CaptureActiveWindowAsync(ScreenCaptureDetail.Full, cancellationToken);
@@ -109,6 +142,13 @@ public sealed class VirtualDesktopCaptureService : IScreenCaptureService
             // secure desktop prompt, or in a headless test environment.
         }
 
+        // Painted out here, on the full-resolution frame, before anything is
+        // scaled or encoded. Doing it at this point means the protected pixels
+        // never exist in a buffer that goes on to be uploaded — the redaction is
+        // not a filter applied to a finished image, it is a hole in the only
+        // copy that is ever made.
+        var withheld = ScreenRedaction.Apply(desktop, bounds, _readProtectedRegions());
+
         cancellationToken.ThrowIfCancellationRequested();
         var (maximumWidth, maximumHeight, jpegQuality) = (_compactLocalProfile, detail) switch
         {
@@ -146,7 +186,8 @@ public sealed class VirtualDesktopCaptureService : IScreenCaptureService
             bounds.Height,
             0,
             "Virtual desktop (all monitors)",
-            CaptureMimeType);
+            CaptureMimeType,
+            withheld);
     }
 
     private static void SaveJpeg(Image image, Stream stream, long jpegQuality)

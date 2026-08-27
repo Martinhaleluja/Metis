@@ -58,9 +58,34 @@ public sealed record GeminiRequest(
     /// <summary>
     /// The user's configured preferred display name.
     /// </summary>
-    string? UserName = null);
+    string? UserName = null,
 
-public sealed record GeminiResponse(string Text, string Model, AssistantPlan? Plan = null);
+    /// <summary>
+    /// How many parts of the screenshot were painted out before it was sent,
+    /// because the application or the user marked them private.
+    ///
+    /// The model has to be told. A black rectangle it was not warned about is
+    /// something it will describe as though it were really there — a dark
+    /// panel, a video, an empty pane — and a confident wrong answer about
+    /// withheld content is worse than no answer at all.
+    /// </summary>
+    int WithheldScreenRegions = 0);
+
+/// <summary>
+/// What a turn cost the model, when it says.
+///
+/// <paramref name="ThoughtTokens"/> is the one worth watching: thinking
+/// produces no text, so every one of those tokens is time the user spends
+/// looking at an empty panel. It is the difference between a reply that starts
+/// arriving in a second and one that appears all at once six seconds later.
+/// </summary>
+public sealed record ModelUsageReport(int PromptTokens, int ThoughtTokens, int OutputTokens);
+
+public sealed record GeminiResponse(
+    string Text,
+    string Model,
+    AssistantPlan? Plan = null,
+    ModelUsageReport? Usage = null);
 
 public sealed record OpenAiResponse(
     string Text,

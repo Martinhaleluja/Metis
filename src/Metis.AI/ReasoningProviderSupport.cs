@@ -33,6 +33,7 @@ internal static class ReasoningProviderSupport
 
         When a voice recording is attached, put the user's words verbatim in heard_text, exactly as spoken and with nothing added, removed, or rephrased. Metis reads it to work out what was asked of it, so a paraphrase changes what it believes it was told. Leave heard_text null when the request arrived as text.
         screen_observed must be true only when a screenshot is attached and your answer is grounded in that screenshot. Otherwise it must be false.
+        When withheld_regions is present, parts of the screenshot were painted black before it was sent, because the application or the user marked that content private. A black rectangle is not something you saw; it is something you were not permitted to see. Never describe, guess at, or infer what is behind one. Say plainly that the content is hidden from you, answer about the rest of the screen, and never place a mark inside a black region.
         Keep spoken_text to one or two concise sentences unless the user explicitly requests detail. bubble_cue is normally null. Use a short 2-4 word cue such as "Press here" only when visual guidance is useful. Do not copy the full spoken answer into it.
         Answer a question about the screen with a sentence and a mark on it. Answer "how do I..." with a walkthrough in steps. Never predict controls or coordinates for a screen that is not visible in the attached screenshot.
         If no screenshot is attached, do not give coordinates for anything. Be conservative when coordinates are uncertain: a mark in roughly the right place with an element name attached is corrected against the real screen, whereas a confident wrong coordinate is not.
@@ -257,6 +258,12 @@ internal static class ReasoningProviderSupport
             if (request.ScreenshotWidth > 0 && request.ScreenshotHeight > 0)
             {
                 prompt += $"\nscreen_capture_encoded_dimensions: {request.ScreenshotWidth}x{request.ScreenshotHeight}";
+            }
+
+            if (request.WithheldScreenRegions > 0)
+            {
+                prompt += $"\nwithheld_regions: {request.WithheldScreenRegions} " +
+                          "(painted black; content the application or the user marked private)";
             }
 
             if (request.ScreenshotSourceWidth > 0 && request.ScreenshotSourceHeight > 0)

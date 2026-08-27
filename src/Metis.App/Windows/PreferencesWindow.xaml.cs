@@ -243,6 +243,7 @@ public partial class PreferencesWindow : System.Windows.Window
             CursorDistanceValue.Text = s.CursorDistance.ToString(CultureInfo.InvariantCulture);
 
             CaptureScreenCheck.IsChecked = s.CaptureActiveWindow;
+            ExcludedAppsBox.Text = s.ExcludedApplications;
             MemoryEnabledCheck.IsChecked = s.MemoryEnabled;
             ChatMemoryCheck.IsChecked = s.ChatMemoryEnabled;
 
@@ -803,6 +804,7 @@ public partial class PreferencesWindow : System.Windows.Window
             CursorDistance = (int)CursorDistanceSlider.Value,
 
             CaptureActiveWindow = CaptureScreenCheck.IsChecked == true,
+            ExcludedApplications = ExcludedAppsBox.Text.Trim(),
             MemoryEnabled = MemoryEnabledCheck.IsChecked == true,
             ChatMemoryEnabled = ChatMemoryCheck.IsChecked == true,
 
@@ -1153,4 +1155,5 @@ public partial class PreferencesWindow : System.Windows.Window
             DragMove();
         }
     }
+
 }
