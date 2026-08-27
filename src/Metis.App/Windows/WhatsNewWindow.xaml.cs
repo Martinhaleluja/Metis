@@ -33,7 +33,7 @@ public partial class WhatsNewWindow : Window
     /// editing one without the other is obvious. The check against the running
     /// build uses <see cref="AppVersion.Current"/>.
     /// </summary>
-    public const string Version = "3.14.0";
+    public const string Version = "3.15.0";
 
     private sealed record Change(string Icon, string Title, string Detail);
 
@@ -44,38 +44,29 @@ public partial class WhatsNewWindow : Window
     /// </summary>
     private static readonly IReadOnlyList<Change> Changes =
     [
-        new("🌓", "Light mode reaches the notch",
-            "The notch and the chat inside it stayed black when the rest of Metis went light, and any text on them that took its colour from the theme turned black too and disappeared. Both now follow whichever theme you have chosen, and switching theme changes them while they are open."),
+        new("⚡", "Answers appear as they are written",
+            "Metis used to compose its whole reply before showing you any of it, so an ordinary question meant staring at an empty panel for ten to fifteen seconds. The words now arrive as it writes them — usually within a second or two."),
 
-        new("\U0001F916", "Just ask for an agent",
-            "Telling Metis to start an agent now actually starts one, however you phrase it — \"have an agent tidy my downloads\", or \"spawn one\" and answering when it asks what for. Ask for two and you get two. Before this it usually described the agent instead of running it."),
+        new("🗨", "Ask the next question straight away",
+            "Metis held on to the microphone until it had finished speaking, so for eight to ten seconds after the answer was already on your screen it refused to listen. It is ready as soon as the answer appears, and asking something new interrupts it mid-sentence, the way it should."),
 
-        new("\U0001F6E0", "Agents can build things",
-            "They can search inside files, edit part of a file instead of rewriting the whole thing, and start a dev server and check whether it actually works. That last one was impossible before — nothing an agent started could outlive the command that started it."),
+        new("⏱", "It no longer waits for no reason",
+            "Three separate places waited for the length of a spoken line twice over, which doubled every pause in a walkthrough. A written answer with the voice turned off was also revealed one word at a time at a fixed speed — a paragraph could take fourteen seconds to finish appearing, long after Metis had it in full. Both are gone."),
 
-        new("\U0001F4C1", "Each agent works in its own folder",
-            "An agent is confined to its own workspace unless you point it at one of your folders when you start it. Previously they could read and write anywhere in your user profile."),
+        new("🖼", "A lighter look at your screen",
+            "The screenshot sent with each question was full size, which cost time to upload and more time for the model to read. Ordinary questions now use a smaller frame, while pointing at a specific control still gets every pixel. Reading the screen and taking the picture also happen at the same time instead of one after the other."),
 
-        new("\U0001F310", "A browser you can watch",
-            "Agents can drive a real Chrome window — visible, with a banner across the top saying an agent is working there. You can switch away and carry on with your own work while it runs."),
+        new("🧠", "Less deliberating, more answering",
+            "Metis never told the model how hard to think, so it thought as long as it liked before writing anything — invisibly, while you waited. It now asks for a quick answer to a quick question, and still takes its time when it is drawing a lesson."),
 
-        new("\U0001F510", "It hands the browser back for anything sensitive",
-            "At a login, a sign-up, a payment page, or a \"are you human\" check, the agent stops and gives the browser to you. It will not type a password or card number, and it does not try to get around those checks."),
+        new("❌", "Failures fail fast",
+            "A rejected request used to be sent again to every other provider in turn, each with its own minute-long timeout, so a problem that could never succeed took over a minute to report. Metis now recognises that case and says so in seconds. Connecting has its own short timeout too, so an unreachable service no longer costs the whole request."),
 
-        new("\U0001F514", "Notifications actually appear",
-            "Agent notifications had never worked: Windows was dropping every one, and the failure was invisible. They arrive now, and carry Approve and Deny buttons so you can answer an agent without finding the window."),
+        new("🤖", "Agents remember their own history",
+            "A background agent re-sent everything it had done on every single step, so a thirty-step task read its own history thirty times over. It now carries the conversation forward properly and reuses what it has already read, which makes long tasks noticeably quicker and much cheaper. They also default to a current model instead of one from early last year."),
 
-        new("\U0001F4CB", "The agent panel shows what happened",
-            "Files an agent produced are listed and open when clicked — there was no way to reach them before. An approval now names the tool and its arguments instead of asking you to allow something unspecified. Plus how long it took, where it worked, and a way to clear finished tasks."),
-
-        new("\U0001F5E3", "Voice works again",
-            "Speech had been pointed at a model that cannot produce audio and no longer exists, so it failed silently every time. Fixed, and your saved setting is corrected automatically."),
-
-        new("\U0001F393", "Walkthroughs notice whether you kept up",
-            "A lesson now checks the screen between steps and points something out again if it hasn't happened, rather than marching ahead. It never blocks — anything it cannot read from the screen carries on as before."),
-
-        new("\U0001F50D", "It looks twice instead of guessing",
-            "When Metis cannot confirm what you are asking about, it now goes and finds the control through Windows itself, and says it cannot see the thing rather than marking a confident wrong spot.")
+        new("📊", "It records how long it took",
+            "Every turn now writes a line to the log saying where the time went — capturing, reading the screen, waiting for the first word, and the total. If Metis feels slow for you, that log now says why.")
     ];
 
     public WhatsNewWindow()

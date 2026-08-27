@@ -1,0 +1,25 @@
+name: Feature request
+description: Suggest something Metis should do
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What are you trying to do?
+      description: The situation, rather than the feature. What is hard right now?
+    validations:
+      required: true
+
+  - type: textarea
+    id: idea
+    attributes:
+      label: What would help
+      description: If you have something specific in mind, describe it here.
+
+  - type: checkboxes
+    id: scope
+    attributes:
+      label: Please confirm
+      options:
+        - label: This does not ask Metis to click, type, or operate the computer for the user. Metis teaches; it deliberately cannot do that.
+          required: true

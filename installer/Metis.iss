@@ -42,6 +42,10 @@ UninstallDisplayIcon={app}\{#AppExeName}
 ; sends it to a cloud provider by default, so that is disclosed before anything
 ; is written to disk rather than only inside the app's own first-run wizard.
 InfoBeforeFile=Info.txt
+; The licence has to be accepted before anything is installed. A licence that
+; only sits in the repository is a document; one the installer makes you agree
+; to is the agreement.
+LicenseFile=..\LICENSE
 AppComments=An AI companion for learning the digital world by doing
 WizardImageAlphaFormat=defined
 Compression=lzma2/ultra64
@@ -69,6 +73,12 @@ Name: "desktopicon"; Description: "Create a desktop shortcut"; GroupDescription:
 
 [Files]
 Source: "{#PublishDir}\*"; DestDir: "{app}"; Excludes: "*.pdb"; Flags: ignoreversion recursesubdirs createallsubdirs
+; Reproducing these notices is a condition of the MIT and Apache-2.0 licences
+; Metis's dependencies are under, so they ship with the application rather than
+; living only in the repository.
+Source: "..\LICENSE"; DestDir: "{app}"; DestName: "LICENSE.txt"; Flags: ignoreversion
+Source: "..\THIRD-PARTY-NOTICES.md"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\PRIVACY.md"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
 Name: "{autoprograms}\{#AppName}"; Filename: "{app}\{#AppExeName}"; WorkingDir: "{app}"; Comment: "Learn the digital world by doing — Metis teaches while you work"; IconFilename: "{app}\{#AppExeName}"

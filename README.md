@@ -1,36 +1,120 @@
 # Metis
 
-An AI companion for your computer.
+**A teacher for your computer.** Ask Metis what is on your screen, or how to do
+something, and it explains while marking the screen where to look — then you do
+it yourself.
 
-Metis is a Windows-native desktop companion rebuilt with C# and .NET 8/WPF.
+Metis is a Windows desktop assistant built with C# and .NET 8. It lives in a
+notch at the top of your screen, reads the screen when you ask it to, and
+answers in text, in speech, and by drawing on what you are looking at.
 
-Metis lives in the tray, optionally displays a top notch bar for quick chat and authentication, follows the cursor as a vector companion, records while `Ctrl+Shift+1` is held, captures the complete virtual desktop, and sends the request to the selected reasoning provider. For screen-aware requests, the provider can return a small structured desktop plan that moves Metis independently and performs visual guidance.
+> **Source-available, not open source.** The code is public so you can read what
+> an application that photographs your screen actually does. It is licensed
+> under a proprietary end-user agreement — see [LICENSE](LICENSE).
 
-Reasoning, transcription, and spoken output are selected independently:
+---
 
-- **Gemini** keeps the free-first Google AI Studio flow.
-- **OpenAI** uses the OpenAI Platform Responses, transcription, and speech APIs. OpenAI API billing is separate from ChatGPT Plus.
-- **Claude** uses Anthropic's Messages API for reasoning and screen understanding.
-- **OpenClaw** connects to a self-hosted OpenClaw Gateway and uses it as Metis's agent/orchestration layer.
-- **Ollama** runs an installed local model through Ollama's native API.
-- **Automatic** tries configured cloud providers in the order Gemini, OpenAI, then Claude.
-- **AssemblyAI** is an optional speech-to-text provider for voice requests.
-- **ElevenLabs** is an optional text-to-speech provider for Metis's voice.
+## What it does
 
-## Features & UI
+**It teaches, it does not take over.** Metis cannot click, type, move your
+pointer or open anything. Ask "how do I change my default browser" and it walks
+you through it a step at a time, drawing on each control as you reach it, while
+you do the clicking. That is a structural property, not a setting: there is no
+mode that operates the computer for you. Metis had one once, and it was removed,
+because a tool that does the task for you cannot also be the thing that teaches
+you to do it.
 
-- **Top Notch Interface**: Access quick chat and authentication gating directly from the top notch bar on your screen.
-- **Visual Desktop Guidance**: Metis draws temporary click-through highlights, arrows, and step indicators over real UI controls.
-- **Cursor Inspector**: Hold shortcuts to inspect UI elements directly under your mouse pointer.
-- **Privacy & Safety First**: Metis never takes over your computer or clicks high-impact controls (payments, credentials, deletion). Emergency stop (`F12`) instantly halts active plans.
+**It answers about what is in front of you.** Hold `Ctrl+Alt` and ask about the
+screen; hold `Ctrl+Alt+Shift` and point at one control to ask about that exact
+thing. It reads the real names of controls from Windows rather than guessing
+from pixels, so when it says "the Save button" it means the one actually called
+that.
 
-## Development
+**It remembers what you have learned.** Per application, so its guidance gets
+shorter as you get better at something.
 
-Requirements:
+**It can also run background tasks.** Separately from the teaching assistant,
+Metis can start an autonomous agent that *does* create and edit files, run
+commands and drive a visible browser window. This is opt-in, it runs in its own
+folder unless you grant access to yours, it pauses for approval before anything
+destructive, and it is refused access to credential stores outright. It is a
+different thing from the assistant, and it is documented as such because the
+distinction matters.
 
-- Windows 10 19041 or newer
-- .NET 8 SDK
-- At least one configured reasoning provider; OpenClaw and Ollama can run locally without a cloud API key
+---
+
+## Privacy, in one paragraph
+
+Metis photographs your **whole desktop** and sends it to an AI provider **you**
+choose and pay for with **your own key** — there is no Metis server in the
+middle. It captures only when you ask, never in between. Content an application
+marks as private (banking apps, password managers, view-once photos in WhatsApp
+and Signal) is blacked out before anything is sent, password boxes are never
+read, and you can name other apps to hide. Chats and memory are encrypted on
+your machine; keys live in Windows Credential Manager. Point it at a local model
+through Ollama and nothing leaves the machine at all.
+
+The full detail is in **[PRIVACY.md](PRIVACY.md)**, including what each provider
+receives and how to delete everything.
+
+---
+
+## Install
+
+Download the latest `Metis-Setup-*.exe` from
+[Releases](https://github.com/Martinhaleluja/Metis/releases) and run it.
+
+It installs per-user under `%LOCALAPPDATA%\Programs\Metis`, so it needs no
+administrator rights. The installer is not code-signed yet, so Windows
+SmartScreen will warn about it — **verify the SHA-256 published in the release
+notes** against your download before running it:
+
+```powershell
+Get-FileHash .\Metis-Setup-3.15.0-win-x64.exe -Algorithm SHA256
+```
+
+Metis checks for updates itself and verifies that checksum before installing
+one.
+
+---
+
+## Providers
+
+Metis needs one AI provider. You supply the key; the account is yours.
+
+| Provider | Reasoning | Voice in | Voice out | Notes |
+|---|---|---|---|---|
+| **Gemini** | ✅ | ✅ | ✅ | Free tier available; the default |
+| **Claude** | ✅ | — | — | Pair with AssemblyAI for voice input |
+| **OpenAI** | ✅ | ✅ | ✅ | API billing is separate from ChatGPT Plus |
+| **OpenRouter** | ✅ | — | — | Many models behind one key, including free ones |
+| **Ollama** | ✅ | — | — | Local. Needs a vision-capable model |
+| **OpenClaw** | ✅ | — | — | Self-hosted gateway |
+| **Automatic** | ✅ | ✅ | ✅ | Gemini, then OpenAI, then Claude |
+
+Optional: **AssemblyAI** or **Whisper.cpp** for speech-to-text, **ElevenLabs**
+or **Piper** for speech. Piper and Whisper.cpp are offline.
+
+Every provider has a **Test** button in Setup that makes a real request and
+reports exactly what went wrong if it fails.
+
+---
+
+## Shortcuts
+
+| Keys | What it does |
+|---|---|
+| `Ctrl+Alt` (hold) | Ask about what is on screen |
+| `Ctrl+Alt+Shift` (hold) | Point at one control and ask about it |
+| `Ctrl+Shift+1` (hold) | Push to talk |
+| `Ctrl+Shift+A` (hold) | Start a background agent by voice |
+| `Esc` | Close the chat |
+
+---
+
+## Building it
+
+Requires Windows 10 build 19041 or newer and the .NET 8 SDK.
 
 ```powershell
 dotnet restore Metis.sln
@@ -39,65 +123,37 @@ dotnet test Metis.sln -c Debug
 dotnet run --project src/Metis.App/Metis.App.csproj
 ```
 
-For a Windows build that does not require .NET to be installed on the target PC:
+A self-contained build, written to `artifacts\win-x64`:
 
 ```powershell
 .\scripts\build.ps1 -Configuration Release -Publish
 ```
 
-The self-contained `Metis.exe` is written to `artifacts\win-x64`.
+The installer, which also prints the SHA-256 to put in the release notes:
 
-API keys are stored as separate entries in Windows Credential Manager. Settings and diagnostic logs live under `%LOCALAPPDATA%\Metis`; secret values are never written to settings or logs.
+```powershell
+.\installer\build-installer.ps1
+```
 
-## Provider setup
+### Layout
 
-- Select **Claude**, save an Anthropic API key, and use **Test**. The default model is `claude-sonnet-5`; the model field remains editable.
-- Select **OpenClaw**, enter the Gateway address (default `http://127.0.0.1:18789`), and optionally save its bearer token. Metis accepts plain HTTP only for a loopback address; remote gateways must use HTTPS.
-- Select **Ollama**, enter the Ollama address (default `http://127.0.0.1:11434`) and the exact name of a model already installed with Ollama. A vision-capable model is required for screenshot understanding.
-- Under **Speech to text**, choose **AssemblyAI** and save its key when Claude, OpenClaw, or Ollama should handle push-to-talk requests. Gemini and OpenAI can keep using their native recording path.
-- Under **Text to speech**, choose **ElevenLabs**, save its key, enter a model and voice ID, then select **Test**. Metis verifies the account, loads available voices, and fills the first voice ID when the field is empty.
-- For an offline voice, choose **Piper**. Metis expects the standalone Piper binary at `tools\piper-standalone\piper\piper.exe` rather than a Python virtualenv, since a venv breaks as soon as its interpreter or its original folder moves. Download `piper_windows_amd64.zip` from the Piper releases page and extract it there.
+| Project | What lives there |
+|---|---|
+| `Metis.App` | WPF shell, the notch, the companion, the turn orchestrator |
+| `Metis.AI` | Provider clients and the reply parser |
+| `Metis.Core` | Models, contracts, the teaching policy, the agent loop |
+| `Metis.Data` | Settings, chats, memory, the diagnostic log |
+| `Metis.Windows` | Capture, UI Automation, audio, hotkeys |
+| `Metis.Api` | An HTTP gateway, currently unused by the desktop app |
 
-The provider Test buttons make live requests and display authentication, model, quota, endpoint, network, and service errors directly in Setup.
+---
 
-## OpenAI setup
+## Security
 
-1. Create an API key at `https://platform.openai.com/api-keys`.
-2. Enable API billing separately from ChatGPT Plus and set the spending controls you want.
-3. Open Metis Setup, paste the key into **OpenAI Platform API key**, and choose **Test**.
-4. Select **OpenAI** to use it directly or **Automatic** to keep Gemini as the primary provider.
+Report a vulnerability privately — see **[SECURITY.md](SECURITY.md)**, which
+also lists Metis's known limitations honestly.
 
-The defaults use `gpt-5-mini` for reasoning and screenshots, `gpt-4o-mini-transcribe` for push-to-talk transcription, and `tts-1` for spoken responses. Every field is editable so models can be changed without rebuilding Metis.
+## Licence
 
-## How Metis helps
-
-Metis is a learning instrument. You do the work; it teaches while you do it — explaining what to do and why, pointing at the control, drawing over the screen to show you where to look. It never clicks, types, or moves the pointer for you, and there is no setting that lets it.
-
-That is the whole design rather than one option among several. Metis had modes once, up to and including one that operated the computer on your behalf; they were removed, because a tool that does the task for you cannot also be the thing that teaches you to do it.
-
-Metis remembers what you have already learned, per application, and shortens its guidance as your skill level rises. Memory is structured data at `%LOCALAPPDATA%\Metis\memory.json`, holds no screen content, and can be erased with **Clear memory** in Setup.
-
-## Desktop assistance & Shortcuts
-
-- **Hold `Ctrl+Shift+1`**: Start push-to-talk recording while another app is active, ask Metis to point to or explain a visible control, then release to send.
-- **Hold `Ctrl+Alt`**: Ask about what you currently see on screen.
-- **Hold `Ctrl+Alt+Shift`**: Point at a specific control to ask about that exact element ("what does this do?", "why is this red?"). Metis resolves "this" from the UI element under your pointer rather than the entire window.
-- **Press `F12`**: Emergency Stop. Immediately cancels active guidance, clears queued actions, and stops current requests.
-- When visual guidance is enabled, Metis draws a temporary click-through highlight, arrow, and numbered step over the real control. The marks expire on their own and never alter the application underneath.
-- A short pop plays when the microphone opens and a woosh when the request is sent, so you know Metis heard you without looking away from your work. Both are synthesised in code, and the woosh only fires once a recording is long enough to be real.
-- To use your own sounds, drop WAV or MP3 files into the `sound effects` folder beside the executable and name them after the moment they mark: `app started`, `audio recording started`, `inspect keys pressed`, `inspect keys released`, `request sent`, `task complete`, `saved settings`, `stop metis`, and `error`. Numbered variants such as `error 1` and `error 2` are picked at random without repeating the previous one. Matching is by keyword, so case, numbering, and separators do not matter. Files must be under 6 seconds; anything missing falls back to a built-in cue or stays silent.
-- Errors are also spoken aloud, shortened to one sentence, using the offline Piper voice. That is deliberate: the failures most worth hearing are the ones where the cloud provider is unreachable or out of quota, and a cloud voice would fail for the same reason.
-- Metis captures the complete virtual desktop across every monitor, preserves its original bounds, and sends a compact JPEG to the selected vision model.
-- The inference side returns bounded structured JSON. All actions are written to a bounded `Channel<T>` immediately and a single action worker executes them in order, independently from provider and speech latency.
-- Every action must contain normalized `x` and `y` coordinates relative to the whole virtual desktop. FlaUI UIA3 first invokes the control under Metis; unsupported controls receive background window messages.
-- Metis can move independently, request background hover, left-click, double-click, right-click, and wait without moving the physical Windows pointer. Each response is limited to six actions.
-- Normal spoken replies animate the companion instead of showing the full answer. A short white cue such as **Press here** appears only when visual guidance is useful.
-- During a screen action, Metis temporarily detaches from the mouse pointer, glides to the target control, and places the cue on the side with available screen space. Five seconds after the completed action, the cue closes and Metis smoothly returns to normal cursor-following mode.
-- Each planned step gets its own small vector worker shape. Green means the step completed; red means it failed.
-- Companion error colors distinguish general, connection, authentication, quota, and Windows automation failures.
-- Metis does not automatically click purchases, deletion, sending/submission, credentials, security, privacy, permission, administrator, or similar high-impact controls. It can point to those controls and leaves the final click to the user.
-- Press **F12** at any time for the emergency stop. The low-level keyboard hook cancels the active action, drains the queued actions, and stops the current request. A new explicit voice request starts a fresh automation session.
-
-Desktop actions require **Capture the entire desktop when I ask** to be enabled. Screen-aware typed prompts and push-to-talk requests both receive current desktop context.
-
-Coordinates are normalized to the whole captured virtual desktop rather than the primary monitor. This preserves accuracy on secondary monitors, mixed-DPI desktops, and monitors with negative Windows coordinates. Some applications do not support cursorless UI Automation or background mouse messages; Metis reports that limitation instead of taking control of the real pointer. Metis does not attempt to bypass protected applications, elevated windows, anti-cheat systems, or game input protections.
+Proprietary. See [LICENSE](LICENSE). Third-party components and their licences
+are listed in [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).

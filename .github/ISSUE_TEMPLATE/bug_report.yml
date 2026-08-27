@@ -1,0 +1,48 @@
+name: Bug report
+description: Something in Metis does not work
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **If this is a security problem, do not file it here.**
+        Report it privately: https://github.com/Martinhaleluja/Metis/security/advisories/new
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What did you do, and what did Metis do instead of what you expected?
+    validations:
+      required: true
+
+  - type: textarea
+    id: log
+    attributes:
+      label: Relevant lines from the log
+      description: |
+        `%LOCALAPPDATA%\Metis\logs\metis.log`. Metis strips API keys from it, but
+        it does record window titles — read what you paste before you paste it.
+      render: text
+
+  - type: input
+    id: version
+    attributes:
+      label: Metis version
+      placeholder: "3.15.0 — shown in Settings"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: provider
+    attributes:
+      label: Provider
+      options: [Gemini, Claude, OpenAI, OpenRouter, Ollama, OpenClaw, Automatic]
+    validations:
+      required: true
+
+  - type: input
+    id: windows
+    attributes:
+      label: Windows version
+      placeholder: "winver — e.g. 11 24H2 build 26100"

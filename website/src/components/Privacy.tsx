@@ -10,12 +10,16 @@ const facts = [
     body: "Metis captures the desktop for the turn you asked about. It is not watching between requests.",
   },
   {
+    heading: "Private windows are blacked out before anything is sent",
+    body: "Banking apps, password managers and view-once photos in WhatsApp and Signal mark themselves as not-for-capture, and Metis paints them out of the screenshot before it is encoded. Password boxes are never read, and you can name other apps to hide.",
+  },
+  {
     heading: "It can run with no cloud at all",
     body: "Point it at a vision-capable model running locally through Ollama and the whole loop stays on your machine.",
   },
   {
     heading: "It teaches — it never controls",
-    body: "Metis draws arrows and highlights on your screen, but it cannot click, type, or move your mouse. The teaching policy is structural, not just a prompt instruction.",
+    body: "Metis draws arrows and highlights on your screen, but it cannot click, type, or move your mouse. The teaching policy is structural, not just a prompt instruction. Background agents are a separate, opt-in feature that does run tasks for you — confined to their own folder, and stopped for approval before anything destructive.",
   },
 ];
 
