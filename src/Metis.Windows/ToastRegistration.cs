@@ -1,4 +1,4 @@
-using System.IO;
+﻿using System.IO;
 using System.Runtime.InteropServices;
 using System.Runtime.InteropServices.ComTypes;
 
@@ -29,6 +29,16 @@ public static class ToastRegistration
     /// The identity Windows knows Metis by. Must match what the process sets
     /// and what is written onto the shortcut — if the two ever disagree, toasts
     /// stop appearing again with no error.
+    ///
+    /// This is the one place the original author's name survives, and it stays
+    /// deliberately. It is not shown anywhere: Windows lists the app by the
+    /// shortcut's name, not by this string. Changing it was tried and measured,
+    /// and it silently disabled notifications — the toast platform answered
+    /// 0x80070490 (ERROR_NOT_FOUND) for the new identity on every launch and
+    /// never picked it up, because Windows only accepts an AppUserModelID it
+    /// has already indexed from the Start Menu. Renaming it therefore needs a
+    /// migration rather than an edit, and would cost every existing install its
+    /// notifications until the shell caught up.
     /// </summary>
     public const string AppUserModelId = "Martin Nakasole.Metis";
 

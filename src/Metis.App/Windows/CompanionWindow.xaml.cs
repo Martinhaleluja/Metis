@@ -727,11 +727,34 @@ public partial class CompanionWindow : Window
 
         // Paced per word rather than per character: words arriving together is
         // how speech lands, and it stays readable while it fills in.
-        var perWord = speechDuration is { TotalMilliseconds: > 0 } duration && _wordEnds.Count > 0
-            ? duration.TotalMilliseconds / _wordEnds.Count
-            : 240d;
-        _bubbleTimer.Interval = TimeSpan.FromMilliseconds(Math.Clamp(perWord, 90d, 520d));
+        //
+        // Only when there is speech to keep pace with. Without audio this used
+        // to fall back to a fixed 240ms per word, which meant a sixty-word
+        // answer that had already arrived in full took another fourteen seconds
+        // to finish appearing — the app deliberately withholding text it was
+        // holding. Silent replies now land at once.
+        if (speechDuration is not { TotalMilliseconds: > 0 } duration || _wordEnds.Count == 0)
+        {
+            RevealEverythingNow();
+            return;
+        }
+
+        _bubbleTimer.Interval = TimeSpan.FromMilliseconds(
+            Math.Clamp(duration.TotalMilliseconds / _wordEnds.Count, 90d, 520d));
         _bubbleTimer.Start();
+    }
+
+    /// <summary>
+    /// Shows the whole pending line immediately and starts its reading
+    /// countdown, as if the word-by-word reveal had just finished.
+    /// </summary>
+    private void RevealEverythingNow()
+    {
+        _bubbleTimer.Stop();
+        SpeechText.Text = _pendingSpeech;
+        _revealedWords = _wordEnds.Count;
+        _bubbleHideTimer.Stop();
+        _bubbleHideTimer.Start();
     }
 
     /// <summary>

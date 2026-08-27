@@ -195,9 +195,28 @@ public static class AssistantPlanParser
     /// unterminated string still yields everything written so far, which is
     /// exactly the case that matters when a reply was cut short mid-sentence.
     /// </summary>
-    private static bool TrySalvageSpokenText(string text, out string spoken)
+    private static bool TrySalvageSpokenText(string text, out string spoken) =>
+        TryReadSpokenTextPrefix(text, out spoken, out _);
+
+    /// <summary>
+    /// The same read, told whether the value it returned is finished.
+    ///
+    /// This is what lets a reply be shown while it is still arriving: the
+    /// answer streams in as a partial JSON object, and every fragment of it
+    /// yields the sentence so far. Two rules make the result safe to append to
+    /// the screen rather than merely to salvage from wreckage.
+    ///
+    /// The value only ever grows, so what has already been shown never has to
+    /// be taken back. And a backslash escape that is still arriving stops the
+    /// read rather than being taken literally — the old salvage path would
+    /// happily emit the "u" and four hex digits of a half-written A, which
+    /// is harmless in a last-ditch rescue and quite wrong when those characters
+    /// are being typed onto the screen as they arrive.
+    /// </summary>
+    public static bool TryReadSpokenTextPrefix(string text, out string spoken, out bool complete)
     {
         spoken = string.Empty;
+        complete = false;
 
         foreach (var key in SpokenTextKeys)
         {
@@ -220,27 +239,48 @@ public static class AssistantPlanParser
 
             cursor++;
             var value = new System.Text.StringBuilder();
-            while (cursor < text.Length && text[cursor] != '"')
+            var terminated = false;
+            while (cursor < text.Length)
             {
-                if (text[cursor] != '\\' || cursor + 1 >= text.Length)
+                if (text[cursor] == '"')
+                {
+                    terminated = true;
+                    break;
+                }
+
+                if (text[cursor] != '\\')
                 {
                     value.Append(text[cursor]);
                     cursor++;
                     continue;
                 }
 
-                cursor++;
-                var escape = text[cursor];
-                if (escape == 'u' && cursor + 4 < text.Length &&
-                    ushort.TryParse(
-                        text.AsSpan(cursor + 1, 4),
-                        System.Globalization.NumberStyles.HexNumber,
-                        System.Globalization.CultureInfo.InvariantCulture,
-                        out var codePoint))
+                if (cursor + 1 >= text.Length)
                 {
-                    value.Append((char)codePoint);
-                    cursor += 5;
-                    continue;
+                    // A lone trailing backslash is an escape whose second half
+                    // has not arrived. Stop rather than emit it.
+                    break;
+                }
+
+                var escape = text[cursor + 1];
+                if (escape == 'u')
+                {
+                    if (cursor + 5 >= text.Length)
+                    {
+                        // \uXXXX still arriving.
+                        break;
+                    }
+
+                    if (ushort.TryParse(
+                            text.AsSpan(cursor + 2, 4),
+                            System.Globalization.NumberStyles.HexNumber,
+                            System.Globalization.CultureInfo.InvariantCulture,
+                            out var codePoint))
+                    {
+                        value.Append((char)codePoint);
+                        cursor += 6;
+                        continue;
+                    }
                 }
 
                 value.Append(escape switch
@@ -252,13 +292,14 @@ public static class AssistantPlanParser
                     'f' => '\f',
                     _ => escape
                 });
-                cursor++;
+                cursor += 2;
             }
 
             var candidate = value.ToString().Trim();
             if (candidate.Length > 0)
             {
                 spoken = candidate;
+                complete = terminated;
                 return true;
             }
         }

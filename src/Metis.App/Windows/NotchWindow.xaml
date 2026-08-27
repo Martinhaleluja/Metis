@@ -1,4 +1,4 @@
-<Window x:Class="Metis.App.Windows.NotchWindow"
+﻿<Window x:Class="Metis.App.Windows.NotchWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:windows="clr-namespace:Metis.App.Windows"
@@ -21,7 +21,7 @@
              different optical sizes, different vertical alignment from one to
              the next, which is what made the row look unstyled. -->
         <Style x:Key="TraceToolIcon" TargetType="Path">
-            <Setter Property="Stroke" Value="#F2F2F7" />
+            <Setter Property="Stroke" Value="{DynamicResource NotchTextBrush}" />
             <Setter Property="StrokeThickness" Value="1.5" />
             <Setter Property="StrokeStartLineCap" Value="Round" />
             <Setter Property="StrokeEndLineCap" Value="Round" />
@@ -39,7 +39,7 @@
             <Setter Property="Height" Value="28" />
             <Setter Property="Margin" Value="3,0" />
             <Setter Property="CornerRadius" Value="8" />
-            <Setter Property="Background" Value="#1AFFFFFF" />
+            <Setter Property="Background" Value="{DynamicResource NotchToolBrush}" />
             <Setter Property="Cursor" Value="Hand" />
             <Setter Property="RenderTransformOrigin" Value="0.5,0.5" />
             <Setter Property="SnapsToDevicePixels" Value="True" />
@@ -91,6 +91,8 @@
              no window of its own — this is it. -->
         <Border x:Name="NotchBody"
                 Background="{DynamicResource NotchBodyBrush}"
+                BorderBrush="{DynamicResource NotchEdgeBrush}"
+                BorderThickness="1"
                 CornerRadius="0,0,18,18"
                 HorizontalAlignment="Center"
                 VerticalAlignment="Top"
@@ -106,7 +108,7 @@
                 <TranslateTransform x:Name="NotchDrop" Y="-22" />
             </Border.RenderTransform>
             <Border.Effect>
-                <DropShadowEffect Color="#000000" BlurRadius="16" ShadowDepth="3" Opacity="0.42" />
+                <DropShadowEffect Color="{DynamicResource NotchShadow}" BlurRadius="16" ShadowDepth="3" Opacity="0.42" />
             </Border.Effect>
 
             <!-- Clipped, because the body's height is animated and the chat
@@ -210,7 +212,7 @@
                                         M 13.4,9.8 L 13.4,13.4 L 9.8,13.4   M 6.2,13.4 L 2.6,13.4 L 2.6,9.8" />
                         </Border>
 
-                        <Border x:Name="ToolDivider" Width="1" Height="16" Background="#40FFFFFF" Margin="8,0"
+                        <Border x:Name="ToolDivider" Width="1" Height="16" Background="{DynamicResource NotchDividerBrush}" Margin="8,0"
                                 RenderTransformOrigin="0.5,0.5">
                             <Border.RenderTransform><ScaleTransform /></Border.RenderTransform>
                         </Border>
@@ -218,13 +220,13 @@
                         <Border x:Name="ToolAsk" Width="46" Style="{StaticResource TraceToolButton}"
                                 MouseLeftButtonUp="TraceAsk_OnClick" ToolTip="Ask about this area">
                             <Border.RenderTransform><ScaleTransform /></Border.RenderTransform>
-                            <TextBlock Text="Ask" FontSize="11.5" FontWeight="SemiBold" Foreground="#30D158"
+                            <TextBlock Text="Ask" FontSize="11.5" FontWeight="SemiBold" Foreground="{DynamicResource StatusListeningBrush}"
                                        HorizontalAlignment="Center" VerticalAlignment="Center" />
                         </Border>
                         <Border x:Name="ToolCancel" Style="{StaticResource TraceToolButton}"
                                 MouseLeftButtonUp="TraceCancel_OnClick" ToolTip="Cancel">
                             <Border.RenderTransform><ScaleTransform /></Border.RenderTransform>
-                            <Path Style="{StaticResource TraceToolIcon}" Stroke="#FF6257"
+                            <Path Style="{StaticResource TraceToolIcon}" Stroke="{DynamicResource NotchDangerInkBrush}"
                                   Data="M 4.6,4.6 L 11.4,11.4   M 11.4,4.6 L 4.6,11.4" />
                         </Border>
                     </StackPanel>

@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Text.Json;
 using FlaUI.Core.AutomationElements;
 using FlaUI.UIA3;
@@ -10,9 +11,51 @@ namespace Metis.Windows;
 /// Provides a bounded accessibility snapshot for model context and invokes
 /// addressable controls without moving the user's pointer when UIA supports it.
 /// </summary>
-public sealed class FlaUiAutomationService : IUiAutomationService
+public sealed class FlaUiAutomationService : IUiAutomationService, IDisposable
 {
     private const int MaximumSnapshotElements = 120;
+
+    /// <summary>
+    /// How long the snapshot may spend walking before it settles for what it
+    /// has.
+    ///
+    /// Every property read here is a cross-process COM call into whatever
+    /// application owns the window, so the cost is not Metis's to predict: an
+    /// application that is busy, hung, or simply slow to answer can stall the
+    /// walk indefinitely. This used to be bounded only by the turn's own
+    /// 75-second deadline, which meant one unresponsive window could spend the
+    /// entire turn. A partial list of controls is a good answer; a turn that
+    /// never asks the question is not.
+    /// </summary>
+    private static readonly TimeSpan SnapshotBudget = TimeSpan.FromSeconds(2.5);
+
+    /// <summary>
+    /// One automation session, reused.
+    ///
+    /// <c>new UIA3Automation()</c> sets up COM interop and was being paid for on
+    /// every call — and an Inspect turn makes two or three calls. The instance
+    /// is thread-safe enough for the sequential use it gets here, and it is
+    /// created on first use so a machine without UI Automation still starts.
+    /// </summary>
+    private readonly Lazy<UIA3Automation> _automation = new(
+        () => new UIA3Automation(),
+        LazyThreadSafetyMode.ExecutionAndPublication);
+
+    private bool _disposed;
+
+    public void Dispose()
+    {
+        if (_disposed)
+        {
+            return;
+        }
+
+        _disposed = true;
+        if (_automation.IsValueCreated)
+        {
+            _automation.Value.Dispose();
+        }
+    }
 
     public Task<string?> DescribeWindowAsync(
         ScreenCapture capture,

@@ -1,12 +1,35 @@
+using System.Collections.Concurrent;
+using System.Text;
 using System.Text.RegularExpressions;
 using Metis.Core.Contracts;
 
 namespace Metis.Data;
 
-public sealed partial class FileDiagnosticLog : IDiagnosticLog
+/// <summary>
+/// Appends diagnostics to a rolling file, off the thread that logged them.
+///
+/// Every call used to do <c>Directory.CreateDirectory</c>, a
+/// <c>FileInfo.Length</c> stat and a <c>File.AppendAllText</c> — three syscalls
+/// and a file handle open/close — inside a lock, on whichever thread happened
+/// to be logging. On the response path that thread is the UI thread, and the
+/// turn logs several times, so the app paid for its own diagnostics in dropped
+/// frames. Callers now hand over a timestamped record and return immediately;
+/// one background writer redacts, formats and appends.
+/// </summary>
+public sealed partial class FileDiagnosticLog : IDiagnosticLog, IDisposable
 {
     private const long MaxLogBytes = 2 * 1024 * 1024;
-    private readonly object _gate = new();
+
+    private readonly BlockingCollection<Entry> _queue = new(new ConcurrentQueue<Entry>());
+    private readonly Thread _writer;
+
+    /// <summary>
+    /// Bytes in the current file, tracked as they are written so rotation does
+    /// not need to stat the file on every line. -1 until the first write reads
+    /// the size once.
+    /// </summary>
+    private long _bytesWritten = -1;
+    private bool _disposed;
 
     public FileDiagnosticLog(string? baseDirectory = null)
     {
@@ -15,33 +38,121 @@ public sealed partial class FileDiagnosticLog : IDiagnosticLog
             "Metis",
             "logs");
         LogPath = Path.Combine(directory, "metis.log");
+
+        _writer = new Thread(DrainQueue)
+        {
+            Name = "Metis diagnostics",
+            IsBackground = true
+        };
+        _writer.Start();
     }
 
     public string LogPath { get; }
 
-    public void Info(string message) => Write("INFO", message, null);
+    public void Info(string message) => Enqueue("INFO", message, null);
 
-    public void Error(string message, Exception? exception = null) => Write("ERROR", message, exception);
+    public void Error(string message, Exception? exception = null) => Enqueue("ERROR", message, exception);
 
-    private void Write(string level, string message, Exception? exception)
+    /// <summary>
+    /// Blocks until everything logged so far has reached the file. Only for
+    /// shutdown and for tests that read the file back; the response path must
+    /// never call this.
+    /// </summary>
+    public void Flush(TimeSpan? timeout = null)
+    {
+        if (_disposed)
+        {
+            return;
+        }
+
+        using var written = new ManualResetEventSlim(false);
+        try
+        {
+            _queue.Add(new Entry(DateTimeOffset.Now, null, string.Empty, null, written));
+        }
+        catch (InvalidOperationException)
+        {
+            // Adding was completed by Dispose; nothing left to wait for.
+            return;
+        }
+
+        written.Wait(timeout ?? TimeSpan.FromSeconds(2));
+    }
+
+    public void Dispose()
+    {
+        if (_disposed)
+        {
+            return;
+        }
+
+        _disposed = true;
+        _queue.CompleteAdding();
+        _writer.Join(TimeSpan.FromSeconds(2));
+        _queue.Dispose();
+    }
+
+    private void Enqueue(string level, string message, Exception? exception)
+    {
+        if (_disposed)
+        {
+            return;
+        }
+
+        try
+        {
+            // The timestamp is taken here rather than on the writer so the log
+            // still records when something happened, not when it was flushed.
+            _queue.Add(new Entry(DateTimeOffset.Now, level, message, exception, null));
+        }
+        catch (InvalidOperationException)
+        {
+            // Adding was completed during shutdown. Diagnostics must never make
+            // the companion fail.
+        }
+    }
+
+    private void DrainQueue()
+    {
+        foreach (var entry in _queue.GetConsumingEnumerable())
+        {
+            if (entry.Level is not null)
+            {
+                Write(entry);
+            }
+
+            entry.Written?.Set();
+        }
+    }
+
+    private void Write(Entry entry)
     {
         try
         {
-            lock (_gate)
+            var directory = Path.GetDirectoryName(LogPath)!;
+            Directory.CreateDirectory(directory);
+
+            var cleanMessage = Redact(entry.Message);
+            var cleanException = entry.Exception is null ? null : Redact(entry.Exception.ToString());
+            var line = new StringBuilder()
+                .Append(entry.Timestamp.ToString("O"))
+                .Append(" [")
+                .Append(entry.Level)
+                .Append("] ")
+                .Append(cleanMessage);
+            if (!string.IsNullOrWhiteSpace(cleanException))
             {
-                var directory = Path.GetDirectoryName(LogPath)!;
-                Directory.CreateDirectory(directory);
-                RotateIfNeeded();
+                line.Append(Environment.NewLine).Append(cleanException);
+            }
 
-                var cleanMessage = Redact(message);
-                var cleanException = exception is null ? null : Redact(exception.ToString());
-                var line = $"{DateTimeOffset.Now:O} [{level}] {cleanMessage}";
-                if (!string.IsNullOrWhiteSpace(cleanException))
-                {
-                    line += Environment.NewLine + cleanException;
-                }
+            line.Append(Environment.NewLine);
+            var text = line.ToString();
 
-                File.AppendAllText(LogPath, line + Environment.NewLine);
+            RotateIfNeeded(text.Length);
+            File.AppendAllText(LogPath, text);
+            if (_bytesWritten >= 0)
+            {
+                _bytesWritten += Encoding.UTF8.GetByteCount(text);
             }
         }
         catch (IOException)
@@ -54,15 +165,22 @@ public sealed partial class FileDiagnosticLog : IDiagnosticLog
         }
     }
 
-    private void RotateIfNeeded()
+    private void RotateIfNeeded(int incomingLength)
     {
-        if (!File.Exists(LogPath) || new FileInfo(LogPath).Length < MaxLogBytes)
+        if (_bytesWritten < 0)
+        {
+            // First write of the session: read the size once, then track it.
+            _bytesWritten = File.Exists(LogPath) ? new FileInfo(LogPath).Length : 0;
+        }
+
+        if (_bytesWritten + incomingLength < MaxLogBytes)
         {
             return;
         }
 
         var previousPath = Path.Combine(Path.GetDirectoryName(LogPath)!, "metis.previous.log");
         File.Move(LogPath, previousPath, true);
+        _bytesWritten = 0;
     }
 
     private static string Redact(string value)
@@ -73,6 +191,17 @@ public sealed partial class FileDiagnosticLog : IDiagnosticLog
         redacted = AizaTokenRegex().Replace(redacted, "[redacted-token]");
         return redacted;
     }
+
+    /// <summary>
+    /// One queued line. A null <see cref="Level"/> marks a flush barrier that
+    /// carries no text and only signals <see cref="Written"/>.
+    /// </summary>
+    private readonly record struct Entry(
+        DateTimeOffset Timestamp,
+        string? Level,
+        string Message,
+        Exception? Exception,
+        ManualResetEventSlim? Written);
 
     [GeneratedRegex("([?&]key=)[^&\\s]+", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex KeyQueryRegex();

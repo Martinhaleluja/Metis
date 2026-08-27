@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using Metis.Core.Models;
 
 namespace Metis.AI;
@@ -9,7 +10,11 @@ public static class GeminiRequestBuilder
     // raw payload under 13 MiB leaves room below Gemini's 20 MiB inline-request
     // ceiling for JSON, the prompt, and response configuration.
     private const int MaxInlineRequestBytes = 13 * 1024 * 1024;
-    public static string BuildGenerateContentJson(GeminiRequest request)
+
+    public static string BuildGenerateContentJson(GeminiRequest request) =>
+        BuildGenerateContentJson(request, model: null);
+
+    public static string BuildGenerateContentJson(GeminiRequest request, string? model)
     {
         ArgumentNullException.ThrowIfNull(request);
         if (string.IsNullOrWhiteSpace(request.Prompt))
@@ -81,7 +86,58 @@ public static class GeminiRequestBuilder
             }
         };
 
-        return JsonSerializer.Serialize(payload, SerializerOptions);
+        var json = JsonSerializer.SerializeToNode(payload, SerializerOptions)!;
+        var generationConfig = json["generationConfig"]!.AsObject();
+
+        // Tell Gemini which field to write first. Without this the order is not
+        // promised, and the whole point of streaming the reply is lost if the
+        // sentence turns up after a twelve-step lesson array.
+        generationConfig["responseJsonSchema"]!.AsObject()["propertyOrdering"] =
+            new JsonArray([.. ReasoningProviderSupport.AssistantPlanPropertyOrder.Select(name => JsonValue.Create(name))]);
+
+        if (BuildThinkingConfig(model, request.AcademicTeaching) is { } thinking)
+        {
+            generationConfig["thinkingConfig"] = thinking;
+        }
+
+        return json.ToJsonString(SerializerOptions);
+    }
+
+    /// <summary>
+    /// How hard to let the model think before answering.
+    ///
+    /// Nothing was sent here before, which meant every reply paid for whatever
+    /// the model chose on its own — and the flash models choose to think by
+    /// default. That thinking is invisible: it produces no text, so the user
+    /// watches an empty panel for the whole of it. Metis asks a narrow question
+    /// against a screenshot it has already attached, which is not the kind of
+    /// question that repays deliberation.
+    ///
+    /// Drawing a lesson is the exception, so an academic turn is left on the
+    /// model's own judgement.
+    ///
+    /// The field differs by generation and an unrecognised one is rejected
+    /// outright, so anything not positively known is left alone.
+    /// </summary>
+    private static JsonNode? BuildThinkingConfig(string? model, bool academicTeaching)
+    {
+        if (academicTeaching || string.IsNullOrWhiteSpace(model))
+        {
+            return null;
+        }
+
+        var normalized = model.Trim().ToLowerInvariant();
+        if (normalized.StartsWith("gemini-3", StringComparison.Ordinal))
+        {
+            return new JsonObject { ["thinkingLevel"] = "low" };
+        }
+
+        if (normalized.StartsWith("gemini-2.5-flash", StringComparison.Ordinal))
+        {
+            return new JsonObject { ["thinkingBudget"] = 0 };
+        }
+
+        return null;
     }
 
     private static readonly HashSet<string> ValidGeminiVoices = new(StringComparer.OrdinalIgnoreCase)

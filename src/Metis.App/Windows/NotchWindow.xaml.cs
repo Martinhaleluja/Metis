@@ -1,4 +1,4 @@
-using System.Runtime.InteropServices;
+﻿using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Interop;
@@ -1095,6 +1095,14 @@ public partial class NotchWindow : Window
     /// </summary>
     public void HighlightActiveTool(TraceTool active)
     {
+        // Animating a brush replaces whatever the theme put there with a
+        // literal colour, so the resting shade has to come from the same token
+        // the XAML uses. Reading it back is what keeps a highlighted toolbar
+        // from staying dark-mode white after a switch to light.
+        var resting = TryFindResource("NotchTool") is MediaColor themed
+            ? themed
+            : MediaColor.FromArgb(0x1A, 0xFF, 0xFF, 0xFF);
+
         foreach (var (tool, element) in new[]
                  {
                      (TraceTool.Freehand, ToolFreehand),
@@ -1104,12 +1112,12 @@ public partial class NotchWindow : Window
         {
             var target = tool == active
                 ? MediaColor.FromArgb(0xE0, 0x0A, 0x7C, 0xFF)
-                : MediaColor.FromArgb(0x1A, 0xFF, 0xFF, 0xFF);
+                : resting;
 
             if (element.Background is not SolidColorBrush { IsFrozen: false })
             {
                 element.Background = new SolidColorBrush(
-                    (element.Background as SolidColorBrush)?.Color ?? MediaColor.FromArgb(0x1A, 0xFF, 0xFF, 0xFF));
+                    (element.Background as SolidColorBrush)?.Color ?? resting);
             }
 
             if (element.Background is SolidColorBrush { IsFrozen: false } brush)

@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Windows;
 using System.Windows.Media;
@@ -33,7 +33,7 @@ public partial class WhatsNewWindow : Window
     /// editing one without the other is obvious. The check against the running
     /// build uses <see cref="AppVersion.Current"/>.
     /// </summary>
-    public const string Version = "3.13.0";
+    public const string Version = "3.14.0";
 
     private sealed record Change(string Icon, string Title, string Detail);
 
@@ -44,6 +44,9 @@ public partial class WhatsNewWindow : Window
     /// </summary>
     private static readonly IReadOnlyList<Change> Changes =
     [
+        new("🌓", "Light mode reaches the notch",
+            "The notch and the chat inside it stayed black when the rest of Metis went light, and any text on them that took its colour from the theme turned black too and disappeared. Both now follow whichever theme you have chosen, and switching theme changes them while they are open."),
+
         new("\U0001F916", "Just ask for an agent",
             "Telling Metis to start an agent now actually starts one, however you phrase it — \"have an agent tidy my downloads\", or \"spawn one\" and answering when it asks what for. Ask for two and you get two. Before this it usually described the agent instead of running it."),
 
@@ -80,7 +83,7 @@ public partial class WhatsNewWindow : Window
         InitializeComponent();
 
         VersionBadge.Text = $"v{Version}";
-        FooterText.Text = $"Metis v{Version}  ·  Built by Martin Nakasole";
+        FooterText.Text = $"Metis v{Version}";
 
         BuildChanges();
         Loaded += (_, _) => StaggerIn();

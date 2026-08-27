@@ -566,6 +566,23 @@ public sealed class MetisRuntime : IDisposable
 
     public event EventHandler<AppSettings>? SettingsChanged;
     public event EventHandler<AssistantMessage>? MessageAdded;
+
+    /// <summary>
+    /// Raised once when a reply starts arriving, before any of it has been
+    /// read. A listener should open an empty Metis bubble here.
+    /// </summary>
+    public event EventHandler? ResponseStreamStarted;
+
+    /// <summary>
+    /// Raised with each new piece of the answer as it is written. The argument
+    /// is the text to append, not the whole answer so far.
+    ///
+    /// A turn that streams still ends with the usual <see cref="MessageAdded"/>
+    /// carrying the complete reply, so a listener that ignores these two events
+    /// behaves exactly as it did before and one that handles them must replace
+    /// what it built rather than append to it again.
+    /// </summary>
+    public event EventHandler<string>? ResponseTextDelta;
     public event EventHandler<CompanionResponse>? CompanionResponseStarted;
     public event EventHandler<string>? StatusChanged;
     public event EventHandler<float>? AudioLevelChanged;
@@ -1334,7 +1351,7 @@ public sealed class MetisRuntime : IDisposable
                         var req = new GeminiRequest(
                             "Transcribe the spoken audio verbatim. Return ONLY the transcription text, nothing else.",
                             RecordedAudioWav: recording.WavBytes);
-                        var resp = await _gemini.GenerateAsync(geminiKey, Settings.ReasoningModel, req, cts.Token);
+                        var resp = await _gemini.GenerateAsync(geminiKey, Settings.ReasoningModel, req, onTextDelta: null, cts.Token);
                         transcribedText = resp.Text.Trim();
                     }
                     else if (Settings.AiProvider == "OpenAI" && !string.IsNullOrWhiteSpace(openAiKey))
@@ -1342,7 +1359,13 @@ public sealed class MetisRuntime : IDisposable
                         var req = new GeminiRequest(
                             "Transcribe the spoken audio verbatim. Return ONLY the transcription text, nothing else.",
                             RecordedAudioWav: recording.WavBytes);
-                        var resp = await _openAi.GenerateAsync(openAiKey, Settings.OpenAiReasoningModel, Settings.OpenAiTranscriptionModel, req, cts.Token);
+                        var resp = await _openAi.GenerateAsync(
+                            openAiKey,
+                            Settings.OpenAiReasoningModel,
+                            Settings.OpenAiTranscriptionModel,
+                            req,
+                            onTextDelta: null,
+                            cts.Token);
                         transcribedText = (!string.IsNullOrWhiteSpace(resp.Transcript) ? resp.Transcript : resp.Text).Trim();
                     }
                 }
@@ -1410,8 +1433,11 @@ public sealed class MetisRuntime : IDisposable
                     var duration = GetAudioDuration(speech) ?? CompanionSpeech.ReadingDuration(spokenReply);
                     SetActivity(MetisActivityKind.Speaking, spokenReply);
                     StartCompanionResponse(spokenReply, duration, showBubble: true);
+
+                    // PlayAsync already returns only once playback has stopped,
+                    // so the Task.Delay that used to follow waited the clip out
+                    // a second time and doubled every spoken reply.
                     await _audioPlayback.PlayAsync(speech, AudioPriority.Speech, cts.Token);
-                    await Task.Delay(duration, cts.Token);
                 }
                 else
                 {
@@ -1431,7 +1457,6 @@ public sealed class MetisRuntime : IDisposable
             State.Force(AssistantState.Success);
             SetActivity(MetisActivityKind.Complete, "Done");
             PlayCue(MetisSound.TaskComplete);
-            await Task.Delay(GuidanceTuning.Scale(TimeSpan.FromSeconds(1.2)), cts.Token);
             SetActivity(MetisActivityKind.Idle, string.Empty);
             State.Force(AssistantState.Idle);
         }
@@ -1682,6 +1707,65 @@ public sealed class MetisRuntime : IDisposable
         }
     }
 
+    /// <summary>
+    /// A capture that carries the coordinate space and no pixels, for work that
+    /// only needs to know where the screen is.
+    /// </summary>
+    private static ScreenCapture BoundsOnlyCapture(ScreenBounds bounds) => new(
+        [],
+        "Entire Windows desktop",
+        bounds.Width,
+        bounds.Height,
+        bounds.Left,
+        bounds.Top,
+        bounds.Width,
+        bounds.Height);
+
+    /// <summary>
+    /// Takes the screenshot, turning a failure into no image rather than a
+    /// failed turn. Metis can still answer from the words alone.
+    /// </summary>
+    private async Task<ScreenCapture?> CaptureScreenAsync(
+        ScreenCaptureDetail detail,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await _capture.CaptureActiveWindowAsync(detail, cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception captureError)
+        {
+            _log.Error("Full-desktop capture failed; continuing without an image.", captureError);
+            SetStatus("Full-screen capture was unavailable; asking from voice/text only…");
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Reads the accessibility tree. Best-effort in the same way: vision alone
+    /// is a worse answer than vision plus names, and much better than none.
+    /// </summary>
+    private async Task<string?> DescribeScreenAsync(ScreenCapture capture, CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await _uiAutomation.DescribeWindowAsync(capture, cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception automationContextError)
+        {
+            _log.Error("UI Automation context was unavailable; continuing with vision only.", automationContextError);
+            return null;
+        }
+    }
+
     private async Task RunTurnAsync(string prompt, RecordedAudio? recording, CancellationToken externalCancellation)
     {
         if (!await _turnGate.WaitAsync(0, externalCancellation))
@@ -1732,34 +1816,60 @@ public sealed class MetisRuntime : IDisposable
             }
 
             ScreenCapture? screenshot = null;
+            string? automationContext = null;
+
             // A fresh, complete virtual-desktop frame accompanies every turn
             // while screen context is enabled. Keyword gating made ordinary
             // follow-up prompts silently lose the screen.
             var shouldCaptureScreen = Settings.CaptureActiveWindow;
             if (shouldCaptureScreen)
             {
-                try
+                // Pointing at one small control is the case where losing detail
+                // to a downscale cannot be recovered, because the answer is a
+                // coordinate. Everything else gets the smaller frame.
+                var detail = activation == ActivationKind.Inspect || pendingTrace is not null
+                    ? ScreenCaptureDetail.Full
+                    : ScreenCaptureDetail.Standard;
+
+                // The accessibility scan needs the coordinate space the capture
+                // will use and nothing else from it, so when the capture can say
+                // in advance where it is pointing, the two run together. They
+                // used to run one after the other for no reason beyond the scan
+                // taking a ScreenCapture as its argument, and each is worth
+                // hundreds of milliseconds.
+                var bounds = _capture.PeekCaptureBounds();
+                var captureTask = CaptureScreenAsync(detail, cancellationToken);
+                var automationTask = bounds is null
+                    ? null
+                    : DescribeScreenAsync(BoundsOnlyCapture(bounds), cancellationToken);
+
+                SetActivity(MetisActivityKind.Capturing, "Capturing screen");
+                screenshot = await captureTask;
+                if (screenshot is not null)
                 {
-                    SetActivity(MetisActivityKind.Capturing, "Capturing screen");
-                    screenshot = await _capture.CaptureActiveWindowAsync(cancellationToken);
-                    if (screenshot is not null)
-                    {
-                        SetActivity(MetisActivityKind.Capturing, "Screen captured");
-                        _log.Info($"Captured screen context with {screenshot.CaptureBackend} " +
-                                  $"at encoded {screenshot.Width}x{screenshot.Height}; " +
-                                  $"full bounds left={screenshot.ScreenLeft}, top={screenshot.ScreenTop}, " +
-                                  $"width={screenshot.SourceWidth}, height={screenshot.SourceHeight}; " +
-                                  $"{screenshot.ImageBytes.Length / 1024d:0.0} KiB {screenshot.ImageMimeType}.");
-                    }
+                    SetActivity(MetisActivityKind.Capturing, "Screen captured");
+                    _log.Info($"Captured screen context with {screenshot.CaptureBackend} " +
+                              $"at encoded {screenshot.Width}x{screenshot.Height}; " +
+                              $"full bounds left={screenshot.ScreenLeft}, top={screenshot.ScreenTop}, " +
+                              $"width={screenshot.SourceWidth}, height={screenshot.SourceHeight}; " +
+                              $"{screenshot.ImageBytes.Length / 1024d:0.0} KiB {screenshot.ImageMimeType}.");
                 }
-                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+
+                if (automationTask is not null)
                 {
-                    throw;
+                    automationContext = await automationTask;
                 }
-                catch (Exception captureError)
+                else if (screenshot is not null)
                 {
-                    _log.Error("Full-desktop capture failed; continuing without an image.", captureError);
-                    SetStatus("Full-screen capture was unavailable; asking from voice/text only…");
+                    automationContext = await DescribeScreenAsync(screenshot, cancellationToken);
+                }
+
+                // The scan was started against the bounds the capture said it
+                // would use. If the capture then failed there is no image for
+                // those coordinates to mean anything against.
+                if (screenshot is null)
+                {
+                    automationContext = null;
                 }
             }
 
@@ -1768,23 +1878,6 @@ public sealed class MetisRuntime : IDisposable
                 throw new InvalidOperationException(
                     "Metis could not capture the application behind its window, so it will not guess what is on your screen. " +
                     "Make sure Screen context is enabled and keep the target application open.");
-            }
-
-            string? automationContext = null;
-            if (screenshot is not null)
-            {
-                try
-                {
-                    automationContext = await _uiAutomation.DescribeWindowAsync(screenshot, cancellationToken);
-                }
-                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-                {
-                    throw;
-                }
-                catch (Exception automationContextError)
-                {
-                    _log.Error("UI Automation context was unavailable; continuing with vision only.", automationContextError);
-                }
             }
 
             var effectivePrompt = prompt;
@@ -1835,8 +1928,10 @@ public sealed class MetisRuntime : IDisposable
                         var duration = GetAudioDuration(speech) ?? CompanionSpeech.ReadingDuration(spokenReply);
                         SetActivity(MetisActivityKind.Speaking, spokenReply);
                         StartCompanionResponse(spokenReply, duration, showBubble: true);
+
+                        // PlayAsync returns only once playback has stopped, so
+                        // waiting the duration again doubled the pause here.
                         await _audioPlayback.PlayAsync(speech, AudioPriority.Speech, cancellationToken);
-                        await Task.Delay(duration, cancellationToken);
                     }
                     else
                     {
@@ -1856,7 +1951,6 @@ public sealed class MetisRuntime : IDisposable
                 State.Force(AssistantState.Success);
                 SetActivity(MetisActivityKind.Complete, "Done");
                 PlayCue(MetisSound.TaskComplete);
-                await Task.Delay(GuidanceTuning.Scale(TimeSpan.FromSeconds(1.2)), cancellationToken);
                 SetActivity(MetisActivityKind.Idle, string.Empty);
                 State.Force(AssistantState.Idle);
                 return;
@@ -1948,7 +2042,16 @@ public sealed class MetisRuntime : IDisposable
                 _academicTeaching,
                 Settings.UserName);
             SetActivity(MetisActivityKind.Thinking, "Thinking");
-            var response = await GenerateWithSelectedProviderAsync(request, cancellationToken);
+
+            // The answer goes on screen as it is written rather than when it is
+            // finished. Most of a turn's wait used to be the model completing a
+            // structured reply the user could not see any of — the sentence
+            // itself is ready long before the lesson steps and coordinates that
+            // follow it.
+            var answerStream = new TurnTextStream(
+                () => ResponseStreamStarted?.Invoke(this, EventArgs.Empty),
+                delta => ResponseTextDelta?.Invoke(this, delta));
+            var response = await GenerateWithSelectedProviderAsync(request, answerStream, cancellationToken);
 
             MessageAdded?.Invoke(
                 this,
@@ -2138,7 +2241,11 @@ public sealed class MetisRuntime : IDisposable
             SetActivity(MetisActivityKind.Complete, "Done");
             PlayCue(MetisSound.TaskComplete);
             SetStatus(finalStatus);
-            await Task.Delay(GuidanceTuning.Scale(TimeSpan.FromSeconds(1.2)), cancellationToken);
+
+            // The "Done" state used to be held here for 1.2s before going idle,
+            // and because the turn gate is not released until this method
+            // returns, that was a second of the app refusing the next question
+            // for the sake of an indicator. The state change is enough.
             SetActivity(MetisActivityKind.Idle, string.Empty);
             State.Force(AssistantState.Idle);
         }
@@ -2834,8 +2941,12 @@ public sealed class MetisRuntime : IDisposable
                 var duration = GetAudioDuration(audio) ?? CompanionSpeech.ReadingDuration(line);
                 SetActivity(MetisActivityKind.Speaking, line);
                 StartCompanionResponse(line, duration, showBubble: true);
+
+                // PlayAsync returns only when playback has stopped. Waiting the
+                // duration on top of that doubled the pause on every lesson
+                // step, which is where it hurt most: a ten-step walkthrough
+                // spent a full extra minute in silence.
                 await _audioPlayback.PlayAsync(audio, AudioPriority.Speech, cancellationToken);
-                await Task.Delay(duration, cancellationToken);
                 SetActivity(MetisActivityKind.Idle, string.Empty);
             }
             else
@@ -3307,28 +3418,111 @@ public sealed class MetisRuntime : IDisposable
         _ => throw new InvalidOperationException($"{provider} is not a configurable endpoint provider.")
     };
 
+    /// <summary>
+    /// Carries the reply to the screen as it is written, and remembers whether
+    /// any of it got there.
+    ///
+    /// That second job is what makes streaming safe to combine with Automatic
+    /// mode's provider fallback. Falling back is invisible while nothing has
+    /// been shown; once half a sentence is on screen, quietly starting a second
+    /// provider would write a different answer on top of it. So a provider that
+    /// fails after it has begun speaking is a failure of the turn, not a
+    /// reason to try the next one.
+    /// </summary>
+    private sealed class TurnTextStream(Action onStarted, Action<string> onDelta) : IProgress<string>
+    {
+        private bool _started;
+
+        public bool HasPublished { get; private set; }
+
+        public void Report(string value)
+        {
+            if (string.IsNullOrEmpty(value))
+            {
+                return;
+            }
+
+            if (!_started)
+            {
+                _started = true;
+                onStarted();
+            }
+
+            HasPublished = true;
+            onDelta(value);
+        }
+    }
+
+    /// <summary>
+    /// Whether a failed provider should be followed by the next one, given both
+    /// what went wrong and how much of the answer the user can already see.
+    /// </summary>
+    private bool CanFallBackAfter(Exception exception, TurnTextStream? answerStream, string providerName)
+    {
+        if (answerStream is { HasPublished: true })
+        {
+            _log.Error(
+                $"{providerName} failed after it had already begun answering, so Metis kept the partial reply " +
+                "rather than starting a second one over the top of it.",
+                exception);
+            return false;
+        }
+
+        if (!IsWorthTryingAnotherProvider(exception))
+        {
+            _log.Error(
+                $"{providerName} rejected the request itself, so the remaining providers were not tried — " +
+                "they are sent the same request and would reject it the same way.",
+                exception);
+            return false;
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// Whether trying a different provider could possibly do any better.
+    ///
+    /// Automatic mode walks Gemini, then OpenAI, then Claude, and each attempt
+    /// costs a full request. That is worth it when a provider is down, out of
+    /// quota, or does not have the model — a different one genuinely may
+    /// answer. It is never worth it when the request itself was rejected,
+    /// because every provider is being sent the same request and will reject it
+    /// the same way. Walking the chain then just spends the turn's whole
+    /// deadline arriving at the answer it already had.
+    /// </summary>
+    private static bool IsWorthTryingAnotherProvider(Exception exception) => exception switch
+    {
+        GeminiProviderException gemini => gemini.Kind != GeminiErrorKind.InvalidRequest,
+        OpenAiProviderException openAi => openAi.Kind != OpenAiErrorKind.InvalidRequest,
+        ReasoningProviderException reasoning => reasoning.Kind != ReasoningProviderErrorKind.InvalidRequest,
+        _ => true
+    };
+
     private async Task<ProviderTurnResult> GenerateWithSelectedProviderAsync(
         GeminiRequest request,
+        TurnTextStream? answerStream,
         CancellationToken cancellationToken)
     {
         if (Settings.AiProvider == "OpenAI")
         {
-            return await GenerateWithOpenAiAsync(request, cancellationToken);
+            return await GenerateWithOpenAiAsync(request, answerStream, cancellationToken);
         }
 
         if (Settings.AiProvider == "Gemini")
         {
-            return await GenerateWithGeminiAsync(request, cancellationToken);
+            return await GenerateWithGeminiAsync(request, answerStream, cancellationToken);
         }
 
         if (Settings.AiProvider == "Claude")
         {
-            return await GenerateWithClaudeAsync(request, cancellationToken);
+            return await GenerateWithClaudeAsync(request, answerStream, cancellationToken);
         }
 
         if (Settings.AiProvider is "OpenClaw" or "Ollama")
         {
-            return await GenerateWithEndpointProviderAsync(Settings.AiProvider, request, cancellationToken);
+            return await GenerateWithEndpointProviderAsync(
+                Settings.AiProvider, request, answerStream, cancellationToken);
         }
 
         Exception? geminiError = null;
@@ -3337,13 +3531,13 @@ public sealed class MetisRuntime : IDisposable
         {
             try
             {
-                return await GenerateWithGeminiAsync(request, cancellationToken);
+                return await GenerateWithGeminiAsync(request, answerStream, cancellationToken);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
                 throw;
             }
-            catch (Exception exception)
+            catch (Exception exception) when (CanFallBackAfter(exception, answerStream, "Gemini"))
             {
                 geminiError = exception;
                 _log.Error("Gemini failed in Automatic mode; trying OpenAI.", exception);
@@ -3355,13 +3549,13 @@ public sealed class MetisRuntime : IDisposable
         {
             try
             {
-                return await GenerateWithOpenAiAsync(request, cancellationToken);
+                return await GenerateWithOpenAiAsync(request, answerStream, cancellationToken);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
                 throw;
             }
-            catch (Exception exception)
+            catch (Exception exception) when (CanFallBackAfter(exception, answerStream, "OpenAI"))
             {
                 openAiError = exception;
                 _log.Error("OpenAI failed in Automatic mode; trying Claude.", exception);
@@ -3372,7 +3566,7 @@ public sealed class MetisRuntime : IDisposable
         {
             try
             {
-                return await GenerateWithClaudeAsync(request, cancellationToken);
+                return await GenerateWithClaudeAsync(request, answerStream, cancellationToken);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
@@ -3408,18 +3602,21 @@ public sealed class MetisRuntime : IDisposable
 
     private async Task<ProviderTurnResult> GenerateWithGeminiAsync(
         GeminiRequest request,
+        IProgress<string>? onTextDelta,
         CancellationToken cancellationToken)
     {
         var response = await _gemini.GenerateAsync(
             RequireApiKey(),
             Settings.ReasoningModel,
             request,
+            onTextDelta,
             cancellationToken);
         return new ProviderTurnResult("Gemini", response.Model, response.Text, response.Plan);
     }
 
     private async Task<ProviderTurnResult> GenerateWithOpenAiAsync(
         GeminiRequest request,
+        IProgress<string>? onTextDelta,
         CancellationToken cancellationToken)
     {
         var response = await _openAi.GenerateAsync(
@@ -3427,18 +3624,21 @@ public sealed class MetisRuntime : IDisposable
             Settings.OpenAiReasoningModel,
             Settings.OpenAiTranscriptionModel,
             request,
+            onTextDelta,
             cancellationToken);
         return new ProviderTurnResult("OpenAI", response.Model, response.Text, response.Plan);
     }
 
     private async Task<ProviderTurnResult> GenerateWithClaudeAsync(
         GeminiRequest request,
+        IProgress<string>? onTextDelta,
         CancellationToken cancellationToken)
     {
         var response = await _claude.GenerateAsync(
             RequireClaudeApiKey(),
             Settings.ClaudeReasoningModel,
             request,
+            onTextDelta,
             cancellationToken);
         return new ProviderTurnResult("Claude", response.Model, response.Text, response.Plan);
     }
@@ -3446,6 +3646,7 @@ public sealed class MetisRuntime : IDisposable
     private async Task<ProviderTurnResult> GenerateWithEndpointProviderAsync(
         string providerName,
         GeminiRequest request,
+        IProgress<string>? onTextDelta,
         CancellationToken cancellationToken)
     {
         var provider = CreateEndpointProvider(providerName);
@@ -3453,7 +3654,7 @@ public sealed class MetisRuntime : IDisposable
         {
             var credential = EndpointProviderCredential(providerName);
             var model = providerName == "OpenClaw" ? Settings.OpenClawModel : Settings.OllamaModel;
-            var response = await provider.GenerateAsync(credential, model, request, cancellationToken);
+            var response = await provider.GenerateAsync(credential, model, request, onTextDelta, cancellationToken);
             return new ProviderTurnResult(providerName, response.Model, response.Text, response.Plan);
         }
         finally

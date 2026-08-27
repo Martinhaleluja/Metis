@@ -87,15 +87,35 @@ internal static class ReasoningProviderSupport
         If the pointer is not over anything you can identify in the screenshot, say so and ask the user to point again.
         """;
 
+    /// <summary>
+    /// The fields Metis wants written first, and why the order is load-bearing.
+    ///
+    /// The reply is shown while it is still arriving, so whatever the model
+    /// emits before <c>spoken_text</c> is time the user spends looking at
+    /// nothing. Only <c>screen_observed</c> goes ahead of it — a single token,
+    /// and it is the claim the whole answer is judged against, so it should be
+    /// made before the answer rather than after it. Everything else, including
+    /// the long <c>steps</c> array, follows the sentence.
+    ///
+    /// Gemini is told this explicitly through <c>propertyOrdering</c>; the other
+    /// providers follow the order the properties are declared in below.
+    /// </summary>
+    internal static readonly string[] AssistantPlanPropertyOrder =
+    [
+        "screen_observed", "spoken_text", "bubble_cue", "goal", "heard_text",
+        "scope", "element", "annotation_text", "x", "y", "w", "h", "label",
+        "spawn_agents", "needs_another_look", "look_for", "steps"
+    ];
+
     internal static object AssistantPlanJsonSchema => new
     {
         type = "object",
         properties = new
         {
             screen_observed = new { type = "boolean" },
-            goal = new { type = new[] { "string", "null" } },
             spoken_text = new { type = "string" },
             bubble_cue = new { type = new[] { "string", "null" } },
+            goal = new { type = new[] { "string", "null" } },
 
             // The user's own words, when they spoke rather than typed. Metis
             // classifies these itself; the model only reports them.
@@ -202,12 +222,7 @@ internal static class ReasoningProviderSupport
                 }
             }
         },
-        required = new[]
-        {
-            "goal", "screen_observed", "spoken_text", "bubble_cue", "heard_text",
-            "scope", "element", "annotation_text", "x", "y", "w", "h", "label", "steps",
-            "spawn_agents", "needs_another_look", "look_for"
-        },
+        required = AssistantPlanPropertyOrder,
         additionalProperties = false
     };
 
@@ -432,6 +447,116 @@ internal static class ReasoningProviderSupport
                 $"Metis could not reach {ProviderName(providerId)}. {guidance}",
                 innerException: exception);
         }
+    }
+
+    /// <summary>
+    /// Reads a streamed reply, handing each event to <paramref name="onEvent"/>
+    /// as it lands.
+    ///
+    /// Covers both shapes Metis meets: server-sent events, where every payload
+    /// arrives on a "data:" line, and the newline-delimited JSON that local
+    /// runners emit instead. Treating them the same costs one <c>StartsWith</c>
+    /// and saves a second reader that would do all of this again.
+    ///
+    /// A malformed event is skipped rather than thrown. Half of the point of
+    /// streaming is that the answer is already on screen by the time anything
+    /// goes wrong, and discarding it over one unreadable frame would give that
+    /// back.
+    /// </summary>
+    internal static async Task ReadEventStreamAsync(
+        HttpResponseMessage response,
+        Action<JsonElement> onEvent,
+        CancellationToken cancellationToken)
+    {
+        await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
+        using var reader = new StreamReader(stream);
+
+        while (!reader.EndOfStream)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var line = await reader.ReadLineAsync(cancellationToken).ConfigureAwait(false);
+            if (line is null)
+            {
+                break;
+            }
+
+            var payload = line.Trim();
+            if (payload.Length == 0)
+            {
+                continue;
+            }
+
+            if (payload.StartsWith("data:", StringComparison.Ordinal))
+            {
+                payload = payload[5..].Trim();
+            }
+            else if (payload.StartsWith("event:", StringComparison.Ordinal) ||
+                     payload.StartsWith(':'))
+            {
+                // Event names and comments carry no payload; the data line that
+                // follows carries the type Metis actually switches on.
+                continue;
+            }
+
+            if (payload.Length == 0 ||
+                string.Equals(payload, "[DONE]", StringComparison.Ordinal) ||
+                payload[0] is not ('{' or '['))
+            {
+                continue;
+            }
+
+            JsonDocument document;
+            try
+            {
+                document = JsonDocument.Parse(payload);
+            }
+            catch (JsonException)
+            {
+                continue;
+            }
+
+            using (document)
+            {
+                onEvent(document.RootElement);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Reads a string property, or null when it is missing or another kind.
+    /// Streamed events are read one frame at a time and every frame carries a
+    /// different subset of fields, so absence is normal rather than an error.
+    /// </summary>
+    internal static string? ReadString(JsonElement element, string propertyName) =>
+        element.ValueKind == JsonValueKind.Object &&
+        element.TryGetProperty(propertyName, out var value) &&
+        value.ValueKind == JsonValueKind.String
+            ? value.GetString()
+            : null;
+
+    /// <summary>
+    /// Pulls the text out of one streamed Chat Completions frame, the shape
+    /// every OpenAI-compatible gateway speaks.
+    /// </summary>
+    internal static string? ReadChatCompletionDelta(JsonElement element)
+    {
+        if (element.ValueKind != JsonValueKind.Object ||
+            !element.TryGetProperty("choices", out var choices) ||
+            choices.ValueKind != JsonValueKind.Array)
+        {
+            return null;
+        }
+
+        foreach (var choice in choices.EnumerateArray())
+        {
+            if (choice.TryGetProperty("delta", out var delta) &&
+                ReadString(delta, "content") is { Length: > 0 } text)
+            {
+                return text;
+            }
+        }
+
+        return null;
     }
 
     internal static JsonDocument ParseJson(string providerId, string body)

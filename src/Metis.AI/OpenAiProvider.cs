@@ -32,6 +32,7 @@ public sealed class OpenAiProvider : IOpenAiProvider, IDisposable
         string model,
         string transcriptionModel,
         GeminiRequest request,
+        IProgress<string>? onTextDelta = null,
         CancellationToken cancellationToken = default)
     {
         ThrowIfDisposed();
@@ -84,18 +85,46 @@ public sealed class OpenAiProvider : IOpenAiProvider, IDisposable
                     strict = true,
                     schema = ReasoningProviderSupport.AssistantPlanJsonSchema
                 }
-            }
+            },
+            stream = onTextDelta is not null
         }, SerializerOptions);
 
         using var httpRequest = CreateJsonRequest(HttpMethod.Post, "responses", apiKey, payload);
         using var response = await SendAsync(httpRequest, cancellationToken).ConfigureAwait(false);
-        var body = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
-        if (!response.IsSuccessStatusCode)
+
+        string rawResponse;
+        if (onTextDelta is null)
         {
-            throw CreateApiException(response.StatusCode, body, model);
+            var body = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+            if (!response.IsSuccessStatusCode)
+            {
+                throw CreateApiException(response.StatusCode, body, model);
+            }
+
+            rawResponse = ReadResponseText(body);
+        }
+        else
+        {
+            if (!response.IsSuccessStatusCode)
+            {
+                var errorBody = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+                throw CreateApiException(response.StatusCode, errorBody, model);
+            }
+
+            var answer = new StreamingPlanText(onTextDelta);
+            await ReasoningProviderSupport.ReadEventStreamAsync(
+                response,
+                element =>
+                {
+                    if (ReasoningProviderSupport.ReadString(element, "type") == "response.output_text.delta")
+                    {
+                        answer.Append(ReasoningProviderSupport.ReadString(element, "delta"));
+                    }
+                },
+                cancellationToken).ConfigureAwait(false);
+            rawResponse = answer.Raw;
         }
 
-        var rawResponse = ReadResponseText(body);
         var safetyContext = string.IsNullOrWhiteSpace(transcript)
             ? request.Prompt
             : $"{request.Prompt}\n{transcript}";
@@ -151,6 +180,7 @@ public sealed class OpenAiProvider : IOpenAiProvider, IDisposable
                 new GeminiRequest(
                     "This is a Metis connection diagnostic. Inspect the attached one-pixel image and reply with exactly the word OK.",
                     DiagnosticPng),
+                onTextDelta: null,
                 cancellationToken).ConfigureAwait(false);
             stopwatch.Stop();
             return new ProviderTestResult(

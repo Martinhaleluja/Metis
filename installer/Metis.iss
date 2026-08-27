@@ -1,4 +1,4 @@
-#ifndef AppVersion
+﻿#ifndef AppVersion
   #define AppVersion "1.0.0"
 #endif
 
@@ -13,7 +13,7 @@
 #define AppName "Metis"
 ; Credited on the setup wizard, in Add/Remove Programs, and in the file
 ; properties of both the installer and the application.
-#define AppPublisher "Martin Nakasole"
+#define AppPublisher "Metis"
 #define AppExeName "Metis.exe"
 #define AppUrl "https://github.com/Martinhaleluja/Metis"
 

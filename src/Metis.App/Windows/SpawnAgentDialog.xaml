@@ -1,4 +1,4 @@
-<Window x:Class="Metis.App.Windows.SpawnAgentDialog"
+﻿<Window x:Class="Metis.App.Windows.SpawnAgentDialog"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="Spawn Background Agent"
@@ -10,18 +10,13 @@
         Topmost="True"
         FontFamily="{StaticResource UiFont}">
     <Window.Resources>
-        <SolidColorBrush x:Key="DialogInk" Color="#F2F2F7" />
-        <SolidColorBrush x:Key="DialogMuted" Color="#8E8E93" />
-        <SolidColorBrush x:Key="DialogSurface" Color="#16161A" />
-        <SolidColorBrush x:Key="DialogField" Color="#1F1F24" />
-        <SolidColorBrush x:Key="DialogAccent" Color="#0A7CFF" />
 
         <Style x:Key="DialogButton" TargetType="Border">
             <Setter Property="Height" Value="32" />
             <Setter Property="CornerRadius" Value="16" />
             <Setter Property="Padding" Value="16,0" />
             <Setter Property="Cursor" Value="Hand" />
-            <Setter Property="Background" Value="{StaticResource DialogAccent}" />
+            <Setter Property="Background" Value="{DynamicResource AccentBrush}" />
             <Setter Property="SnapsToDevicePixels" Value="True" />
             <Style.Triggers>
                 <Trigger Property="IsMouseOver" Value="True">
@@ -34,21 +29,21 @@
             <Setter Property="Height" Value="28" />
             <Setter Property="CornerRadius" Value="14" />
             <Setter Property="Padding" Value="12,0" />
-            <Setter Property="Background" Value="#1AFFFFFF" />
+            <Setter Property="Background" Value="{DynamicResource NotchToolBrush}" />
             <Setter Property="Cursor" Value="Hand" />
             <Setter Property="Margin" Value="0,0,6,6" />
             <Style.Triggers>
                 <Trigger Property="IsMouseOver" Value="True">
-                    <Setter Property="Background" Value="#2EFFFFFF" />
+                    <Setter Property="Background" Value="{DynamicResource NotchScrollThumbBrush}" />
                 </Trigger>
             </Style.Triggers>
         </Style>
     </Window.Resources>
 
-    <Border Background="{StaticResource DialogSurface}" CornerRadius="16" BorderBrush="#2C2C33" BorderThickness="1"
+    <Border Background="{DynamicResource NotchSurfaceBrush}" CornerRadius="16" BorderBrush="{DynamicResource NotchFieldEdgeBrush}" BorderThickness="1"
             Padding="20" Margin="10">
         <Border.Effect>
-            <DropShadowEffect Color="#000000" BlurRadius="24" ShadowDepth="6" Opacity="0.55" />
+            <DropShadowEffect Color="{DynamicResource NotchShadow}" BlurRadius="24" ShadowDepth="6" Opacity="0.55" />
         </Border.Effect>
 
         <Grid>
@@ -65,11 +60,11 @@
                 <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                     <TextBlock Text="⚡" FontSize="16" Margin="0,0,6,0" VerticalAlignment="Center" />
                     <TextBlock Text="Spawn Background Agent" FontSize="15" FontWeight="SemiBold"
-                               Foreground="{StaticResource DialogInk}" VerticalAlignment="Center" />
+                               Foreground="{DynamicResource NotchTextBrush}" VerticalAlignment="Center" />
                 </StackPanel>
-                <Border Width="24" Height="24" CornerRadius="12" Background="#1AFFFFFF" HorizontalAlignment="Right"
+                <Border Width="24" Height="24" CornerRadius="12" Background="{DynamicResource NotchToolBrush}" HorizontalAlignment="Right"
                         Cursor="Hand" MouseLeftButtonUp="Cancel_OnClick">
-                    <TextBlock Text="✕" FontSize="11" Foreground="{StaticResource DialogMuted}"
+                    <TextBlock Text="✕" FontSize="11" Foreground="{DynamicResource NotchMutedBrush}"
                                HorizontalAlignment="Center" VerticalAlignment="Center" />
                 </Border>
             </Grid>
@@ -77,19 +72,19 @@
             <!-- Preset Templates -->
             <StackPanel Grid.Row="1" Margin="0,14,0,10">
                 <TextBlock Text="TEMPLATES / QUICK STARTS" FontSize="10" FontWeight="SemiBold"
-                           Foreground="{StaticResource DialogMuted}" Margin="0,0,0,6" />
+                           Foreground="{DynamicResource NotchMutedBrush}" Margin="0,0,0,6" />
                 <WrapPanel>
                     <Border Style="{StaticResource TemplatePill}" Tag="Organize files in Downloads by extension and type"
                             MouseLeftButtonUp="Template_OnClick">
-                        <TextBlock Text="📁 Organize Downloads" FontSize="11" Foreground="{StaticResource DialogInk}" VerticalAlignment="Center" />
+                        <TextBlock Text="📁 Organize Downloads" FontSize="11" Foreground="{DynamicResource NotchTextBrush}" VerticalAlignment="Center" />
                     </Border>
                     <Border Style="{StaticResource TemplatePill}" Tag="Research the latest AI breakthroughs this week and compile a markdown summary"
                             MouseLeftButtonUp="Template_OnClick">
-                        <TextBlock Text="🌐 Web Research &amp; Report" FontSize="11" Foreground="{StaticResource DialogInk}" VerticalAlignment="Center" />
+                        <TextBlock Text="🌐 Web Research &amp; Report" FontSize="11" Foreground="{DynamicResource NotchTextBrush}" VerticalAlignment="Center" />
                     </Border>
                     <Border Style="{StaticResource TemplatePill}" Tag="Find all error logs on the system and summarize recent crashes"
                             MouseLeftButtonUp="Template_OnClick">
-                        <TextBlock Text="💻 System Log Analysis" FontSize="11" Foreground="{StaticResource DialogInk}" VerticalAlignment="Center" />
+                        <TextBlock Text="💻 System Log Analysis" FontSize="11" Foreground="{DynamicResource NotchTextBrush}" VerticalAlignment="Center" />
                     </Border>
                 </WrapPanel>
             </StackPanel>
@@ -101,34 +96,34 @@
                     <RowDefinition Height="*" />
                 </Grid.RowDefinitions>
                 <TextBlock Grid.Row="0" Text="WHAT SHOULD THE AGENT DO?" FontSize="10" FontWeight="SemiBold"
-                           Foreground="{StaticResource DialogMuted}" Margin="0,0,0,6" />
-                <Border Grid.Row="1" Background="{StaticResource DialogField}" CornerRadius="10" BorderBrush="#2C2C33" BorderThickness="1"
+                           Foreground="{DynamicResource NotchMutedBrush}" Margin="0,0,0,6" />
+                <Border Grid.Row="1" Background="{DynamicResource NotchHairlineBrush}" CornerRadius="10" BorderBrush="{DynamicResource NotchFieldEdgeBrush}" BorderThickness="1"
                         Padding="10,8">
                     <TextBox x:Name="GoalBox" AcceptsReturn="True" TextWrapping="Wrap" Background="Transparent"
-                             BorderThickness="0" Foreground="{StaticResource DialogInk}" FontSize="13"
-                             CaretBrush="{StaticResource DialogInk}" VerticalScrollBarVisibility="Auto" />
+                             BorderThickness="0" Foreground="{DynamicResource NotchTextBrush}" FontSize="13"
+                             CaretBrush="{DynamicResource NotchTextBrush}" VerticalScrollBarVisibility="Auto" />
                 </Border>
             </Grid>
 
             <!-- Working Directory -->
             <StackPanel Grid.Row="3" Margin="0,0,0,16">
                 <TextBlock Text="WORKING DIRECTORY (OPTIONAL)" FontSize="10" FontWeight="SemiBold"
-                           Foreground="{StaticResource DialogMuted}" Margin="0,0,0,4" />
-                <Border Background="{StaticResource DialogField}" CornerRadius="8" BorderBrush="#2C2C33" BorderThickness="1"
+                           Foreground="{DynamicResource NotchMutedBrush}" Margin="0,0,0,4" />
+                <Border Background="{DynamicResource NotchHairlineBrush}" CornerRadius="8" BorderBrush="{DynamicResource NotchFieldEdgeBrush}" BorderThickness="1"
                         Padding="8,6">
                     <TextBox x:Name="WorkingDirBox" Background="Transparent" BorderThickness="0"
-                             Foreground="{StaticResource DialogInk}" FontSize="11.5" CaretBrush="{StaticResource DialogInk}" />
+                             Foreground="{DynamicResource NotchTextBrush}" FontSize="11.5" CaretBrush="{DynamicResource NotchTextBrush}" />
                 </Border>
             </StackPanel>
 
             <!-- Action Buttons -->
             <Grid Grid.Row="4">
                 <TextBlock Text="Agent runs in background without cursor takeover" FontSize="10.5"
-                           Foreground="{StaticResource DialogMuted}" VerticalAlignment="Center" />
+                           Foreground="{DynamicResource NotchMutedBrush}" VerticalAlignment="Center" />
                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
-                    <Border Style="{StaticResource DialogButton}" Background="#1AFFFFFF" Margin="0,0,8,0"
+                    <Border Style="{StaticResource DialogButton}" Background="{DynamicResource NotchToolBrush}" Margin="0,0,8,0"
                             MouseLeftButtonUp="Cancel_OnClick">
-                        <TextBlock Text="Cancel" FontSize="12" FontWeight="SemiBold" Foreground="{StaticResource DialogInk}" VerticalAlignment="Center" />
+                        <TextBlock Text="Cancel" FontSize="12" FontWeight="SemiBold" Foreground="{DynamicResource NotchTextBrush}" VerticalAlignment="Center" />
                     </Border>
                     <Border Style="{StaticResource DialogButton}" MouseLeftButtonUp="Spawn_OnClick">
                         <TextBlock Text="Spawn Agent" FontSize="12" FontWeight="SemiBold" Foreground="White" VerticalAlignment="Center" />

@@ -107,6 +107,7 @@ public sealed class ClaudeReasoningProviderTests
             "sk-ant-test",
             "claude-sonnet-4-5",
             new GeminiRequest("Hello"),
+            onTextDelta: null,
             cancellation.Token));
     }
 

@@ -53,6 +53,7 @@ public sealed class OpenClawReasoningProvider : IReasoningProvider, IDisposable
         string? credential,
         string model,
         GeminiRequest request,
+        IProgress<string>? onTextDelta = null,
         CancellationToken cancellationToken = default)
     {
         ThrowIfDisposed();
@@ -81,7 +82,7 @@ public sealed class OpenClawReasoningProvider : IReasoningProvider, IDisposable
                     content
                 }
             },
-            stream = false,
+            stream = onTextDelta is not null,
             store = false,
             max_output_tokens = ReasoningProviderSupport.MaxPlanTokens,
             text = new
@@ -104,14 +105,38 @@ public sealed class OpenClawReasoningProvider : IReasoningProvider, IDisposable
                 ProviderId,
                 cancellationToken)
             .ConfigureAwait(false);
-        var body = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
-        if (!response.IsSuccessStatusCode)
+
+        if (onTextDelta is null)
         {
-            throw CreateApiException(response.StatusCode, body, normalizedModel, credential);
+            var body = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+            if (!response.IsSuccessStatusCode)
+            {
+                throw CreateApiException(response.StatusCode, body, normalizedModel, credential);
+            }
+
+            return ReasoningProviderSupport.ParsePlanResponse(
+                ProviderId, normalizedModel, ReadResponseText(body), request);
         }
 
-        var text = ReadResponseText(body);
-        return ReasoningProviderSupport.ParsePlanResponse(ProviderId, normalizedModel, text, request);
+        if (!response.IsSuccessStatusCode)
+        {
+            var errorBody = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+            throw CreateApiException(response.StatusCode, errorBody, normalizedModel, credential);
+        }
+
+        var answer = new StreamingPlanText(onTextDelta);
+        await ReasoningProviderSupport.ReadEventStreamAsync(
+            response,
+            element =>
+            {
+                if (ReasoningProviderSupport.ReadString(element, "type") == "response.output_text.delta")
+                {
+                    answer.Append(ReasoningProviderSupport.ReadString(element, "delta"));
+                }
+            },
+            cancellationToken).ConfigureAwait(false);
+
+        return ReasoningProviderSupport.ParsePlanResponse(ProviderId, normalizedModel, answer.Raw, request);
     }
 
     public async Task<IReadOnlyList<ReasoningModelInfo>> ListModelsAsync(
@@ -168,6 +193,7 @@ public sealed class OpenClawReasoningProvider : IReasoningProvider, IDisposable
                     new GeminiRequest(
                         "This is a Metis connection diagnostic. Inspect the attached one-pixel image and set spoken_text to OK with no actions.",
                         DiagnosticPng),
+                    onTextDelta: null,
                     cancellationToken)
                 .ConfigureAwait(false);
             stopwatch.Stop();

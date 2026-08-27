@@ -62,6 +62,10 @@ public sealed class DataServiceTests
             var fakeKey = "AQ." + new string('A', 32);
 
             log.Error($"request failed ?key={fakeKey} x-goog-api-key: {fakeKey}");
+
+            // Writes are handed to a background writer so logging cannot stall
+            // the response path, so the file is only guaranteed after a flush.
+            log.Flush();
             var contents = File.ReadAllText(log.LogPath);
 
             Assert.DoesNotContain(fakeKey, contents, StringComparison.Ordinal);

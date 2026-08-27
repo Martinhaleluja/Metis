@@ -1,4 +1,4 @@
-<Window x:Class="Metis.App.Windows.OnboardingWindow"
+﻿<Window x:Class="Metis.App.Windows.OnboardingWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="Welcome to Metis"
@@ -351,8 +351,7 @@
 
                     <Border Style="{StaticResource Separator}" />
                     <StackPanel Orientation="Horizontal">
-                        <TextBlock Style="{StaticResource CaptionText}" Text="Metis  ·  " />
-                        <TextBlock Style="{StaticResource CaptionText}" Text="Built by Martin Nakasole" />
+                        <TextBlock Style="{StaticResource CaptionText}" Text="Metis" />
                     </StackPanel>
                 </StackPanel>
             </Grid>

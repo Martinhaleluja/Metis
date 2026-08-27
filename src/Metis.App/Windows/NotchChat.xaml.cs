@@ -1,8 +1,10 @@
 using System.Collections.ObjectModel;
+using System.ComponentModel;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
+using System.Windows.Threading;
 using Metis.App.Runtime;
 using Metis.Core.Agents;
 using Metis.Core.Models;
@@ -54,6 +56,19 @@ public partial class NotchChat : System.Windows.Controls.UserControl
     private UpdateCheck? _availableUpdate;
     private bool _sending;
 
+    /// <summary>The reply currently being written into, if one is arriving.</summary>
+    private ChatBubble? _streamingBubble;
+
+    /// <summary>
+    /// Grows the notch to fit a reply as it arrives. Ticking a few times a
+    /// second is enough to look continuous and costs one measure per tick,
+    /// rather than one per fragment of text.
+    /// </summary>
+    private readonly DispatcherTimer _streamGrowth = new()
+    {
+        Interval = TimeSpan.FromMilliseconds(140)
+    };
+
     /// <summary>Raised when the user asks for the chat to be put away.</summary>
     public event EventHandler? CloseRequested;
 
@@ -78,6 +93,11 @@ public partial class NotchChat : System.Windows.Controls.UserControl
     {
         InitializeComponent();
         MessagesList.ItemsSource = _messages;
+        _streamGrowth.Tick += (_, _) =>
+        {
+            RaiseSizeChanged();
+            ScrollToLatest();
+        };
     }
 
     /// <summary>
@@ -91,6 +111,8 @@ public partial class NotchChat : System.Windows.Controls.UserControl
         _runtime = runtime;
 
         runtime.MessageAdded += Runtime_OnMessageAdded;
+        runtime.ResponseStreamStarted += Runtime_OnResponseStreamStarted;
+        runtime.ResponseTextDelta += Runtime_OnResponseTextDelta;
         runtime.StatusChanged += Runtime_OnStatusChanged;
         runtime.AudioLevelChanged += Runtime_OnAudioLevelChanged;
         runtime.State.Changed += Runtime_OnStateChanged;
@@ -370,11 +392,48 @@ public partial class NotchChat : System.Windows.Controls.UserControl
             _ => "Metis"
         };
 
+        // The reply may already be on screen, written a fragment at a time. If
+        // so this is the same answer arriving complete — the parsed text, which
+        // can differ slightly from the raw stream — so it replaces what was
+        // shown rather than being added underneath it.
+        _streamGrowth.Stop();
+        if (_streamingBubble is { } streaming && message.Role == AssistantRole.Metis)
+        {
+            streaming.Text = message.Text;
+            _streamingBubble = null;
+            RaiseSizeChanged();
+            ScrollToLatest();
+            RefreshModelChip();
+            return;
+        }
+
+        _streamingBubble = null;
         _messages.Add(new ChatBubble(author, message.Text));
         RaiseSizeChanged();
         ScrollToLatest();
         RefreshModelChip();
     });
+
+    private void Runtime_OnResponseStreamStarted(object? sender, EventArgs e) => Dispatcher.InvokeAsync(() =>
+    {
+        _streamingBubble = new ChatBubble("Metis", string.Empty);
+        _messages.Add(_streamingBubble);
+        RaiseSizeChanged();
+        ScrollToLatest();
+        _streamGrowth.Start();
+    });
+
+    /// <summary>
+    /// Appends the next piece of a reply that is still being written.
+    ///
+    /// Deliberately does not resize or scroll here. Fragments arrive many times
+    /// a second and <see cref="MeasureDesiredHeight"/> measures the whole
+    /// transcript, so doing that per fragment would lay the conversation out
+    /// again for every few characters of it. The binding redraws the text on
+    /// its own; a timer keeps the notch's height following along.
+    /// </summary>
+    private void Runtime_OnResponseTextDelta(object? sender, string delta) =>
+        Dispatcher.InvokeAsync(() => _streamingBubble?.Append(delta));
 
     private void Runtime_OnStatusChanged(object? sender, string status) =>
         Dispatcher.InvokeAsync(() => StatusText.Text = status);
@@ -646,5 +705,42 @@ public partial class NotchChat : System.Windows.Controls.UserControl
     private sealed record HistoryRow(string Id, string Title, string Subtitle, Visibility TickVisibility);
 }
 
-/// <summary>One line of the conversation as it is drawn.</summary>
-public sealed record ChatBubble(string Author, string Text);
+/// <summary>
+/// One line of the conversation as it is drawn.
+///
+/// A class rather than the record this used to be, because a reply is now put
+/// on screen while it is still being written: the bubble is created empty and
+/// filled in as the words arrive, which needs a property the binding can watch
+/// change rather than a new immutable value each time.
+/// </summary>
+public sealed class ChatBubble : INotifyPropertyChanged
+{
+    private string _text;
+
+    public ChatBubble(string author, string text)
+    {
+        Author = author;
+        _text = text;
+    }
+
+    public event PropertyChangedEventHandler? PropertyChanged;
+
+    public string Author { get; }
+
+    public string Text
+    {
+        get => _text;
+        set
+        {
+            if (_text == value)
+            {
+                return;
+            }
+
+            _text = value;
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Text)));
+        }
+    }
+
+    public void Append(string fragment) => Text = _text + fragment;
+}

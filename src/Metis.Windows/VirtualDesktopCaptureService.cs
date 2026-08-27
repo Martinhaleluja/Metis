@@ -14,9 +14,28 @@ namespace Metis.Windows;
 /// </summary>
 public sealed class VirtualDesktopCaptureService : IScreenCaptureService
 {
+    /// <summary>
+    /// The ceiling for a capture that has to keep every pixel it can — pointing
+    /// at one small control, or explaining a region the user traced.
+    /// </summary>
     private const int CloudMaximumWidth = 2560;
     private const int CloudMaximumHeight = 1440;
     private const long CloudJpegQuality = 80L;
+
+    /// <summary>
+    /// The ceiling for an ordinary question about the screen.
+    ///
+    /// This used to be the one above, which on a 1080p desktop meant no
+    /// downscale at all: a couple of hundred kilobytes to upload and around
+    /// fifteen hundred image tokens for the model to read before it could
+    /// begin, on every single turn. Halving each dimension cuts both to roughly
+    /// a third, and a screenshot at this size is still comfortably legible —
+    /// window titles, menu items and button labels all survive it.
+    /// </summary>
+    private const int StandardMaximumWidth = 1280;
+    private const int StandardMaximumHeight = 720;
+    private const long StandardJpegQuality = 75L;
+
     private const int LocalMaximumWidth = 1280;
     private const int LocalMaximumHeight = 720;
     private const long LocalJpegQuality = 68L;
@@ -41,9 +60,28 @@ public sealed class VirtualDesktopCaptureService : IScreenCaptureService
     public void UseCompactLocalProfile(bool enabled) => _compactLocalProfile = enabled;
 
     public Task<ScreenCapture?> CaptureActiveWindowAsync(CancellationToken cancellationToken = default) =>
-        Task.Run(() => Capture(cancellationToken), cancellationToken);
+        CaptureActiveWindowAsync(ScreenCaptureDetail.Full, cancellationToken);
 
-    private ScreenCapture? Capture(CancellationToken cancellationToken)
+    public Task<ScreenCapture?> CaptureActiveWindowAsync(
+        ScreenCaptureDetail detail,
+        CancellationToken cancellationToken = default) =>
+        Task.Run(() => Capture(detail, cancellationToken), cancellationToken);
+
+    /// <summary>
+    /// The bounds the next capture will cover, read without capturing anything.
+    /// Lets work that only needs to know where the desktop is — the
+    /// accessibility scan — start at the same moment as the capture rather
+    /// than waiting for it to finish.
+    /// </summary>
+    public ScreenBounds? PeekCaptureBounds()
+    {
+        var bounds = _readVirtualScreenBounds();
+        return bounds.Width <= 1 || bounds.Height <= 1
+            ? null
+            : new ScreenBounds(bounds.Left, bounds.Top, bounds.Width, bounds.Height);
+    }
+
+    private ScreenCapture? Capture(ScreenCaptureDetail detail, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
         var bounds = _readVirtualScreenBounds();
@@ -72,9 +110,12 @@ public sealed class VirtualDesktopCaptureService : IScreenCaptureService
         }
 
         cancellationToken.ThrowIfCancellationRequested();
-        var maximumWidth = _compactLocalProfile ? LocalMaximumWidth : CloudMaximumWidth;
-        var maximumHeight = _compactLocalProfile ? LocalMaximumHeight : CloudMaximumHeight;
-        var jpegQuality = _compactLocalProfile ? LocalJpegQuality : CloudJpegQuality;
+        var (maximumWidth, maximumHeight, jpegQuality) = (_compactLocalProfile, detail) switch
+        {
+            (true, _) => (LocalMaximumWidth, LocalMaximumHeight, LocalJpegQuality),
+            (false, ScreenCaptureDetail.Full) => (CloudMaximumWidth, CloudMaximumHeight, CloudJpegQuality),
+            _ => (StandardMaximumWidth, StandardMaximumHeight, StandardJpegQuality)
+        };
         var scale = Math.Min(
             1d,
             Math.Min(maximumWidth / (double)bounds.Width, maximumHeight / (double)bounds.Height));

@@ -51,6 +51,7 @@ public sealed partial class GeminiProvider : IGeminiProvider, IDisposable
         string apiKey,
         string model,
         GeminiRequest request,
+        IProgress<string>? onTextDelta = null,
         CancellationToken cancellationToken = default)
     {
         ThrowIfDisposed();
@@ -67,7 +68,8 @@ public sealed partial class GeminiProvider : IGeminiProvider, IDisposable
             var rawResponse = await SendGenerateContentAsync(
                 apiKey,
                 normalizedModel,
-                GeminiRequestBuilder.BuildGenerateContentJson(request),
+                GeminiRequestBuilder.BuildGenerateContentJson(request, normalizedModel),
+                onTextDelta,
                 cancellationToken).ConfigureAwait(false);
             var plan = AssistantPlanParser.Parse(
                 rawResponse,
@@ -81,7 +83,8 @@ public sealed partial class GeminiProvider : IGeminiProvider, IDisposable
             var rawResponse = await SendGenerateContentAsync(
                 apiKey,
                 fallback,
-                GeminiRequestBuilder.BuildGenerateContentJson(request),
+                GeminiRequestBuilder.BuildGenerateContentJson(request, fallback),
+                onTextDelta,
                 cancellationToken).ConfigureAwait(false);
             var plan = AssistantPlanParser.Parse(
                 rawResponse,
@@ -165,8 +168,14 @@ public sealed partial class GeminiProvider : IGeminiProvider, IDisposable
                     "This is a Metis connection diagnostic. Inspect the attached one-pixel image and silent WAV, then reply with exactly the word OK.",
                     DiagnosticPng,
                     DiagnosticWav,
-                    "Metis model diagnostics"));
-            var text = await SendGenerateContentAsync(apiKey, normalizedModel, payload, cancellationToken)
+                    "Metis model diagnostics"),
+                normalizedModel);
+            var text = await SendGenerateContentAsync(
+                    apiKey,
+                    normalizedModel,
+                    payload,
+                    onTextDelta: null,
+                    cancellationToken)
                 .ConfigureAwait(false);
             stopwatch.Stop();
             return new ProviderTestResult(
@@ -384,8 +393,18 @@ public sealed partial class GeminiProvider : IGeminiProvider, IDisposable
         string apiKey,
         string model,
         string payload,
+        IProgress<string>? onTextDelta,
         CancellationToken cancellationToken)
     {
+        // Streaming only earns its extra handling when somebody is watching the
+        // reply arrive. Diagnostics and self-tests want the whole answer and
+        // nothing else, so they keep the plain path.
+        if (onTextDelta is not null)
+        {
+            return await StreamGenerateContentAsync(apiKey, model, payload, onTextDelta, cancellationToken)
+                .ConfigureAwait(false);
+        }
+
         var body = await SendForJsonAsync(apiKey, model, payload, cancellationToken).ConfigureAwait(false);
         using var document = ParseJson(body);
         var builder = new StringBuilder();
@@ -411,6 +430,65 @@ public sealed partial class GeminiProvider : IGeminiProvider, IDisposable
         var blockReason = document.RootElement.TryGetProperty("promptFeedback", out var feedback)
             ? GetString(feedback, "blockReason")
             : null;
+        var suffix = string.IsNullOrWhiteSpace(blockReason) ? string.Empty : $" Block reason: {blockReason}.";
+        throw new GeminiProviderException(
+            GeminiErrorKind.EmptyResponse,
+            $"Gemini returned no text response.{suffix} Try rephrasing the request or testing another model.");
+    }
+
+    /// <summary>
+    /// The same request against the streaming endpoint, publishing the answer
+    /// as it is written and returning the assembled JSON for the parser.
+    ///
+    /// The fragments are concatenated exactly as they arrive. The buffered path
+    /// below trims each part and joins them with newlines, which is harmless
+    /// for the single part a whole reply comes back as, and would quietly
+    /// corrupt a JSON string that happened to be split across two frames.
+    /// </summary>
+    private async Task<string> StreamGenerateContentAsync(
+        string apiKey,
+        string model,
+        string payload,
+        IProgress<string> onTextDelta,
+        CancellationToken cancellationToken)
+    {
+        ValidateModel(model);
+        using var request = CreateRequest(
+            HttpMethod.Post,
+            $"models/{Uri.EscapeDataString(model)}:streamGenerateContent?alt=sse",
+            apiKey,
+            payload);
+        using var response = await SendAsync(request, cancellationToken).ConfigureAwait(false);
+        if (!response.IsSuccessStatusCode)
+        {
+            var errorBody = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+            throw CreateApiException(response.StatusCode, errorBody, model);
+        }
+
+        var answer = new StreamingPlanText(onTextDelta);
+        string? blockReason = null;
+        await ReasoningProviderSupport.ReadEventStreamAsync(
+            response,
+            element =>
+            {
+                foreach (var part in EnumerateResponseParts(element))
+                {
+                    answer.Append(GetString(part, "text"));
+                }
+
+                if (blockReason is null && element.TryGetProperty("promptFeedback", out var feedback))
+                {
+                    blockReason = GetString(feedback, "blockReason");
+                }
+            },
+            cancellationToken).ConfigureAwait(false);
+
+        var text = answer.Raw;
+        if (!string.IsNullOrWhiteSpace(text))
+        {
+            return text;
+        }
+
         var suffix = string.IsNullOrWhiteSpace(blockReason) ? string.Empty : $" Block reason: {blockReason}.";
         throw new GeminiProviderException(
             GeminiErrorKind.EmptyResponse,
