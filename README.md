@@ -80,17 +80,37 @@ one.
 
 ## Providers
 
-Metis needs one AI provider. You supply the key; the account is yours.
+Metis needs one AI provider. Bring your own key and the account is yours — that
+is how Metis has always worked, and it still is. Sign in and Metis can also
+answer on its own AI, within whatever your plan includes.
 
 | Provider | Reasoning | Voice in | Voice out | Notes |
 |---|---|---|---|---|
 | **Gemini** | ✅ | ✅ | ✅ | Free tier available; the default |
+| **Metis** | ✅ | — | — | Metis's own AI, on your plan's allowance. No key to enter |
 | **Claude** | ✅ | — | — | Pair with AssemblyAI for voice input |
 | **OpenAI** | ✅ | ✅ | ✅ | API billing is separate from ChatGPT Plus |
 | **OpenRouter** | ✅ | — | — | Many models behind one key, including free ones |
 | **Ollama** | ✅ | — | — | Local. Needs a vision-capable model |
 | **OpenClaw** | ✅ | — | — | Self-hosted gateway |
-| **Automatic** | ✅ | ✅ | ✅ | Gemini, then OpenAI, then Claude |
+| **Automatic** | ✅ | ✅ | ✅ | Gemini, then OpenAI, then Claude, then Metis's own |
+
+## Plans
+
+| | Free | Plus | Pro |
+|---|---|---|---|
+| Price | $0 | $14/month | $29/month |
+| The AI Metis buys for you | Gemini, text only | Managed, with screen vision | Managed, plus your own account |
+| Your own API key | Everything, always | Everything, always | Everything, always |
+
+The plans limit what Metis is willing to spend with an AI provider on your
+behalf. They do not limit the software. Point Metis at your own key and none of
+it applies: screen vision, automation and agents all work, on Free, signed out,
+for as long as you like.
+
+**Nothing is on sale yet.** A payment provider has not been settled, so every
+paid capability is free for everyone in the meantime, and it will be announced
+before that changes.
 
 Optional: **AssemblyAI** or **Whisper.cpp** for speech-to-text, **ElevenLabs**
 or **Piper** for speech. Piper and Whisper.cpp are offline.

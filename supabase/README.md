@@ -68,15 +68,55 @@ explicit assignment or a stable percentage bucket. Both answer only about
 whoever is calling — an earlier pair took a user id and could be used to discover
 who the administrators were.
 
-**Billing.** `billing_state` has one row and one job: while `billing_is_live` is
-false, every paid capability is free. Turning billing on later is an update
-rather than a migration. Staff capabilities are deliberately exempt — free does
-not mean everyone is a developer.
+**Plans.** `plan_tier` is `free`, `plus`, `pro`, and it mirrors the `PlanTier`
+enum in `Metis.Core` exactly — as does `metis_feature` against `MetisFeature`. A
+test in `tests/Metis.Tests/EnumParityTests.cs` reads these migration files off
+disk and fails if either pair drifts, because a capability that exists on one
+side and not the other is a permission question with two different answers.
+
+**Limits.** `plan_limits` holds the numbers behind each plan: the monthly AI
+budget, the largest screenshot the gateway will accept, request rates, agent-step
+ceilings, memory size, and which models the plan may ask for. It is readable by
+any signed-in user, so the desktop app can size a screenshot down before it
+uploads it rather than being refused afterwards. Nothing about it is compiled in:
+raising an allowance is a row update, not a release everyone has to install.
+
+**Prices.** `model_prices` is what each model costs Metis per million tokens.
+Staff-readable only — it is the company's number, not the customer's. A price
+change is an insert rather than an update, so a usage row costed last month stays
+explicable afterwards instead of being silently repriced.
+
+**Billing.** `billing_state` has one row and several jobs. While
+`billing_is_live` is false, every paid capability is free to everyone; turning
+billing on later is an update rather than a migration. Staff capabilities are
+deliberately exempt — free does not mean everyone is a developer. The same row
+carries `cost_protection_mode`, an emergency brake that degrades or refuses
+managed AI when it is costing more than Metis can carry. Bring-your-own-key and
+local models are untouched by it, not by special case but because those requests
+never reach the gateway at all.
+
+`billing_events` is every verified webhook, keyed by the processor's own event id
+so redelivery is a no-op, and `apply_subscription(...)` is where a verified event
+becomes an entitlement. Which processor Metis will use is still undecided; both
+Polar and Stripe land in the same shape, and neither is configured. See
+`docs/BILLING_SETUP.md`.
+
+**Bring your own AI.** `user_ai_connections` holds a customer's connected
+provider, with the key itself in Supabase Vault and only its id here. Because
+PostgREST exposes `public` and `graphql_public` and not `vault`, the gateway
+reaches it through `store_provider_secret`, `read_provider_secret` and
+`forget_provider_secret` — all `service_role` only, and the read one never
+granted to `authenticated` even for their own key. An `after delete` trigger
+removes the vault secret when the connection row goes: the delete policy lets a
+customer remove the row directly, and without the trigger their key stayed
+encrypted at rest forever with nothing left pointing at it.
 
 **Usage.** `usage_events` records how much, how often and how slow, written by
 the API with the service key. It deliberately carries no prompt text, no
 screenshot and no response: it is a cost ledger, not a record of what anyone was
-doing on their screen.
+doing on their screen. `usage_this_period(uuid)` reads it back for the monthly
+budget, and `my_usage_this_period()` is the same question asked about yourself,
+for the usage meter on the account page and in the app.
 
 **Waitlist.** `waitlist_signups` backs the launch site. Row level security is
 enabled with **no policies at all**, so the publishable key cannot touch a row

@@ -6,6 +6,56 @@ All notable changes to Metis are recorded here. The format follows
 
 ## [Unreleased]
 
+### Added — plans, and an AI gateway that pays for two of them
+
+- **Three plans: Free at $0, Plus at $14, Pro at $29 with bring-your-own-AI.**
+  Nothing is on sale yet — no payment provider has been chosen — and every paid
+  capability stays free for everyone until `billing_state.billing_is_live` says
+  otherwise. That switch is a row update rather than a release.
+- **The plans meter what Metis pays a provider for, never what the software can
+  do.** Anyone running Metis on their own API key keeps screen vision,
+  automation and agents, on Free, signed out, for as long as they like. Those
+  requests never reach a Metis server, so there is nothing for a plan to apply
+  to. The rule lives in one function, `ProviderRouting.Decide`, above every
+  question about accounts and billing.
+- **Metis can answer on its own AI** for people who have not brought a key.
+  Prompt, screenshot and all, through the gateway, streamed back as it arrives.
+- **Bring your own provider on Pro.** Connect an OpenAI, Anthropic, Gemini,
+  Mistral or OpenRouter account from the website; the key is tested against the
+  provider, stored encrypted in Supabase Vault, and never returned to a browser.
+  That provider bills you for model usage, separately from the $29.
+- **An Account & plan page in Preferences**, with what the plan includes and how
+  much of the month's included AI is left. Anything that costs money opens the
+  website, which is where a payment page belongs.
+- **A plan banner in the notch** for the refusals that are not faults — an
+  allowance spent, or something a plan does not cover — and cues for both.
+- **Cost protection**: an emergency switch that degrades or refuses managed AI
+  when it costs more than Metis can carry. Bring-your-own and local models are
+  unaffected by construction rather than by exception.
+
+### Changed
+
+- **`PRIVACY.md` now says where screen content goes per route, and the claim
+  that Metis has no server in the middle no longer stands unqualified.** It is
+  still true on your own key, on Pro's connected account, and for local models.
+  It is not true for the AI Metis pays for, and saying so plainly is the only
+  honest version.
+- The website gains pricing, providers, a bring-your-own explainer, an FAQ,
+  sign-in, an account page and legal pages — all in the same Windows 95 chrome.
+- Provider errors gain a `PlanLimited` kind, so "your plan is small" stops being
+  reported as "your credential is wrong" and sending people to replace a working
+  key.
+- Metis never falls back to your own API key after its own AI refuses on plan or
+  allowance grounds. Spending someone's money because Metis ran out of its own is
+  not a thing to do quietly.
+
+### Removed
+
+- The Account window, which referenced a brush no theme defined — so opening it
+  threw and the tray entry silently did nothing. Preferences supersedes it.
+- `SetupWindow`, 1,950 lines that nothing had constructed since Preferences
+  replaced it. Its markup tests now check the window people actually open.
+
 ### Added — privacy and trust
 
 - **Metis cannot see content an application marks as private.** Windows lets a
