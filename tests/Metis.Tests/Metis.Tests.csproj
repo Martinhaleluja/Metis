@@ -22,8 +22,8 @@
     <ProjectReference Include="..\..\src\Metis.Windows\Metis.Windows.csproj" />
   </ItemGroup>
   <ItemGroup>
-    <None Include="..\..\src\Metis.App\Windows\SetupWindow.xaml"
-          Link="Fixtures\SetupWindow.xaml"
+    <None Include="..\..\src\Metis.App\Windows\PreferencesWindow.xaml"
+          Link="Fixtures\PreferencesWindow.xaml"
           CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\..\src\Metis.App\Theme\Tokens.Light.xaml"
           Link="Fixtures\Tokens.Light.xaml"

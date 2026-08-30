@@ -45,7 +45,7 @@ public partial class NotchAuth : UserControl
     private readonly SupabaseAuthClient _auth = new(new HttpClient { Timeout = TimeSpan.FromSeconds(30) });
 
     private Runtime.MetisRuntime? _runtime;
-    private AccountWindow.ISecretStoreAccess? _secrets;
+    private Metis.Core.Contracts.ISessionTokenAccess? _secrets;
     private Storyboard? _spin;
     private bool _signingUp;
     private bool _busy;
@@ -68,7 +68,7 @@ public partial class NotchAuth : UserControl
         InitializeComponent();
     }
 
-    public void Attach(Runtime.MetisRuntime runtime, AccountWindow.ISecretStoreAccess secrets)
+    public void Attach(Runtime.MetisRuntime runtime, Metis.Core.Contracts.ISessionTokenAccess secrets)
     {
         _runtime = runtime;
         _secrets = secrets;
@@ -219,7 +219,13 @@ public partial class NotchAuth : UserControl
             url, key, result.AccessToken!, result.Account!.UserId,
             Entitlements.ParseEnvironment(_runtime!.Settings.MetisEnvironment));
 
+        _runtime.SetSession(result.AccessToken, result.AccessTokenExpiresUtc);
         _runtime.SignIn(account ?? result.Account);
+
+        // What the plan actually includes comes from the gateway rather than
+        // from anything this panel decides. Not awaited: signing in must not
+        // wait on a service that may be cold.
+        _ = _runtime.RefreshEntitlementsAsync();
 
         // The password has done its one job. Nothing keeps it.
         PasswordField.Clear();

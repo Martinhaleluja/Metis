@@ -43,6 +43,23 @@ public sealed class SoundPackNamingTests
         Assert.Equal(MetisSound.AppStarted, SoundPackNaming.Match("app started.mp3"));
     }
 
+    /// <summary>
+    /// The two account cues, and the reason their order in the matcher matters.
+    ///
+    /// "allowance used up" contains "up" and "used"; "plan complete" contains
+    /// "complete". Both would be claimed by an earlier rule if these were tested
+    /// after the general ones rather than before them.
+    /// </summary>
+    [Theory]
+    [InlineData("limit reached.mp3", MetisSound.LimitReached)]
+    [InlineData("Allowance used up.wav", MetisSound.LimitReached)]
+    [InlineData("quota-2.mp3", MetisSound.LimitReached)]
+    [InlineData("plan changed.mp3", MetisSound.PlanChanged)]
+    [InlineData("Upgrade.WAV", MetisSound.PlanChanged)]
+    [InlineData("subscription active.mp3", MetisSound.PlanChanged)]
+    public void The_account_cues_match_their_names(string fileName, MetisSound expected) =>
+        Assert.Equal(expected, SoundPackNaming.Match(fileName));
+
     [Theory]
     [InlineData("ERROR 1.WAV")]
     [InlineData("Error_07.mp3")]
@@ -64,7 +81,8 @@ public sealed class SoundPackNamingTests
         var reachable = new[]
         {
             "app started", "audio recording started", "inspect keys pressed", "inspect keys released",
-            "request sent", "task complete", "saved settings", "stop metis", "error"
+            "request sent", "task complete", "saved settings", "stop metis", "error",
+            "plan changed", "limit reached"
         }.Select(SoundPackNaming.Match).ToHashSet();
 
         foreach (var sound in Enum.GetValues<MetisSound>())

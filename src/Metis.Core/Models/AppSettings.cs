@@ -143,6 +143,19 @@ public sealed record AppSettings
     public string SupabaseAnonKey { get; init; } = string.Empty;
 
     /// <summary>
+    /// The Metis AI gateway, which answers turns on Metis's own provider key.
+    /// Empty means use the one compiled into the build, exactly as with
+    /// <see cref="SupabaseUrl"/>.
+    ///
+    /// Note what is deliberately absent from this whole file: there is no plan,
+    /// tier or entitlement field anywhere in settings.json. What an account has
+    /// bought comes from the server, signed, and is cached in Windows Credential
+    /// Manager rather than here — so there is nothing in this file a person
+    /// could edit to give themselves a plan they did not buy.
+    /// </summary>
+    public string MetisGatewayUrl { get; init; } = string.Empty;
+
+    /// <summary>
     /// When this copy last held a session the backend agreed to. It is what
     /// bounds the offline grace period, so someone who signed in yesterday and
     /// is now on a train still gets in, while a machine abandoned for a month
@@ -367,6 +380,7 @@ public sealed record AppSettings
         "openclaw" or "open claw" or "open-claw" => "OpenClaw",
         "openrouter" or "open router" or "open-router" => "OpenRouter",
         "ollama" => "Ollama",
+        "metis" or "metis gateway" => "Metis",
         "automatic" or "auto" => "Automatic",
         _ => "Gemini"
     };

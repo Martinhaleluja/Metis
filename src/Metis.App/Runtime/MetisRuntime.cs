@@ -19,6 +19,14 @@ public sealed class MetisRuntime : IDisposable
 {
     private readonly ISettingsStore _settingsStore;
     private readonly ISecretStore _secretStore;
+
+    /// <summary>
+    /// Where the last signed entitlement snapshot lives. Constructed directly
+    /// rather than injected because it has exactly one implementation and the
+    /// application has no container; the interface exists so a test can hand in
+    /// a different one, not so this line can vary.
+    /// </summary>
+    private readonly IEntitlementCache _entitlementCache = new CredentialEntitlementCache();
     private readonly IDiagnosticLog _log;
 
     /// <summary>
@@ -353,7 +361,30 @@ public sealed class MetisRuntime : IDisposable
     public event EventHandler<MetisAccount>? AccountChanged;
 
     /// <summary>
-    /// Adopts a session established by the sign-in window. The account arrives
+    /// What the server last said this account may do, or null when it has never
+    /// been asked.
+    ///
+    /// Null is not the same as "nothing allowed". It means the answer is
+    /// unknown, and the callers below resolve that against the compiled-in rules
+    /// rather than against a guess in either direction.
+    /// </summary>
+    public EntitlementSnapshot? Entitlements { get; private set; }
+
+    public event EventHandler<EntitlementSnapshot?>? EntitlementsChanged;
+
+    /// <summary>
+    /// The current Supabase access token, and when it stops being one.
+    ///
+    /// Held only in memory. The refresh token is what survives a restart, in
+    /// Windows Credential Manager; this is the short-lived thing traded for it,
+    /// and writing it anywhere would be storing a bearer credential to save a
+    /// round trip that takes a fraction of a second.
+    /// </summary>
+    private string? _accessToken;
+    private DateTimeOffset _accessTokenExpiresUtc = DateTimeOffset.MinValue;
+
+    /// <summary>
+    /// Adopts a session established by the sign-in panel. The account arrives
     /// from the backend; nothing here invents or upgrades it, because an
     /// entitlement the client granted itself is not an entitlement.
     /// </summary>
@@ -366,10 +397,125 @@ public sealed class MetisRuntime : IDisposable
         SetStatus($"Signed in — {account.Plan} plan");
     }
 
+    /// <summary>
+    /// Records the access token the sign-in exchange produced.
+    ///
+    /// The application used to use this once and throw it away, which was fine
+    /// while nothing but Supabase itself was ever called with it. The gateway
+    /// needs it on every managed turn, so it is kept — in memory only, and
+    /// alongside its expiry so an obviously dead one is never sent.
+    /// </summary>
+    public void SetSession(string? accessToken, DateTimeOffset expiresUtc)
+    {
+        _accessToken = string.IsNullOrWhiteSpace(accessToken) ? null : accessToken.Trim();
+        _accessTokenExpiresUtc = expiresUtc;
+    }
+
+    /// <summary>
+    /// The access token, or null when there is none or it has already expired.
+    ///
+    /// Thirty seconds of slack, because a token that expires while the request
+    /// is in flight is refused by the server just as firmly as one that expired
+    /// a minute ago, and the refusal costs the user the turn.
+    /// </summary>
+    public string? SessionAccessToken =>
+        _accessToken is not null && DateTimeOffset.UtcNow < _accessTokenExpiresUtc.AddSeconds(-30)
+            ? _accessToken
+            : null;
+
+    /// <summary>
+    /// Adopts what the gateway said about this account, and remembers it so a
+    /// signed-in user who is offline tomorrow is not shown the free plan.
+    /// </summary>
+    public void ApplyEntitlements(EntitlementSnapshot? snapshot, string? signedSnapshot)
+    {
+        Entitlements = snapshot;
+        if (snapshot is not null && !string.IsNullOrWhiteSpace(signedSnapshot))
+        {
+            _entitlementCache.Write(signedSnapshot);
+        }
+
+        EntitlementsChanged?.Invoke(this, snapshot);
+    }
+
+    /// <summary>
+    /// Reads back a snapshot cached on a previous run, if the signature, the
+    /// account it names, and its expiry all still hold.
+    /// </summary>
+    public EntitlementSnapshot? RestoreCachedEntitlements(string userId)
+    {
+        using var publicKey = EntitlementSigner.TryLoadPublicKey(MetisBackend.EntitlementPublicKey);
+        if (publicKey is null)
+        {
+            return null;
+        }
+
+        var snapshot = EntitlementSigner.Verify(
+            _entitlementCache.Read(), publicKey, userId, DateTimeOffset.UtcNow);
+
+        if (snapshot is not null)
+        {
+            Entitlements = snapshot;
+            EntitlementsChanged?.Invoke(this, snapshot);
+        }
+
+        return snapshot;
+    }
+
+    /// <summary>
+    /// Whether this account has a capability, according to whatever the client
+    /// currently knows.
+    ///
+    /// A live or cached snapshot from the server is the truth. Without one, the
+    /// compiled-in table is evaluated with billing treated as <em>off</em>,
+    /// which deserves explaining because the cautious-looking choice is the
+    /// wrong one here.
+    ///
+    /// The cautious reading — assume billing is live, so an unknown answer
+    /// grants less — was what this did first, and running it showed what it
+    /// actually produces: a user on the free plan, with the gateway briefly
+    /// unreachable, is shown a list of nine capabilities they have not lost and
+    /// told they do not have them. That is the application lying to someone
+    /// about their own account, and it happens on exactly the day something is
+    /// already going wrong.
+    ///
+    /// Guessing the other way costs nothing, because this decides only what to
+    /// <em>show</em>. Every managed request is checked again by the gateway,
+    /// which refuses to spend anything at all when it cannot read its own rules
+    /// — so the client being generous here cannot turn into money leaving. The
+    /// two halves now agree: absent information means billing-off on both sides.
+    /// </summary>
+    public bool Can(MetisFeature feature) =>
+        Entitlements is { } snapshot
+            ? snapshot.Has(feature)
+            : Metis.Core.Services.Entitlements.Has(Account, feature, billingIsLive: false);
+
+    /// <summary>
+    /// Whether the client actually knows what this account may do, as opposed
+    /// to falling back on what it assumes. The account page says so plainly
+    /// rather than presenting a guess as a fact.
+    /// </summary>
+    public bool EntitlementsAreKnown => Entitlements is not null;
+
+    /// <summary>Why a capability was refused, in words for the user.</summary>
+    public string ExplainCapability(MetisFeature feature) =>
+        Metis.Core.Services.Entitlements.Explain(
+            Account, feature, Entitlements?.BillingIsLive ?? false);
+
     public void SignOut()
     {
         Account = MetisAccount.SignedOut;
+        Entitlements = null;
+        _accessToken = null;
+        _accessTokenExpiresUtc = DateTimeOffset.MinValue;
+
+        // A cached plan must not outlive the account it was issued for. It would
+        // be rejected anyway — it names its user — but leaving it behind means
+        // leaving a record of who used this machine, for no benefit at all.
+        _entitlementCache.Clear();
+
         AccountChanged?.Invoke(this, Account);
+        EntitlementsChanged?.Invoke(this, null);
         _log.Info("Signed out.");
         SetStatus("Signed out. Metis still works with your own API key.");
     }
@@ -3549,15 +3695,44 @@ public sealed class MetisRuntime : IDisposable
         return key;
     }
 
-    private bool HasConfiguredProviderKey() => Settings.AiProvider switch
+    /// <summary>
+    /// Whether the configured provider has a key of the user's own saved for it.
+    ///
+    /// Note what this does *not* consider: accounts, plans, and the gateway.
+    /// This answers only "can Metis call this provider on the user's own
+    /// credential", because that is the question ProviderRouting asks first and
+    /// the answer that outranks everything else.
+    /// </summary>
+    private bool HasOwnKeyForConfiguredProvider() => Settings.AiProvider switch
     {
         "OpenAI" => HasOpenAiKey,
         "Claude" => HasClaudeKey,
         "OpenRouter" => HasOpenRouterKey,
         "OpenClaw" or "Ollama" => true,
+        "Metis" => false,
         "Automatic" => HasAnyApiKey,
         _ => HasGeminiKey
     };
+
+    /// <summary>
+    /// Which of the four routes this turn takes. One call, so nothing anywhere
+    /// else re-derives it slightly differently.
+    /// </summary>
+    private ProviderRoute CurrentRoute() => ProviderRouting.Decide(
+        Settings.AiProvider,
+        HasOwnKeyForConfiguredProvider(),
+        Account.IsSignedIn && SessionAccessToken is not null,
+        MetisBackend.HasGateway(Settings.MetisGatewayUrl));
+
+    /// <summary>
+    /// Whether Metis can answer at all right now.
+    ///
+    /// Kept under its old name because every call site reads correctly with it,
+    /// but it is a wider question than it used to be: having a key of your own
+    /// is now one of three ways to be able to answer, alongside a local model
+    /// and a signed-in plan.
+    /// </summary>
+    private bool HasConfiguredProviderKey() => CurrentRoute() != ProviderRoute.RefuseNeedsKeyOrPlan;
 
     /// <summary>
     /// The stored secret for a provider Metis reaches over a configurable
@@ -3567,8 +3742,142 @@ public sealed class MetisRuntime : IDisposable
     {
         "OpenClaw" => _secretStore.ReadOpenClawToken(),
         "OpenRouter" => _secretStore.ReadOpenRouterApiKey(),
+
+        // The gateway's credential is the session token, not a provider key.
+        // It proves who is asking; it does not authorise a model call, which is
+        // decided on the server against the plan behind that identity.
+        ProviderRouting.GatewayProviderId => SessionAccessToken,
         _ => null
     };
+
+    /// <summary>
+    /// Asks the gateway what this account may do, and remembers the answer.
+    ///
+    /// Everything about this method is written so that failure is quiet. There
+    /// is no gateway in a self-hosted build; there is no session when nobody is
+    /// signed in; the service may be asleep, cold, or briefly unreachable. None
+    /// of those are reasons to interrupt anyone, because the client already has
+    /// a usable fallback in the cached snapshot and, below that, in its own
+    /// compiled table. The one thing it must never do is invent an answer.
+    /// </summary>
+    public async Task RefreshEntitlementsAsync(CancellationToken cancellationToken = default)
+    {
+        var token = SessionAccessToken;
+        if (token is null || !MetisBackend.HasGateway(Settings.MetisGatewayUrl))
+        {
+            return;
+        }
+
+        try
+        {
+            using var http = new System.Net.Http.HttpClient { Timeout = TimeSpan.FromSeconds(20) };
+            using var request = new System.Net.Http.HttpRequestMessage(
+                System.Net.Http.HttpMethod.Get,
+                new Uri(new Uri(MetisBackend.ResolveGatewayUrl(Settings.MetisGatewayUrl)), "v1/me"));
+            request.Headers.Authorization =
+                new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
+
+            using var response = await http.SendAsync(request, cancellationToken);
+            if (!response.IsSuccessStatusCode)
+            {
+                _log.Info($"The gateway did not report entitlements ({(int)response.StatusCode}).");
+                return;
+            }
+
+            var body = await response.Content.ReadAsStringAsync(cancellationToken);
+            var me = System.Text.Json.JsonSerializer.Deserialize<MeResponse>(
+                body, new System.Text.Json.JsonSerializerOptions(System.Text.Json.JsonSerializerDefaults.Web));
+
+            if (me is null)
+            {
+                return;
+            }
+
+            // The account is re-read from the same answer, so the plan the
+            // application shows and the plan the gateway will enforce cannot
+            // disagree: they came from one response.
+            var refreshed = Account with
+            {
+                Role = Metis.Core.Services.Entitlements.ParseRole(me.Role),
+                Plan = Metis.Core.Services.Entitlements.ParsePlan(me.Plan),
+                EmailVerified = me.EmailVerified
+            };
+
+            if (refreshed != Account)
+            {
+                // A plan that changed while the user was working in another
+                // window is the one change that happens to them rather than
+                // because of something they just did, so it is worth a sound.
+                var planMoved = refreshed.Plan != Account.Plan && Account.IsSignedIn;
+                SignIn(refreshed);
+                if (planMoved)
+                {
+                    PlayCue(MetisSound.PlanChanged);
+                }
+            }
+
+            var granted = me.Features
+                .Select(name => Enum.TryParse<MetisFeature>(name, out var feature) ? feature : (MetisFeature?)null)
+                .Where(feature => feature.HasValue)
+                .Select(feature => feature!.Value)
+                .ToHashSet();
+
+            ApplyEntitlements(
+                new EntitlementSnapshot(
+                    me.UserId,
+                    refreshed.Role,
+                    refreshed.Plan,
+                    me.EmailVerified,
+                    me.BillingIsLive,
+                    granted,
+                    me.Limits,
+                    me.IssuedUtc,
+                    me.ExpiresUtc),
+                me.Signed);
+
+            LastAllowance = me.Allowance;
+        }
+        catch (Exception exception) when (exception is System.Net.Http.HttpRequestException or TaskCanceledException
+                                              or System.Text.Json.JsonException)
+        {
+            // Unreachable, slow, or answering with something this build cannot
+            // read. All three mean the same thing to the caller: carry on with
+            // what is already known.
+            _log.Info($"Entitlements could not be refreshed right now: {exception.Message}");
+        }
+    }
+
+    /// <summary>
+    /// How much of this month's included AI has been used, as last reported.
+    /// Null when nobody is signed in or the gateway has not been asked yet.
+    /// </summary>
+    public AssistAllowance? LastAllowance { get; private set; }
+
+    /// <summary>
+    /// Which managed model to ask the gateway for.
+    ///
+    /// Whatever the user picked, when the plan's list includes it. Otherwise the
+    /// first model the plan does allow, which is authored cheapest-first. The
+    /// gateway makes the same substitution and its answer is the one that counts;
+    /// doing it here too means the model chip in the notch shows what will
+    /// actually be used rather than what was asked for.
+    ///
+    /// An empty string when nothing is known yet, which the gateway reads as
+    /// "choose for me".
+    /// </summary>
+    private string PreferredManagedModel()
+    {
+        var allowed = Entitlements?.Limits.ManagedModels;
+        if (allowed is null || allowed.Count == 0)
+        {
+            return string.Empty;
+        }
+
+        var chosen = Settings.ReasoningModel?.Trim();
+        return !string.IsNullOrEmpty(chosen) && allowed.Contains(chosen, StringComparer.OrdinalIgnoreCase)
+            ? chosen
+            : allowed[0];
+    }
 
     private static string ProviderDisplayName(string provider) => provider switch
     {
@@ -3577,6 +3886,7 @@ public sealed class MetisRuntime : IDisposable
         "OpenClaw" => "OpenClaw gateway",
         "OpenRouter" => "OpenRouter",
         "Ollama" => "local Ollama",
+        "Metis" => "Metis's own AI",
         "Automatic" => "Gemini, OpenAI, or Claude",
         _ => "Gemini"
     };
@@ -3591,6 +3901,8 @@ public sealed class MetisRuntime : IDisposable
             endpoint: new Uri(Settings.OllamaEndpoint, UriKind.Absolute),
             contextTokens: Settings.LocalContextTokens,
             enableThinking: !Settings.OllamaModel.Contains("instruct", StringComparison.OrdinalIgnoreCase)),
+        ProviderRouting.GatewayProviderId => new MetisGatewayReasoningProvider(
+            new Uri(MetisBackend.ResolveGatewayUrl(Settings.MetisGatewayUrl), UriKind.Absolute)),
         _ => throw new InvalidOperationException($"{provider} is not a configurable endpoint provider.")
     };
 
@@ -3671,6 +3983,23 @@ public sealed class MetisRuntime : IDisposable
     {
         GeminiProviderException gemini => gemini.Kind != GeminiErrorKind.InvalidRequest,
         OpenAiProviderException openAi => openAi.Kind != OpenAiErrorKind.InvalidRequest,
+
+        // Never fall back off the gateway after it has refused on grounds of
+        // plan or allowance.
+        //
+        // This is the most consequential line in the fallback logic. The
+        // "helpful" behaviour would be to try the user's own key instead, and
+        // that would mean Metis quietly spending someone else's money the moment
+        // it runs out of its own — on a request they believed was included,
+        // without being asked. A refusal they can see and act on is the honest
+        // outcome.
+        ReasoningProviderException { Kind: ReasoningProviderErrorKind.PlanLimited } => false,
+        ReasoningProviderException
+        {
+            ProviderId: MetisGatewayReasoningProvider.ProviderId,
+            Kind: ReasoningProviderErrorKind.QuotaOrRateLimit
+        } => false,
+
         ReasoningProviderException reasoning => reasoning.Kind != ReasoningProviderErrorKind.InvalidRequest,
         _ => true
     };
@@ -3680,6 +4009,26 @@ public sealed class MetisRuntime : IDisposable
         TurnTextStream? answerStream,
         CancellationToken cancellationToken)
     {
+        // The route is decided before anything else, because the answer changes
+        // who pays. A user with their own key falls straight through into the
+        // switch below exactly as they always have; only someone with no key of
+        // their own ever reaches the gateway.
+        switch (CurrentRoute())
+        {
+            case ProviderRoute.MetisGateway:
+                return await GenerateWithEndpointProviderAsync(
+                    ProviderRouting.GatewayProviderId, request, answerStream, cancellationToken);
+
+            case ProviderRoute.RefuseNeedsKeyOrPlan:
+                throw new InvalidOperationException(
+                    ProviderRouting.ExplainRefusal(Account.IsSignedIn));
+
+            case ProviderRoute.LocalOnly:
+            case ProviderRoute.DirectByok:
+            default:
+                break;
+        }
+
         if (Settings.AiProvider == "OpenAI")
         {
             return await GenerateWithOpenAiAsync(request, answerStream, cancellationToken);
@@ -3762,6 +4111,39 @@ public sealed class MetisRuntime : IDisposable
             }
         }
 
+        // The gateway is the last rung, and it is appended rather than inserted
+        // for a reason worth stating plainly: put it anywhere earlier and every
+        // user who has their own key stops using it, and Metis starts paying for
+        // requests those users were already paying for themselves. It is the
+        // fallback for someone who has run out of their own options, not the
+        // default for someone who has options.
+        if (Account.IsSignedIn
+            && SessionAccessToken is not null
+            && MetisBackend.HasGateway(Settings.MetisGatewayUrl))
+        {
+            try
+            {
+                return await GenerateWithEndpointProviderAsync(
+                    ProviderRouting.GatewayProviderId, request, answerStream, cancellationToken);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception gatewayError)
+            {
+                // Only swallowed when an earlier provider already failed, so the
+                // user is told about the one they configured rather than about
+                // the fallback they never chose.
+                if (geminiError is null && openAiError is null)
+                {
+                    throw;
+                }
+
+                _log.Error("Metis's own AI also failed in Automatic mode.", gatewayError);
+            }
+        }
+
         if (openAiError is not null)
         {
             throw openAiError;
@@ -3773,7 +4155,7 @@ public sealed class MetisRuntime : IDisposable
         }
 
         throw new InvalidOperationException(
-            "Automatic mode needs at least one saved API key. Add a Gemini, OpenAI, or Claude key in Setup.");
+            ProviderRouting.ExplainRefusal(Account.IsSignedIn));
     }
 
     private async Task<ProviderTurnResult> GenerateWithGeminiAsync(
@@ -3829,9 +4211,20 @@ public sealed class MetisRuntime : IDisposable
         try
         {
             var credential = EndpointProviderCredential(providerName);
-            var model = providerName == "OpenClaw" ? Settings.OpenClawModel : Settings.OllamaModel;
+            var model = providerName switch
+            {
+                "OpenClaw" => Settings.OpenClawModel,
+
+                // The gateway substitutes from the plan's own allow-list, so the
+                // client sends what the user asked for and lets the server
+                // decide, rather than guessing here at what the plan permits.
+                ProviderRouting.GatewayProviderId => PreferredManagedModel(),
+                _ => Settings.OllamaModel
+            };
+
             var response = await provider.GenerateAsync(credential, model, request, onTextDelta, cancellationToken);
-            return new ProviderTurnResult(providerName, response.Model, response.Text, response.Plan);
+            return new ProviderTurnResult(
+                providerName, response.Model, response.Text, response.Plan, response.Usage);
         }
         finally
         {
@@ -4263,6 +4656,15 @@ public sealed class MetisRuntime : IDisposable
     {
         MetisSound.RecordingStarted or MetisSound.InspectPressed => SoundCueFactory.Pop(),
         MetisSound.RequestSent => SoundCueFactory.Woosh(),
+
+        // No recording exists for these two yet, so they borrow the synthesised
+        // cues rather than being silent. A plan change is a small affirmative
+        // pop; running out of allowance is not an error and must not sound like
+        // one, so it gets the neutral woosh instead of the error tone. Drop
+        // "plan changed.mp3" or "limit reached.mp3" into the sound pack folder
+        // and SoundPackNaming picks them up with no code change.
+        MetisSound.PlanChanged => SoundCueFactory.Pop(),
+        MetisSound.LimitReached => SoundCueFactory.Woosh(),
         _ => null
     };
 
@@ -4451,9 +4853,58 @@ public sealed class MetisRuntime : IDisposable
         // spoken form starts from the provider's own words instead, so the user
         // hears "Claude rejected the request" rather than a generic apology.
         var detail = Sanitize(exception.Message);
+
+        // A plan or allowance refusal is not a fault, and reporting it as one
+        // sends people looking for something to fix. It gets its own banner and
+        // its own cue, and the error surface never sees it.
+        if (IsPlanRefusal(exception))
+        {
+            var isPlan = exception is ReasoningProviderException
+            {
+                Kind: ReasoningProviderErrorKind.PlanLimited
+            };
+
+            PlanLimitReached?.Invoke(this, new PlanLimitNotice(
+                isPlan ? "Not included in your plan" : "This month's included AI is used up",
+                detail));
+
+            SetStatus(detail);
+            MessageAdded?.Invoke(this, new AssistantMessage(AssistantRole.Error, detail, DateTimeOffset.Now));
+            State.Force(AssistantState.QuotaError);
+            PlayCue(MetisSound.LimitReached);
+            _log.Info($"{context}: refused by plan or allowance. {detail}");
+            return;
+        }
+
         ReportError($"{context}. {detail}", ClassifyErrorState(exception), spokenMessage: detail);
         _log.Error(context, exception);
     }
+
+    /// <summary>
+    /// Raised when a turn was refused because of the account rather than
+    /// because of the request. The shell shows it as a banner in the notch.
+    /// </summary>
+    public event EventHandler<PlanLimitNotice>? PlanLimitReached;
+
+    /// <summary>
+    /// Whether the gateway turned this turn down over the plan or the month's
+    /// allowance, as opposed to anything actually going wrong.
+    ///
+    /// Only the gateway's own refusals count. A quota error from a provider on
+    /// the user's own key means their key is out of quota, which is their
+    /// account and their business, and telling them to look at a Metis plan
+    /// would be answering a question they did not ask.
+    /// </summary>
+    private static bool IsPlanRefusal(Exception exception) => exception switch
+    {
+        ReasoningProviderException { Kind: ReasoningProviderErrorKind.PlanLimited } => true,
+        ReasoningProviderException
+        {
+            ProviderId: MetisGatewayReasoningProvider.ProviderId,
+            Kind: ReasoningProviderErrorKind.QuotaOrRateLimit
+        } => true,
+        _ => false
+    };
 
     private static AssistantState ClassifyErrorState(Exception exception) => exception switch
     {
@@ -4477,6 +4928,13 @@ public sealed class MetisRuntime : IDisposable
         OpenAiProviderException { Kind: OpenAiErrorKind.QuotaOrRateLimit } => AssistantState.QuotaError,
         ExternalVoiceProviderException { Kind: ExternalVoiceErrorKind.QuotaOrRateLimit } => AssistantState.QuotaError,
         ReasoningProviderException { Kind: ReasoningProviderErrorKind.QuotaOrRateLimit } => AssistantState.QuotaError,
+
+        // A plan that does not include something is shown the same way as a
+        // spent allowance rather than as an authentication problem. Both mean
+        // "not right now, and here is what would change that". An authentication
+        // error means "your credential is wrong", which would send someone off
+        // to replace a key that is working perfectly.
+        ReasoningProviderException { Kind: ReasoningProviderErrorKind.PlanLimited } => AssistantState.QuotaError,
         _ => AssistantState.Error
     };
 

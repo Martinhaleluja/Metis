@@ -35,4 +35,15 @@ public sealed record ReasoningResponse(
     string Text,
     string Model,
     string ProviderId,
-    AssistantPlan Plan);
+    AssistantPlan Plan,
+
+    /// <summary>
+    /// What the turn cost, when the provider says.
+    ///
+    /// Added with a default so the four existing implementations did not have to
+    /// change: only the managed route knows this, because only there does Metis
+    /// see the token counts rather than the user's own provider account. It
+    /// feeds the same cost display that GeminiProvider.LastUsage already does,
+    /// so a managed turn is not silently missing from it.
+    /// </summary>
+    ModelUsageReport? Usage = null);

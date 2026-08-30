@@ -8,6 +8,11 @@
 # Staging and production are two services in one file. That is the whole of the
 # environment separation: same image, different secrets, and neither can reach
 # the other's database.
+#
+# The website is no longer here. It moved to Vercel, which is a better fit for a
+# single-page app with client routing than a static bucket is, and its config
+# now lives in website/vercel.json. Whatever hosts it, its two VITE_ variables
+# are browser-visible by design and end up inside the JavaScript bundle.
 
 services:
   - type: web
@@ -22,9 +27,18 @@ services:
     envVars:
       - key: METIS_ENV
         value: staging
-      # Render routes to port 10000 by default.
+      # Render routes to port 10000 by default. The Dockerfile says the same
+      # number; the blueprint's value wins at runtime, so a mismatch between the
+      # two is silent until someone runs the image by hand.
       - key: ASPNETCORE_URLS
         value: http://0.0.0.0:10000
+
+      # Which browsers may call this service. The gateway spends money, so it
+      # never allows any origin — an empty list means only the desktop app,
+      # which is not subject to CORS, can reach it.
+      - key: ALLOWED_ORIGINS
+        sync: false
+
       # sync: false means Render prompts for the value and keeps it out of this
       # file. Every one of these is a secret and none belongs in the repository.
       - key: SUPABASE_URL
@@ -32,6 +46,34 @@ services:
       - key: SUPABASE_SERVICE_KEY
         sync: false
       - key: GOOGLE_API_KEY
+        sync: false
+
+      # The private half of the key that signs entitlement snapshots, as base64
+      # PKCS#8. Without it /v1/me still answers, but unsigned — so a desktop
+      # client will not trust a cached plan while it is offline. Generate a pair
+      # with EntitlementSigner.GenerateKeyPair and put the public half in
+      # MetisBackend.EntitlementPublicKey.
+      - key: METIS_ENTITLEMENT_SIGNING_KEY
+        sync: false
+
+      # Optional. Setting one of these is all it takes to start serving that
+      # provider on Metis's account; until then it is refused with a reason
+      # rather than silently missing.
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: MISTRAL_API_KEY
+        sync: false
+      - key: OPENROUTER_API_KEY
+        sync: false
+
+      # Webhook signing secrets. Both verifiers ship, and both are inert until
+      # their secret is set — so choosing a payment processor is a matter of
+      # filling one of these in. See docs/BILLING_SETUP.md.
+      - key: POLAR_WEBHOOK_SECRET
+        sync: false
+      - key: STRIPE_WEBHOOK_SECRET
         sync: false
 
   # Deliberately not deployed yet: suspended so it exists, holds its own
@@ -52,26 +94,25 @@ services:
         value: production
       - key: ASPNETCORE_URLS
         value: http://0.0.0.0:10000
+      - key: ALLOWED_ORIGINS
+        sync: false
       - key: SUPABASE_URL
         sync: false
       - key: SUPABASE_SERVICE_KEY
         sync: false
       - key: GOOGLE_API_KEY
         sync: false
-
-  # The launch site. A static bundle, so there is no runtime and nothing to
-  # keep warm. Unlike the gateway's secrets above, these two are browser-visible
-  # by design and end up inside the JavaScript bundle; they are `sync: false`
-  # only so staging and production can point at different Supabase projects.
-  - type: web
-    name: metis-site
-    runtime: static
-    rootDir: website
-    buildCommand: npm ci && npm run build
-    staticPublishPath: dist
-    branch: main
-    envVars:
-      - key: VITE_SUPABASE_URL
+      - key: METIS_ENTITLEMENT_SIGNING_KEY
         sync: false
-      - key: VITE_SUPABASE_PUBLISHABLE_KEY
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: MISTRAL_API_KEY
+        sync: false
+      - key: OPENROUTER_API_KEY
+        sync: false
+      - key: POLAR_WEBHOOK_SECRET
+        sync: false
+      - key: STRIPE_WEBHOOK_SECRET
         sync: false

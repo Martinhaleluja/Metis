@@ -187,6 +187,77 @@
                         </StackPanel>
 
                         <!-- ============ General ============ -->
+                        <StackPanel x:Name="PageAccount" Visibility="Collapsed">
+                            <TextBlock Text="Account &amp; plan" Style="{StaticResource PageTitleText}" />
+                            <TextBlock Style="{StaticResource CaptionText}" Margin="0,4,0,20"
+                                       Text="Who you are signed in as, and what that includes." />
+
+                            <!-- The plan. Read-only on purpose: anything that
+                                 costs money happens on the website, where a
+                                 payment page belongs, and this button opens it. -->
+                            <Border Style="{StaticResource UtilityCard}" Margin="0,0,0,12">
+                                <StackPanel>
+                                    <Border x:Name="AccountPlanBadge" Style="{StaticResource Badge}">
+                                        <TextBlock x:Name="AccountPlanBadgeText" Style="{StaticResource BadgeText}" Text="FREE" />
+                                    </Border>
+                                    <TextBlock x:Name="AccountPlanTitle" Style="{StaticResource SubtitleText}" Margin="0,12,0,0"
+                                               Text="Not signed in" />
+                                    <TextBlock x:Name="AccountPlanDetail" Style="{StaticResource CaptionText}" Margin="0,4,0,0"
+                                               TextWrapping="Wrap"
+                                               Text="Metis works fully without an account, on your own API key or a local model." />
+
+                                    <StackPanel Orientation="Horizontal" Margin="0,16,0,0">
+                                        <Button x:Name="AccountManageButton" Content="Manage plan on the web"
+                                                Click="AccountManage_OnClick" />
+                                        <Button x:Name="AccountSignInButton" Content="Sign in" Margin="8,0,0,0"
+                                                Style="{StaticResource SecondaryButton}"
+                                                Click="AccountSignIn_OnClick" />
+                                        <Button x:Name="AccountSignOutButton" Content="Sign out" Margin="8,0,0,0"
+                                                Style="{StaticResource QuietButton}"
+                                                Click="AccountSignOut_OnClick" />
+                                    </StackPanel>
+                                </StackPanel>
+                            </Border>
+
+                            <!-- This month's allowance. Only meaningful for the
+                                 AI Metis pays for; turns on the user's own key
+                                 are never counted here because they never reach
+                                 a Metis server at all. -->
+                            <Border x:Name="AccountUsageCard" Style="{StaticResource UtilityCard}" Margin="0,0,0,12">
+                                <StackPanel>
+                                    <TextBlock Style="{StaticResource MonoLabelText}" Text="INCLUDED AI THIS MONTH" />
+                                    <TextBlock x:Name="AccountUsageText" Style="{StaticResource SubtitleText}" Margin="0,8,0,0"
+                                               Text="Nothing used yet" />
+                                    <Border Margin="0,10,0,0" Height="8" CornerRadius="4"
+                                            Background="{DynamicResource TrackFillBrush}">
+                                        <Border x:Name="AccountUsageFill" HorizontalAlignment="Left" Width="0"
+                                                CornerRadius="4" Background="{DynamicResource AccentBrush}" />
+                                    </Border>
+                                    <TextBlock x:Name="AccountUsageDetail" Style="{StaticResource CaptionText}" Margin="0,8,0,0"
+                                               TextWrapping="Wrap" />
+                                </StackPanel>
+                            </Border>
+
+                            <!-- What the plan includes, straight from the
+                                 server's own answer rather than from a list
+                                 written twice. -->
+                            <Border Style="{StaticResource UtilityCard}" Margin="0,0,0,12">
+                                <StackPanel>
+                                    <TextBlock Style="{StaticResource MonoLabelText}" Text="WHAT THIS PLAN INCLUDES" />
+                                    <ItemsControl x:Name="AccountFeatureList" Margin="0,10,0,0">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <TextBlock Style="{StaticResource CaptionText}" Margin="0,0,0,5"
+                                                           TextWrapping="Wrap" Text="{Binding}" />
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                    <TextBlock x:Name="AccountFeatureNote" Style="{StaticResource CaptionText}"
+                                               Margin="0,10,0,0" TextWrapping="Wrap" />
+                                </StackPanel>
+                            </Border>
+                        </StackPanel>
+
                         <StackPanel x:Name="PageGeneral" Visibility="Collapsed">
                             <TextBlock Text="General" Style="{StaticResource PageTitleText}" />
                             <TextBlock Style="{StaticResource CaptionText}" Margin="0,4,0,20"
@@ -252,6 +323,12 @@
                                               HorizontalAlignment="Left"
                                               SelectionChanged="ProviderBox_OnSelectionChanged">
                                         <ComboBoxItem Content="Gemini" />
+                                        <!-- Metis's own AI. Only offered when
+                                             signed in: without an account there
+                                             is no plan for it to draw on, and a
+                                             choice that cannot work is worse
+                                             than one that is absent. -->
+                                        <ComboBoxItem x:Name="MetisProviderItem" Content="Metis" Visibility="Collapsed" />
                                         <ComboBoxItem Content="OpenAI" />
                                         <ComboBoxItem Content="Claude" />
                                         <ComboBoxItem Content="OpenRouter" />
@@ -266,6 +343,8 @@
                                         <Button Content="Test" Margin="8,0,0,0" Click="TestProvider_OnClick" />
                                     </StackPanel>
                                     <TextBlock x:Name="ProviderStatus" Style="{StaticResource CaptionText}" Margin="2,10,0,0" />
+                                    <TextBlock x:Name="ProviderPlanNote" Style="{StaticResource CaptionText}"
+                                               Margin="2,8,0,0" TextWrapping="Wrap" Visibility="Collapsed" />
                                 </StackPanel>
                             </Border>
 
@@ -281,6 +360,22 @@
                                     <Button Content="Remove stored key" Style="{StaticResource QuietButton}"
                                             HorizontalAlignment="Left" Margin="0,12,0,0"
                                             Tag="Gemini" Click="RemoveKey_OnClick" />
+                                </StackPanel>
+                            </Border>
+
+                            <Border x:Name="MetisCard" Style="{StaticResource UtilityCard}" Margin="0,0,0,12"
+                                    Visibility="Collapsed">
+                                <StackPanel>
+                                    <Border Style="{StaticResource Badge}">
+                                        <TextBlock Style="{StaticResource BadgeText}" Text="METIS" />
+                                    </Border>
+                                    <TextBlock Style="{StaticResource CaptionText}" Margin="0,12,0,0" TextWrapping="Wrap"
+                                               Text="There is no key to enter. Metis answers on its own provider account, within the monthly allowance your plan includes, and the model is chosen from what that plan allows." />
+                                    <TextBlock x:Name="MetisPlanSummary" Style="{StaticResource CaptionText}"
+                                               Margin="0,10,0,0" TextWrapping="Wrap" />
+                                    <Button Content="See your plan and usage" Style="{StaticResource SecondaryButton}"
+                                            HorizontalAlignment="Left" Margin="0,14,0,0"
+                                            Tag="Account" Click="Jump_OnClick" />
                                 </StackPanel>
                             </Border>
 

@@ -197,6 +197,13 @@ public partial class App : System.Windows.Application
             _runtime.ActivityChanged += Runtime_OnActivityChanged;
             _notchWindow.OpenRequested += (_, _) => ShowChat();
             _notchWindow.SettingsRequested += (_, _) => ShowSetup();
+            _notchWindow.PlanRequested += (_, _) => ShowAccount();
+
+            // A plan refusal surfaces as a banner in the chat rather than as an
+            // error. Nothing went wrong: an allowance was spent, or a plan does
+            // not include something, and both have an obvious next step.
+            _runtime.PlanLimitReached += (_, notice) => Dispatcher.Invoke(() =>
+                _notchWindow?.ShowPlanNotice(notice.Title, notice.Detail));
 
             // Toggling from the notch keeps the one consequential setting a
             // single click away rather than three levels into a menu.
@@ -345,29 +352,27 @@ public partial class App : System.Windows.Application
     /// Exposes the four operating modes from the tray so the user can change
     /// how much Metis teaches versus does without opening Setup.
     /// </summary>
-    private AccountWindow? _accountWindow;
-
     /// <summary>
-    /// Opens the account window, creating it once and reusing it. Signing in is
-    /// optional throughout: Metis works with no account at all, so this is a
-    /// menu entry rather than anything the user is made to pass through.
+    /// Opens the account and plan page in Preferences. Signing in is optional
+    /// throughout: Metis works with no account at all, so this is a menu entry
+    /// rather than anything the user is made to pass through.
+    ///
+    /// There used to be a separate account window here. It had been broken for
+    /// some time — it referenced a brush no theme dictionary defined, so building
+    /// it threw and the menu entry did nothing at all — and a menu entry that
+    /// silently does nothing is worse than one that is missing. Preferences is
+    /// where every other setting already lives, so the account belongs there
+    /// too rather than in a second window that has to be kept in step with it.
     /// </summary>
     private void ShowAccount()
     {
-        if (_runtime is null)
+        if (_preferencesWindow is null)
         {
             return;
         }
 
-        if (_accountWindow is null)
-        {
-            _accountWindow = new AccountWindow(_runtime, new CredentialStoreSessionAccess());
-            _accountWindow.KeepOutOfScreenCaptures(_runtime.Log);
-            _accountWindow.Closed += (_, _) => _accountWindow = null;
-        }
-
-        _accountWindow.Show();
-        _accountWindow.Activate();
+        _notchWindow?.CloseChat();
+        _preferencesWindow.ShowAt("Account");
     }
 
     // ============================= First run =============================
@@ -430,7 +435,18 @@ public partial class App : System.Windows.Application
                     url, key, result.AccessToken!, result.Account!.UserId,
                     Entitlements.ParseEnvironment(settings.MetisEnvironment));
 
+                // Kept, rather than used once and dropped. Metis's own AI is
+                // reached with this token on every turn, so a session restored
+                // at start-up has to carry it forward or the plan the user is
+                // paying for silently does nothing until they sign in again.
+                _runtime.SetSession(result.AccessToken, result.AccessTokenExpiresUtc);
                 _runtime.SignIn(account ?? result.Account);
+
+                // A plan cached on a previous run, so someone who is offline is
+                // shown what they bought rather than the free plan. Refreshed
+                // from the gateway in the background once, if it answers.
+                _runtime.RestoreCachedEntitlements((account ?? result.Account).UserId);
+                _ = _runtime.RefreshEntitlementsAsync();
                 await _runtime.SaveSettingsAsync(
                     _runtime.Settings with { LastAuthenticatedUtc = DateTimeOffset.UtcNow }, null, null);
             }
@@ -659,7 +675,7 @@ public partial class App : System.Windows.Application
     /// credential store. A dialog that collects a password has no business
     /// being able to read every provider key on the machine.
     /// </summary>
-    private sealed class CredentialStoreSessionAccess : AccountWindow.ISecretStoreAccess
+    private sealed class CredentialStoreSessionAccess : Metis.Core.Contracts.ISessionTokenAccess
     {
         private readonly Metis.Data.WindowsCredentialStore _store = new();
 

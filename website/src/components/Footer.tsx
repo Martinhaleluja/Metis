@@ -1,3 +1,5 @@
+import { Link } from "react-router-dom";
+
 export function Footer() {
   const year = new Date().getFullYear();
 
@@ -35,6 +37,27 @@ export function Footer() {
         </div>
 
         <div className="flex items-center gap-3">
+          <Link
+            to="/pricing"
+            className="text-white/60 hover:text-white text-[11px] transition-colors no-underline"
+            style={{ fontFamily: "var(--font-system)" }}
+          >
+            Pricing
+          </Link>
+          <Link
+            to="/legal/privacy"
+            className="text-white/60 hover:text-white text-[11px] transition-colors no-underline"
+            style={{ fontFamily: "var(--font-system)" }}
+          >
+            Privacy
+          </Link>
+          <Link
+            to="/legal/terms"
+            className="text-white/60 hover:text-white text-[11px] transition-colors no-underline hidden sm:inline"
+            style={{ fontFamily: "var(--font-system)" }}
+          >
+            Terms
+          </Link>
           <a
             href="https://github.com/Martinhaleluja/Metis"
             className="text-white/60 hover:text-white text-[11px] transition-colors"

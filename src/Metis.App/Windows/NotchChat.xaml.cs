@@ -224,6 +224,39 @@ public partial class NotchChat : System.Windows.Controls.UserControl
         RaiseSizeChanged();
     }
 
+    /// <summary>
+    /// Raised when the user asks to see their plan, so the shell can open
+    /// Preferences on the account page. The panel does not open windows itself
+    /// — it is a control inside the notch and knows nothing about the rest of
+    /// the application.
+    /// </summary>
+    public event EventHandler? PlanRequested;
+
+    /// <summary>
+    /// Shows the plan banner, or hides it.
+    ///
+    /// Called when a turn is refused for a reason that is about the account
+    /// rather than about the request: the month's included AI is spent, or the
+    /// plan does not cover what was asked for. Both are ordinary states rather
+    /// than faults, which is why they get their own quiet banner instead of the
+    /// error surface.
+    /// </summary>
+    public void ShowPlanNotice(string title, string subtitle, string action = "See plans")
+    {
+        PlanBannerTitle.Text = title;
+        PlanBannerSubtitle.Text = subtitle;
+        PlanBannerActionLabel.Text = action;
+        PlanBanner.Visibility = Visibility.Visible;
+    }
+
+    public void HidePlanNotice() => PlanBanner.Visibility = Visibility.Collapsed;
+
+    private void PlanBannerButton_OnClick(object sender, MouseButtonEventArgs e)
+    {
+        HidePlanNotice();
+        PlanRequested?.Invoke(this, EventArgs.Empty);
+    }
+
     private async void UpdateButton_OnClick(object sender, MouseButtonEventArgs e)
     {
         e.Handled = true;

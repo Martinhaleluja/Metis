@@ -28,7 +28,7 @@ export function TypingConversation() {
   const [phase, setPhase] = useState<"user" | "metis" | "pause">("user");
   const [displayed, setDisplayed] = useState("");
   const charIdx = useRef(0);
-  const timerRef = useRef<ReturnType<typeof setTimeout>>();
+  const timerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   const convo = conversations[convoIdx];
 

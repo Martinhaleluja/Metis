@@ -56,6 +56,7 @@ public partial class PreferencesWindow : System.Windows.Window
     private static readonly (string Page, string Label, string Keywords)[] Sections =
     [
         ("Dashboard", "Dashboard", "overview status home"),
+        ("Account", "Account & plan", "account plan sign in out subscription billing usage allowance upgrade free plus pro byoa"),
         ("General", "General", "startup theme dark light appearance sound cue motion windows login"),
         ("Intelligence", "Intelligence", "provider model api key gemini openai claude ollama openclaw openrouter free token endpoint context reasoning"),
         ("Voice", "Voice & input", "microphone speech whisper piper elevenlabs assemblyai chatterbox transcribe voice speak"),
@@ -77,6 +78,7 @@ public partial class PreferencesWindow : System.Windows.Window
         InitializeComponent();
 
         _pages["Dashboard"] = PageDashboard;
+        _pages["Account"] = PageAccount;
         _pages["General"] = PageGeneral;
         _pages["Intelligence"] = PageIntelligence;
         _pages["Voice"] = PageVoice;
@@ -118,9 +120,21 @@ public partial class PreferencesWindow : System.Windows.Window
 
     public void AllowClose() => _allowClose = true;
 
-    public void ShowAt()
+    /// <summary>
+    /// Opens Preferences, optionally on a named page. Callers that want a
+    /// particular page — the tray's Account entry, an upgrade prompt in the
+    /// notch — pass its key; an unknown key is ignored rather than throwing,
+    /// so a stale caller lands on whatever page was last open instead of
+    /// failing to open the window at all.
+    /// </summary>
+    public void ShowAt(string? page = null)
     {
         RefreshFromRuntime();
+        if (!string.IsNullOrWhiteSpace(page))
+        {
+            ShowPage(page);
+        }
+
         Show();
         Activate();
     }
@@ -163,6 +177,11 @@ public partial class PreferencesWindow : System.Windows.Window
         PageScroll.ScrollToTop();
         _ = target;
 
+        if (page == "Account")
+        {
+            RefreshAccount();
+        }
+
         if (page == "Dashboard")
         {
             RefreshDashboard();
@@ -182,6 +201,147 @@ public partial class PreferencesWindow : System.Windows.Window
     }
 
     // ----------------------------------------------------------------- load
+
+    // ============================ Account & plan ============================
+
+    /// <summary>
+    /// The website, where anything that costs money happens.
+    ///
+    /// Deliberately not a payment form in this window. Taking a card in a
+    /// desktop application means either embedding a browser or handling card
+    /// details directly, and the second of those is not something an application
+    /// should ever do. The browser is where a payment page belongs.
+    /// </summary>
+    private const string AccountPageUrl = "https://metis.software/account";
+
+    private void RefreshAccount()
+    {
+        var account = _runtime.Account;
+        var entitlements = _runtime.Entitlements;
+        var signedIn = account.IsSignedIn;
+
+        AccountPlanBadgeText.Text = account.Plan.ToString().ToUpperInvariant();
+        AccountSignInButton.Visibility = signedIn ? Visibility.Collapsed : Visibility.Visible;
+        AccountSignOutButton.Visibility = signedIn ? Visibility.Visible : Visibility.Collapsed;
+        AccountManageButton.Visibility = signedIn ? Visibility.Visible : Visibility.Collapsed;
+
+        if (!signedIn)
+        {
+            AccountPlanTitle.Text = "Not signed in";
+            AccountPlanDetail.Text =
+                "Metis works fully without an account, on your own API key or a local model. "
+                + "Sign in to use the AI Metis pays for.";
+            AccountUsageCard.Visibility = Visibility.Collapsed;
+            AccountFeatureList.ItemsSource = System.Array.Empty<string>();
+            AccountFeatureNote.Text = string.Empty;
+            return;
+        }
+
+        AccountPlanTitle.Text = account.Plan switch
+        {
+            PlanTier.Pro => "Metis Pro",
+            PlanTier.Plus => "Metis Plus",
+            _ => "Metis Free"
+        };
+
+        AccountPlanDetail.Text = entitlements is null
+            ? "Signed in. Metis has not been able to check what this plan includes yet."
+            : entitlements.BillingIsLive
+                ? "Changing plan, cancelling, and connecting your own provider all happen on the website."
+                : "Early access: every paid capability is free for everyone right now.";
+
+        // The allowance. Hidden rather than shown as zero when there is nothing
+        // to report: an empty meter reads as "you have used it all".
+        var allowance = _runtime.LastAllowance;
+        if (allowance is null || allowance.LimitUsd <= 0m)
+        {
+            AccountUsageCard.Visibility = Visibility.Collapsed;
+        }
+        else
+        {
+            AccountUsageCard.Visibility = Visibility.Visible;
+            AccountUsageText.Text =
+                $"${allowance.UsedUsd:0.0000} of ${allowance.LimitUsd:0.00} used";
+            AccountUsageDetail.Text =
+                $"Resets {allowance.ResetsUtc.ToLocalTime():d MMMM}. "
+                + "Turns on your own API key are never counted here.";
+
+            var fraction = (double)System.Math.Clamp(allowance.UsedUsd / allowance.LimitUsd, 0m, 1m);
+            var track = AccountUsageFill.Parent as FrameworkElement;
+            AccountUsageFill.Width = (track?.ActualWidth ?? 320) * fraction;
+        }
+
+        // What the plan includes, written from the server's own answer rather
+        // than from a second list in this file that would drift from it.
+        //
+        // When there is no answer yet, the list is hidden rather than filled in
+        // from an assumption. A row of dashes beside "Metis has not been able to
+        // check what this plan includes" is the window contradicting itself, and
+        // the half a reader believes is the concrete-looking list.
+        AccountFeatureList.ItemsSource = entitlements is null
+            ? System.Array.Empty<string>()
+            : DescribeIncluded(entitlements);
+        MetisPlanSummary.Text = entitlements is null
+            ? string.Empty
+            : entitlements.Limits.ManagedModels.Count == 0
+                ? string.Empty
+                : "This plan may use: " + string.Join(", ", entitlements.Limits.ManagedModels);
+
+        AccountFeatureNote.Text = entitlements is null
+            ? "Metis could not reach its account service just now, so it cannot say what this plan includes. "
+              + "Nothing has changed on your account, and nothing you were using has stopped working."
+            : string.Empty;
+    }
+
+    private IReadOnlyList<string> DescribeIncluded(EntitlementSnapshot? entitlements)
+    {
+        (MetisFeature Feature, string Label)[] worth =
+        [
+            (MetisFeature.ManagedScreenVision, "Metis reads your screen on its own AI"),
+            (MetisFeature.ManagedPremiumModels, "Models beyond Gemini on Metis's AI"),
+            (MetisFeature.AdvancedAutomation, "Advanced automation and region inspect"),
+            (MetisFeature.AutonomousAgents, "Background agents"),
+            (MetisFeature.AdvancedAgents, "Multi-agent workflows"),
+            (MetisFeature.PersistentMemory, "Memory beyond the free allowance"),
+            (MetisFeature.BrowserAssistance, "Browser assistance"),
+            (MetisFeature.CustomAiProvider, "Connect your own AI provider"),
+            (MetisFeature.ProviderManagement, "Choose your own models and endpoints")
+        ];
+
+        return worth
+            .Select(entry => (entry.Label, Included: _runtime.Can(entry.Feature)))
+            .Select(entry => (entry.Included ? "\u2713  " : "\u2014  ") + entry.Label)
+            .ToArray();
+    }
+
+    private void AccountManage_OnClick(object sender, RoutedEventArgs e) => OpenAccountPage();
+
+    private void AccountSignIn_OnClick(object sender, RoutedEventArgs e)
+    {
+        // Signing in happens in the notch, which is the one sign-in surface, so
+        // there is only ever one place that holds a password.
+        _showAssistant();
+        Hide();
+    }
+
+    private async void AccountSignOut_OnClick(object sender, RoutedEventArgs e)
+    {
+        _runtime.SignOut();
+        RefreshAccount();
+        await System.Threading.Tasks.Task.CompletedTask;
+    }
+
+    private void OpenAccountPage()
+    {
+        try
+        {
+            Process.Start(new ProcessStartInfo(AccountPageUrl) { UseShellExecute = true });
+        }
+        catch (Exception exception)
+        {
+            _runtime.Log.Error("Could not open the account page in a browser.", exception);
+        }
+    }
 
     private void RefreshFromRuntime()
     {
@@ -649,21 +809,34 @@ public partial class PreferencesWindow : System.Windows.Window
         var provider = SelectedText(ProviderBox, "Gemini");
         var automatic = provider == "Automatic";
 
+        // Metis's own AI is only an option once there is an account for it to
+        // draw a plan from. Offering it while signed out would be offering
+        // something that cannot work, which is worse than not offering it.
+        MetisProviderItem.Visibility = Show(_runtime.Account.IsSignedIn);
+
         GeminiCard.Visibility = Show(provider is "Gemini" || automatic);
         OpenAiCard.Visibility = Show(provider is "OpenAI" || automatic);
         ClaudeCard.Visibility = Show(provider is "Claude" || automatic);
         OpenRouterCard.Visibility = Show(provider is "OpenRouter");
         OpenClawCard.Visibility = Show(provider is "OpenClaw");
         OllamaCard.Visibility = Show(provider is "Ollama");
+        MetisCard.Visibility = Show(provider is "Metis");
 
         ProviderHint.Text = provider switch
         {
-            "Automatic" => "Tries Gemini, then OpenAI, then Claude, using whichever key is stored. Not available for OpenRouter, OpenClaw or Ollama.",
+            "Automatic" => "Tries Gemini, then OpenAI, then Claude, using whichever key is stored, and falls back to Metis's own AI last so your own keys are always used first.",
             "Ollama" => "Runs on this PC. Nothing is sent to a provider.",
             "OpenRouter" => "One key, many hosted models, including free ones. Metis needs a vision-capable model.",
             "OpenClaw" => "Routes through a local agent gateway.",
+            "Metis" => "Answers on Metis's own AI, within your plan's monthly allowance. Your screen and questions pass through Metis's server on the way to the provider.",
             _ => "Your screen and questions are sent to this provider when you ask."
         };
+
+        // The bring-your-own-provider hint on each card, which is the one place
+        // a plan restriction is worth naming beside the control it restricts.
+        var canBringOwn = _runtime.Can(MetisFeature.CustomAiProvider);
+        ProviderPlanNote.Text = canBringOwn ? string.Empty : _runtime.ExplainCapability(MetisFeature.CustomAiProvider);
+        ProviderPlanNote.Visibility = Show(!canBringOwn);
     }
 
     private void UpdateSpeechPanels()

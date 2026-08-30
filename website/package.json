@@ -7,16 +7,17 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
-    "icons": "node scripts/generate-app-icons.cjs"
+    "icons": "node scripts/generate-app-icons.cjs && node scripts/generate-provider-icons.cjs"
   },
   "dependencies": {
     "@fontsource-variable/outfit": "^5.1.1",
     "@fontsource-variable/work-sans": "^5.1.1",
     "@phosphor-icons/react": "^2.1.7",
-    "gsap": "^3.12.7",
+    "@supabase/supabase-js": "^2.112.4",
     "motion": "^12.0.6",
     "react": "^19.0.0",
-    "react-dom": "^19.0.0"
+    "react-dom": "^19.0.0",
+    "react-router-dom": "^7.18.3"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.0.0",

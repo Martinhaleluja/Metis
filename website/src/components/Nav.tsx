@@ -1,10 +1,20 @@
+import { Link } from "react-router-dom";
+import { useAuth } from "../lib/auth";
+
+/**
+ * Taskbar buttons. The anchors are absolute rather than bare fragments so they
+ * work from /pricing and /account too, where there is no #privacy to scroll to
+ * on the current page.
+ */
 const links = [
-  { href: "#showcase", label: "See it work" },
-  { href: "#capabilities", label: "What it does" },
-  { href: "#privacy", label: "Privacy" },
+  { href: "/#showcase", label: "See it work" },
+  { href: "/#capabilities", label: "What it does" },
+  { href: "/#privacy", label: "Privacy" },
 ];
 
 export function Nav() {
+  const auth = useAuth();
+
   return (
     <header className="fixed inset-x-0 top-0 z-50">
       <div
@@ -15,8 +25,8 @@ export function Nav() {
         }}
       >
         {/* Start button */}
-        <a
-          href="#top"
+        <Link
+          to="/"
           className="flex items-center gap-2 h-[34px] rounded-r-full pl-2 pr-4 border border-[#0e7c0e] transition-all hover:brightness-110 active:brightness-90"
           style={{
             background:
@@ -37,7 +47,7 @@ export function Nav() {
           >
             start
           </span>
-        </a>
+        </Link>
 
         {/* Separator */}
         <div className="w-px h-6 mx-2 bg-[#1a50b0] shadow-[1px_0_0_rgba(255,255,255,0.15)]" />
@@ -47,6 +57,13 @@ export function Nav() {
           aria-label="Sections"
           className="hidden items-center gap-1 flex-1 md:flex"
         >
+          <Link
+            to="/pricing"
+            className="h-[30px] px-3 flex items-center text-[12px] text-white/90 font-semibold rounded border transition-colors bg-[#3b7ddd]/30 border-[#2860b5]/50 shadow-[inset_0_1px_0_rgba(255,255,255,0.1)] hover:bg-[#5a9af3]/40 no-underline"
+            style={{ fontFamily: "Segoe UI, Tahoma, sans-serif" }}
+          >
+            Pricing
+          </Link>
           {links.map((link) => (
             <a
               key={link.href}
@@ -61,13 +78,23 @@ export function Nav() {
 
         {/* System tray area */}
         <div className="ml-auto flex items-center gap-3">
-          <a
-            href="#join"
-            className="h-[30px] px-4 flex items-center text-[12px] text-white font-bold rounded border transition-colors bg-[#3b7ddd]/40 border-[#2860b5]/50 shadow-[inset_0_1px_0_rgba(255,255,255,0.15)] hover:bg-[#5a9af3]/50"
-            style={{ fontFamily: "Segoe UI, Tahoma, sans-serif" }}
-          >
-            Join Waitlist
-          </a>
+          {auth.status === "signed-in" ? (
+            <Link
+              to="/account"
+              className="h-[30px] px-4 flex items-center text-[12px] text-white font-bold rounded border transition-colors bg-[#3b7ddd]/40 border-[#2860b5]/50 shadow-[inset_0_1px_0_rgba(255,255,255,0.15)] hover:bg-[#5a9af3]/50 no-underline"
+              style={{ fontFamily: "Segoe UI, Tahoma, sans-serif" }}
+            >
+              Account
+            </Link>
+          ) : (
+            <a
+              href="/#join"
+              className="h-[30px] px-4 flex items-center text-[12px] text-white font-bold rounded border transition-colors bg-[#3b7ddd]/40 border-[#2860b5]/50 shadow-[inset_0_1px_0_rgba(255,255,255,0.15)] hover:bg-[#5a9af3]/50"
+              style={{ fontFamily: "Segoe UI, Tahoma, sans-serif" }}
+            >
+              Join Waitlist
+            </a>
+          )}
           <div
             className="hidden sm:flex h-[30px] px-3 items-center text-[11px] text-white/70 rounded border-l border-[#1040a0] shadow-[inset_1px_0_0_rgba(255,255,255,0.1)]"
             style={{

@@ -111,6 +111,15 @@ public partial class NotchWindow : Window
     /// <summary>Raised when the user clicks the gear on the notch.</summary>
     public event EventHandler? SettingsRequested;
 
+    /// <summary>
+    /// Shows the plan banner in the chat panel. Called when a turn is refused
+    /// because of the account rather than because of the request.
+    /// </summary>
+    public void ShowPlanNotice(string title, string subtitle) =>
+        ChatHost.ShowPlanNotice(title, subtitle);
+
+    public void HidePlanNotice() => ChatHost.HidePlanNotice();
+
 
     /// <summary>Raised when a trace tool is chosen from the notch toolbar.</summary>
     public event EventHandler<TraceTool>? TraceToolPicked;
@@ -148,6 +157,11 @@ public partial class NotchWindow : Window
     public event EventHandler? ChatSetupRequested;
 
     /// <summary>
+    /// Raised when the user taps "See plans" on the plan banner in the chat.
+    /// </summary>
+    public event EventHandler? PlanRequested;
+
+    /// <summary>
     /// Connects the chat panel to the notch's own geometry. Called once, after
     /// the panel has been given a runtime.
     /// </summary>
@@ -155,6 +169,7 @@ public partial class NotchWindow : Window
     {
         ChatHost.CloseRequested += (_, _) => CloseChat();
         ChatHost.SetupRequested += (_, _) => ChatSetupRequested?.Invoke(this, EventArgs.Empty);
+        ChatHost.PlanRequested += (_, _) => PlanRequested?.Invoke(this, EventArgs.Empty);
         ChatHost.SpawnAgentRequested += (_, _) => OpenSpawnAgentPanel();
         ChatHost.AgentDrawerRequested += (_, _) => OpenAgentDrawer();
 

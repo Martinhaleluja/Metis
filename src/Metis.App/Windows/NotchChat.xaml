@@ -259,6 +259,38 @@
             </Grid>
         </Border>
 
+        <!-- ============================ Plan ==============================
+             The same accent bed the update banner uses, for the other thing
+             that happens to a turn rather than in it: the plan ran out, or does
+             not include what was just asked for.
+
+             It sits in the same row as the update banner because the two are
+             never both worth showing at once, and stacking them would push the
+             conversation down for a reason nobody asked about. -->
+        <Border x:Name="PlanBanner" Grid.Row="1" Margin="14,2,14,6" Background="{DynamicResource NotchAccentBedBrush}"
+                BorderBrush="{DynamicResource AccentBrush}" BorderThickness="1"
+                CornerRadius="10" Padding="12,8" Visibility="Collapsed">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <StackPanel VerticalAlignment="Center" Margin="0,0,10,0">
+                    <TextBlock x:Name="PlanBannerTitle" FontSize="12" FontWeight="SemiBold"
+                               Foreground="{DynamicResource NotchTextBrush}" TextWrapping="Wrap" />
+                    <TextBlock x:Name="PlanBannerSubtitle" FontSize="10.5" Margin="0,2,0,0"
+                               Foreground="{DynamicResource NotchMutedBrush}" TextWrapping="Wrap" />
+                </StackPanel>
+                <Border x:Name="PlanBannerButton" Grid.Column="1" Style="{StaticResource ChatChip}"
+                        Background="{DynamicResource AccentBrush}" BorderThickness="0"
+                        Padding="14,0" Height="28" CornerRadius="14" VerticalAlignment="Center"
+                        MouseLeftButtonUp="PlanBannerButton_OnClick">
+                    <TextBlock x:Name="PlanBannerActionLabel" Text="See plans" FontSize="11.5" FontWeight="SemiBold"
+                               Foreground="White" VerticalAlignment="Center" />
+                </Border>
+            </Grid>
+        </Border>
+
         <!-- ========================== Transcript ==========================
              The row is Auto rather than star-sized, so the panel is exactly as
              tall as the conversation until the conversation outgrows the cap.

@@ -1,3 +1,5 @@
+import type { ReactElement } from "react";
+
 const items = [
   // Cursors
   { x: 5, y: 12, rotate: -15, opacity: 0.14, size: 32, type: "cursor" },
@@ -198,7 +200,7 @@ function StartSvg({ size }: { size: number }) {
   );
 }
 
-const renderers: Record<string, (s: number) => JSX.Element> = {
+const renderers: Record<string, (s: number) => ReactElement> = {
   cursor: (s) => <CursorSvg size={s} />,
   floppy: (s) => <FloppySvg size={s} />,
   folder: (s) => <FolderSvg size={s} />,

@@ -17,8 +17,11 @@ get rid of it.
 
 - Metis captures your screen **only when you ask it something**. It does not
   watch between requests and it does not record.
-- That capture is sent to **an AI provider you choose and pay for yourself**,
-  using your own API key. Metis has no server in the middle.
+- **Where that capture goes depends on whose AI answers it.** On your own API
+  key or a local model, it goes straight to the provider and no Metis server is
+  in the path. On the AI Metis pays for — the Free and Plus plans — it passes
+  through Metis's own gateway, because Metis is the account being billed for the
+  request. There is a section below that says exactly what each route does.
 - Content an application marks as private — banking apps, password managers,
   view-once photos in WhatsApp and Signal — is **blacked out before anything is
   sent**. Password boxes are never read.
@@ -71,7 +74,45 @@ leave your machine, turn screen context off, or run Metis against a local model.
 
 ## Where it goes
 
-To whichever AI provider you have configured, and nowhere else:
+This is the part that changed when Metis started offering AI of its own, and it
+is worth reading rather than skimming, because the honest answer is different
+depending on who is paying for the answer.
+
+### The four routes
+
+**Your own API key, in the desktop app.** Paste a key into Setup and there is no
+Metis server in the path at all — not on any plan, and not while signed out. The
+key is held in Windows Credential Manager, the request goes from your computer
+to the provider, and nothing about it is metered, counted, or visible to Metis.
+This is how Metis worked before there were plans, and it still works exactly the
+same way.
+
+**A local model through Ollama.** Nothing leaves the machine.
+
+**The AI Metis pays for (Free and Plus).** When you have not brought a key of
+your own and you are signed in, Metis answers on its own provider account. Your
+question — and, on Plus, the screenshot — is sent over HTTPS to Metis's gateway,
+which calls the provider using Metis's API key and streams the answer back.
+
+Metis is in the middle of that request. It has to be: it is the account being
+charged for it, and there is no way to pay a provider on someone's behalf
+without the request passing through something that holds the key.
+
+What the gateway keeps is the metering record and nothing else: which model
+answered, how many tokens it used, how long it took, whether it succeeded, and
+the estimated cost. It does not store your question, the screenshot, the control
+list, or the answer. Free has no screen vision on Metis's AI at all, so on Free
+this route carries text only.
+
+**A provider account you connect on Pro.** You connect an OpenAI, Anthropic,
+Gemini, Mistral or OpenRouter account through the website. The key is tested
+once, then held encrypted in Supabase Vault and never returned to any browser,
+including yours. Requests run on your credentials and are billed to you by that
+provider, separately from what you pay Metis.
+
+### Which providers receive what
+
+Whichever route carries it, this is what arrives at the far end:
 
 | Provider | What it receives |
 |---|---|
@@ -83,14 +124,30 @@ To whichever AI provider you have configured, and nowhere else:
 | ElevenLabs | The text of Metis's reply only, if you choose it for speech |
 | Ollama / OpenClaw | Nothing leaves your machine |
 
-You are the customer of these providers, using your own key. What they do with
-what you send is governed by **their** privacy policy and terms, not this one.
-Read them. If you would rather nothing left the machine at all, point Metis at a
-vision-capable local model through Ollama.
+On your own key and on Pro's connected account, you are the customer of these
+providers. What they do with what you send is governed by **their** privacy
+policy and terms, not this one. Read them. If you would rather nothing left the
+machine at all, point Metis at a vision-capable local model through Ollama.
 
-Metis's own backend is used for **sign-in only** — an email address and a
-session token, held in Supabase. It never sees your screen, your questions or
-your answers.
+On the AI Metis pays for, Metis is the customer of the provider, and Metis's
+agreement with them governs what they may do with the request.
+
+## What Metis's own servers hold
+
+Not "sign-in only" any more. As of the plans, this is the complete list:
+
+| What | Why |
+|---|---|
+| Your email address and a password hash | Signing in. Held by Supabase Auth. |
+| Your role, plan, and whether the email is confirmed | Deciding what the plan includes. |
+| One metering row per request Metis paid for | The monthly allowance. Model, provider, token counts, latency, status, estimated cost — and no content of any kind. |
+| For Pro: an encrypted provider key and a four-character hint | Calling your provider on your behalf. Held in Supabase Vault, never returned to a browser. |
+| An audit entry when a provider is connected or disconnected | So "I removed my key" is a claim you can check. Records the hint, never the key. |
+| Your waitlist entry, if you joined it | Telling you when Metis opens. |
+
+Screenshots, questions, answers, chat history and memory are **not** on Metis's
+servers on any plan. The gateway holds a screenshot only for the seconds it
+takes to forward the request.
 
 ## What is kept, and where
 
@@ -104,6 +161,7 @@ Everything Metis keeps is on your own computer, under
 | Settings | `settings.json` | No — it holds no secrets |
 | Diagnostic log | `logs\metis.log` | No — secrets are stripped from it |
 | API keys | Windows Credential Manager | By Windows |
+| Your plan, cached for offline use | Windows Credential Manager | By Windows |
 
 Screenshots are **not** stored. They exist in memory for the duration of the
 request and are then gone.
