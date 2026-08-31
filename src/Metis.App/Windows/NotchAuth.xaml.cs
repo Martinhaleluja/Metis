@@ -418,7 +418,25 @@ public partial class NotchAuth : UserControl
     /// </summary>
     private void StaggerRowsIn()
     {
-        var step = TimeSpan.FromMilliseconds(40);
+        // With motion off the rows are simply present. This is the first screen
+        // a new user sees, and it is a list of what Metis is about to be allowed
+        // to do — not the place to insist on a flourish somebody has asked not
+        // to be shown.
+        if (MotionTuning.Reduced)
+        {
+            foreach (var child in PermissionRows.Children)
+            {
+                if (child is Border settled)
+                {
+                    settled.BeginAnimation(OpacityProperty, null);
+                    settled.Opacity = 1;
+                    settled.RenderTransform = System.Windows.Media.Transform.Identity;
+                }
+            }
+
+            return;
+        }
+
         var index = 0;
 
         foreach (var child in PermissionRows.Children)
@@ -428,7 +446,7 @@ public partial class NotchAuth : UserControl
                 continue;
             }
 
-            var start = TimeSpan.FromMilliseconds(index * step.TotalMilliseconds);
+            var start = TimeSpan.FromMilliseconds(MotionTuning.StaggerDelayMs(index));
             var duration = TimeSpan.FromMilliseconds(260);
 
             var fade = new DoubleAnimation(0, 1, duration) { BeginTime = start };

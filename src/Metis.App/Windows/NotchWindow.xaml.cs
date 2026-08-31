@@ -1087,6 +1087,21 @@ public partial class NotchWindow : Window
     {
         Border[] controls = [ToolFreehand, ToolRectangle, ToolFullScreen, ToolDivider, ToolAsk, ToolCancel];
 
+        // With motion off the tools are simply there. Nothing is faded, nothing
+        // is scaled, and no transform is left behind for a later animation to
+        // trip over.
+        if (MotionTuning.Reduced)
+        {
+            foreach (var control in controls)
+            {
+                control.BeginAnimation(OpacityProperty, null);
+                control.Opacity = 1;
+                control.RenderTransform = System.Windows.Media.Transform.Identity;
+            }
+
+            return;
+        }
+
         for (var index = 0; index < controls.Length; index++)
         {
             var control = controls[index];
@@ -1099,7 +1114,7 @@ public partial class NotchWindow : Window
             control.RenderTransformOrigin = new System.Windows.Point(0.5, 0.5);
             control.RenderTransform = scale;
 
-            var begin = TimeSpan.FromMilliseconds(40 * index);
+            var begin = TimeSpan.FromMilliseconds(MotionTuning.StaggerDelayMs(index));
 
             control.BeginAnimation(
                 OpacityProperty,
@@ -1579,6 +1594,21 @@ public partial class NotchWindow : Window
         SettingsRequested?.Invoke(this, EventArgs.Empty);
     }
 
+    /// <summary>
+    /// Every animation in the notch goes through here.
+    ///
+    /// That is worth keeping true. It is the reason reduced motion could be made
+    /// real in one place rather than in the thirty-odd call sites above, and the
+    /// reason the next person adding motion inherits the setting for free
+    /// instead of having to remember it.
+    ///
+    /// When motion is off this does not animate quickly — it does not animate.
+    /// The property is released from any running animation and assigned
+    /// directly, and the begin delay is ignored, because a delay before an
+    /// instant change is just a stutter. Shortening a slide to sixty
+    /// milliseconds would still be a slide, and still be the thing the setting
+    /// was ticked to avoid.
+    /// </summary>
     private static void Animate(
         System.Windows.Media.Animation.IAnimatable target,
         DependencyProperty property,
@@ -1587,6 +1617,17 @@ public partial class NotchWindow : Window
         IEasingFunction? easing,
         double beginAfter = 0)
     {
+        if (MotionTuning.Reduced)
+        {
+            target.BeginAnimation(property, null);
+            if (target is DependencyObject element)
+            {
+                element.SetValue(property, to);
+            }
+
+            return;
+        }
+
         var animation = new DoubleAnimation(to, duration)
         {
             EasingFunction = easing,

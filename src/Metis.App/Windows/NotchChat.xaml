@@ -304,8 +304,10 @@
                         <Grid Margin="0,3" RenderTransformOrigin="0,1">
                             <Grid.RenderTransform>
                                 <TransformGroup>
-                                    <ScaleTransform x:Name="BubbleScale" ScaleX="0.94" ScaleY="0.94" />
-                                    <TranslateTransform x:Name="BubbleRise" Y="7" />
+                                    <ScaleTransform x:Name="BubbleScale"
+                                                    ScaleX="{DynamicResource BubbleEnterScale}"
+                                                    ScaleY="{DynamicResource BubbleEnterScale}" />
+                                    <TranslateTransform x:Name="BubbleRise" Y="{DynamicResource BubbleEnterRise}" />
                                 </TransformGroup>
                             </Grid.RenderTransform>
                             <!-- The ink color is set on the TextBlock directly with a local value to beat

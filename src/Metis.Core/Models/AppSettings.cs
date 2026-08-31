@@ -307,9 +307,14 @@ public sealed record AppSettings
     public string ThemePreference { get; init; } = "System";
 
     /// <summary>
-    /// Shortens the companion's flight, the notch unfurl, and the window
-    /// transitions for users who find the motion distracting or who get
-    /// motion sickness from it.
+    /// Turns off the interface's motion for people who find it distracting or
+    /// who get motion sickness from it.
+    ///
+    /// Off, not shortened. This comment used to say "shortens", which was wrong
+    /// twice over: nothing read the setting at all, and shortening would have
+    /// been the wrong answer anyway — a sixty-millisecond slide is still a
+    /// slide. See <c>MotionTuning</c>, which reconciles this with the Windows
+    /// "Show animations" switch; either one asking for less is enough.
     /// </summary>
     public bool ReduceMotion { get; init; }
 

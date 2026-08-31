@@ -95,6 +95,22 @@ public partial class App : System.Windows.Application
             // wearing the right theme instead of flashing light and correcting.
             _themeService = new ThemeService(this);
             _themeService.Apply(_runtime.Settings.ThemePreference);
+
+            // Reduced motion, reconciled from both sides: the application's own
+            // checkbox and the Windows "Show animations" switch. Windows has had
+            // that switch for years and Metis ignored it, so someone who had
+            // already told their computer they did not want animation had to
+            // find and tick a second box here. Applied again whenever settings
+            // are saved, and whenever Windows changes its mind.
+            ApplyMotionPreference();
+            _runtime.SettingsChanged += (_, _) => ApplyMotionPreference();
+            SystemParameters.StaticPropertyChanged += (_, args) =>
+            {
+                if (args.PropertyName is nameof(SystemParameters.ClientAreaAnimation))
+                {
+                    Dispatcher.Invoke(ApplyMotionPreference);
+                }
+            };
             _themeService.Changed += (_, _) => RepaintTrayMenu();
 
             _companionWindow = new CompanionWindow(_runtime);
@@ -364,6 +380,24 @@ public partial class App : System.Windows.Application
     /// where every other setting already lives, so the account belongs there
     /// too rather than in a second window that has to be kept in step with it.
     /// </summary>
+    /// <summary>
+    /// Tells the motion system what the user and the operating system want.
+    /// Either one asking for less is enough.
+    /// </summary>
+    private void ApplyMotionPreference()
+    {
+        MotionTuning.Apply(
+            _runtime?.Settings.ReduceMotion ?? false,
+            SystemParameters.ClientAreaAnimation);
+
+        // The chat bubble entrance is a XAML storyboard on a template trigger,
+        // and a sealed template's animation cannot be retimed at runtime. So it
+        // is neutered instead: with motion off the bubble starts at its resting
+        // size and position, and the animation runs from there to there.
+        Resources["BubbleEnterScale"] = MotionTuning.Reduced ? 1.0 : 0.94;
+        Resources["BubbleEnterRise"] = MotionTuning.Reduced ? 0.0 : 7.0;
+    }
+
     private void ShowAccount()
     {
         if (_preferencesWindow is null)

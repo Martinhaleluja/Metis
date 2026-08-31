@@ -89,13 +89,33 @@ public sealed class NotchThemeTests
     }
 
     /// <summary>
+    /// Resources the notch binds dynamically that are deliberately not theme
+    /// tokens. Anything added here needs a reason beside it, because the whole
+    /// point of the test below is that a name which resolves to nothing draws
+    /// nothing, silently.
+    /// </summary>
+    private static readonly string[] MotionKeys =
+    [
+        // The chat bubble's entrance, overridden at runtime when motion is off.
+        "BubbleEnterScale",
+        "BubbleEnterRise"
+    ];
+
+    /// <summary>
     /// A DynamicResource that resolves to nothing does not throw — it draws
     /// nothing at all, which is indistinguishable from the bug being fixed.
     /// </summary>
     [Fact]
     public void Both_themes_define_every_token_the_notch_references()
     {
-        var defined = TokenKeys("Tokens.Light.xaml");
+        // Motion values are DynamicResource for a different reason than colours
+        // are. They do not vary by theme, so they live in Foundations rather
+        // than in the token dictionaries; they are dynamic so that turning
+        // reduced motion on can neuter a XAML storyboard that cannot otherwise
+        // be retimed once its template is sealed.
+        var defined = TokenKeys("Tokens.Light.xaml")
+            .Concat(MotionKeys)
+            .ToArray();
 
         foreach (var fixture in NotchMarkup)
         {
