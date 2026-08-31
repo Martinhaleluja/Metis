@@ -83,7 +83,23 @@
 
     </Window.Resources>
 
-    <Grid Background="Transparent">
+    <!--
+        No background at all, rather than Transparent.
+
+        A Transparent brush is hit-testable — that is the standard idiom for
+        making blank area clickable — so the window's empty margin was quietly
+        swallowing every click that landed on it. That was survivable while the
+        notch stayed 64 pixels tall and only as wide as it needed to be; once it
+        can grow to most of the screen it would take the desktop with it.
+
+        With no brush the hit test finds nothing, the window answers
+        HTTRANSPARENT, and the click reaches whatever is underneath. NotchBody
+        keeps a real brush and stays clickable; the drop shadow renders pixels
+        but effects do not take part in hit testing, so it is click-through too.
+        NotchWindow.PassThroughIsWorking checks this at runtime rather than
+        trusting the reasoning.
+    -->
+    <Grid Background="{x:Null}">
         <!-- The notch hangs off the top edge, so only the bottom corners are
              rounded. It is always present while Metis runs: tucked to a thin
              sliver when idle, expanded when there is something to say, and
@@ -243,24 +259,54 @@
                     </StackPanel>
                 </Grid>
 
-                <!-- The chat. Collapsed rather than hidden while the notch is
-                     resting, so it costs no layout until it is asked for. -->
-                <windows:NotchChat x:Name="ChatHost" VerticalAlignment="Top"
-                                   Visibility="Collapsed" Opacity="0" Cursor="Arrow" />
+                <!--
+                    One scroller for the whole shell, rather than one per page.
 
-                <!-- First run: sign in, then what Metis is. Collapsed on the
-                     same terms as the chat, and only ever shown instead of it —
-                     the two are never open at once. -->
-                <windows:NotchAuth x:Name="AuthHost" VerticalAlignment="Top"
-                                   Visibility="Collapsed" Opacity="0" Cursor="Arrow" />
+                    Before this the body clipped at a hard 520 pixels and
+                    nothing scrolled, so a page taller than that did not
+                    overflow — it was simply cut off and unreachable. That was
+                    tolerable when the notch held a chat; it is not now that
+                    settings live here, where the provider page alone measures
+                    about fourteen hundred.
 
-                <!-- Autonomous background agents drawer -->
-                <windows:NotchAgentDrawer x:Name="AgentDrawerHost" VerticalAlignment="Top"
-                                          Visibility="Collapsed" Opacity="0" Cursor="Arrow" />
+                    Because the scroller sits outside the pages, each page still
+                    reports its own natural height and the shell decides what to
+                    do about it. No page had to change.
 
-                <!-- Autonomous background agent spawn panel -->
-                <windows:NotchSpawnAgentPanel x:Name="SpawnAgentHost" VerticalAlignment="Top"
-                                              Visibility="Collapsed" Opacity="0" Cursor="Arrow" />
+                    The chat is the deliberate exception: it wants a pinned
+                    composer above a scrolling transcript, and it already has its
+                    own scroller for the transcript. Nesting one inside another
+                    is the classic wheel-capture trap, so the shell's scroller is
+                    switched off while the chat is showing. That rule is stated
+                    here and nowhere else.
+                -->
+                <ScrollViewer x:Name="PageScroll"
+                              VerticalScrollBarVisibility="Auto"
+                              HorizontalScrollBarVisibility="Disabled"
+                              VerticalAlignment="Top"
+                              Focusable="False"
+                              PanningMode="VerticalOnly">
+                    <Grid x:Name="PageHost">
+                        <!-- The chat. Collapsed rather than hidden while the notch is
+                             resting, so it costs no layout until it is asked for. -->
+                        <windows:NotchChat x:Name="ChatHost" VerticalAlignment="Top"
+                                           Visibility="Collapsed" Opacity="0" Cursor="Arrow" />
+
+                        <!-- First run: sign in, then what Metis is. Collapsed on the
+                             same terms as the chat, and only ever shown instead of it —
+                             the two are never open at once. -->
+                        <windows:NotchAuth x:Name="AuthHost" VerticalAlignment="Top"
+                                           Visibility="Collapsed" Opacity="0" Cursor="Arrow" />
+
+                        <!-- Autonomous background agents drawer -->
+                        <windows:NotchAgentDrawer x:Name="AgentDrawerHost" VerticalAlignment="Top"
+                                                  Visibility="Collapsed" Opacity="0" Cursor="Arrow" />
+
+                        <!-- Autonomous background agent spawn panel -->
+                        <windows:NotchSpawnAgentPanel x:Name="SpawnAgentHost" VerticalAlignment="Top"
+                                                      Visibility="Collapsed" Opacity="0" Cursor="Arrow" />
+                    </Grid>
+                </ScrollViewer>
             </Grid>
         </Border>
     </Grid>

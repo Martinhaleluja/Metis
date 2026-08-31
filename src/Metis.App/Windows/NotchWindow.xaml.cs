@@ -44,11 +44,27 @@ public partial class NotchWindow : Window
     private const double ChatWidth = 640;
 
     /// <summary>
-    /// The tallest the chat is allowed to grow. Past this the transcript
-    /// scrolls inside the notch instead, because a panel that keeps growing
-    /// eventually covers the thing the user is asking about.
+    /// The tallest the notch may grow on this screen, and how tall a page
+    /// should therefore be.
+    ///
+    /// This used to be a hard 520, repeated in four methods with three
+    /// different formulas, chosen when the notch held a chat and nothing else.
+    /// It is now derived from the work area — see NotchGeometry, which holds the
+    /// arithmetic so it can be checked against a laptop, a 1080p monitor and a
+    /// 1440p one without needing any of them.
+    ///
+    /// Read fresh rather than cached: someone who docks a laptop should not have
+    /// to restart Metis for the notch to notice the new screen.
     /// </summary>
-    private const double ChatMaxHeight = 520;
+    private static double MaxBodyHeight =>
+        NotchGeometry.MaxBodyHeight(SystemParameters.WorkArea.Height);
+
+    /// <summary>
+    /// How tall the body should be for whatever page is showing. One rule, one
+    /// place, so two panels cannot disagree about what "as tall as it needs" means.
+    /// </summary>
+    private double TargetBodyHeight(double measured, double padding = 0) =>
+        NotchGeometry.BodyHeight(measured + padding, chromeHeight: 0, SystemParameters.WorkArea.Height);
 
     /// <summary>
     /// The first-run panel is narrower than the chat. A sign-in form stretched
@@ -302,6 +318,8 @@ public partial class NotchWindow : Window
                     }) == Handle;
                 }
 
+                ReportPassThrough();
+
                 DebugLog?.Invoke(
                     $"Notch chat settled: window=({Left:0},{Top:0}) {Width:0}x{Height:0} " +
                     $"body={NotchBody.ActualWidth:0}x{NotchBody.ActualHeight:0} dropY={NotchDrop.Y:0} " +
@@ -499,7 +517,7 @@ public partial class NotchWindow : Window
     }
 
     private double AuthTargetHeight() =>
-        Math.Min(AuthHost.MeasureDesiredHeight(AuthWidth), ChatMaxHeight);
+        TargetBodyHeight(AuthHost.MeasureDesiredHeight(AuthWidth));
 
     // =========================== Autonomous Agents Drawer ===========================
 
@@ -686,8 +704,7 @@ public partial class NotchWindow : Window
 
     private double AgentDrawerTargetHeight()
     {
-        var measured = AgentDrawerHost.MeasureDesiredHeight(AgentDrawerWidth);
-        return Math.Max(ExpandedHeight, Math.Min(measured + 20, 520));
+        return TargetBodyHeight(AgentDrawerHost.MeasureDesiredHeight(AgentDrawerWidth), padding: 20);
     }
 
     // =========================== Spawn Agent Panel ===========================
@@ -861,8 +878,7 @@ public partial class NotchWindow : Window
 
     private double SpawnAgentTargetHeight()
     {
-        var measured = SpawnAgentHost.MeasureDesiredHeight(SpawnAgentWidth);
-        return Math.Max(ExpandedHeight, Math.Min(measured + 20, 520));
+        return TargetBodyHeight(SpawnAgentHost.MeasureDesiredHeight(SpawnAgentWidth), padding: 20);
     }
 
     /// <summary>
@@ -940,11 +956,25 @@ public partial class NotchWindow : Window
     }
 
     private double ChatTargetHeight() =>
-        Math.Min(ChatHost.MeasureDesiredHeight(ChatWidth), ChatMaxHeight);
+        TargetBodyHeight(ChatHost.MeasureDesiredHeight(ChatWidth));
 
     private void AnimateBodyHeight(double target)
     {
         _bodyHeightTarget = target;
+
+        // The scroller has to be bounded or it simply grows to fit its content
+        // and the excess is clipped away — which is the behaviour this whole
+        // change exists to remove. Bounding it is what turns "too tall" from
+        // "invisible" into "scrolls".
+        //
+        // The chat is the exception: it has its own transcript scroller and a
+        // composer pinned beneath it, and nesting one scroller inside another is
+        // how the mouse wheel ends up captured by the wrong one.
+        PageScroll.MaxHeight = MaxBodyHeight;
+        PageScroll.VerticalScrollBarVisibility = IsChatOpen
+            ? ScrollBarVisibility.Disabled
+            : ScrollBarVisibility.Auto;
+
         Animate(NotchBody, HeightProperty, target, Shape,
             new CubicEase { EasingMode = EasingMode.EaseOut });
     }
@@ -956,7 +986,10 @@ public partial class NotchWindow : Window
     /// </summary>
     private void GrowWindowFor(double bodyHeight)
     {
-        var wanted = bodyHeight + WindowSlack;
+        // Capped at the work area. The body can now be most of the screen, and a
+        // host window taller than the desktop is a window whose bottom edge is
+        // under the taskbar.
+        var wanted = NotchGeometry.WindowHeight(bodyHeight, SystemParameters.WorkArea.Height);
         if (Height < wanted)
         {
             Height = wanted;
@@ -1243,6 +1276,74 @@ public partial class NotchWindow : Window
     /// and when it wins the z-order it covers the notch and takes every click
     /// while the toolbar carries on looking perfectly fine.
     /// </summary>
+    /// <summary>
+    /// Whether a click on the window's empty margin reaches the window
+    /// underneath.
+    ///
+    /// The notch's host window is much wider and, now, much taller than the
+    /// black body drawn inside it. All of that surrounding area is transparent,
+    /// and until recently it was painted with a Transparent brush — which in WPF
+    /// is hit-testable, because that is the idiom for making blank space
+    /// clickable. So the notch was silently eating clicks meant for whatever was
+    /// behind it, and the workaround was to keep the window only as wide as it
+    /// absolutely had to be.
+    ///
+    /// Removing the brush should fix that: with nothing to hit, the window
+    /// answers HTTRANSPARENT and the click falls through. "Should" is the
+    /// problem — it depends on WPF, on the compositor, and on the drop shadow
+    /// not participating in hit testing. So rather than trusting the reasoning,
+    /// this asks the operating system which window actually owns a point beside
+    /// the body, and says so in the log where somebody will see it.
+    /// </summary>
+    private bool PassThroughIsWorking()
+    {
+        var self = Handle;
+        if (self == nint.Zero || NotchBody.ActualWidth <= 0
+            || PresentationSource.FromVisual(NotchBody) is null)
+        {
+            return true;
+        }
+
+        // A point in the window's margin, well clear of the body and of the
+        // shadow it casts, at the body's own vertical centre.
+        var bodyLeft = NotchBody.PointToScreen(new System.Windows.Point(0, NotchBody.ActualHeight / 2));
+        var probe = new PointStruct
+        {
+            X = (int)Math.Round(bodyLeft.X) - 60,
+            Y = (int)Math.Round(bodyLeft.Y)
+        };
+
+        // Off the left of the screen: nothing useful to ask about.
+        if (probe.X < 0)
+        {
+            return true;
+        }
+
+        return WindowFromPoint(probe) != self;
+    }
+
+    /// <summary>
+    /// Checks the pass-through once and records the answer. Called after the
+    /// first page opens, because that is when the window is at its largest and
+    /// the margin at its widest.
+    /// </summary>
+    private void ReportPassThrough()
+    {
+        if (_passThroughChecked)
+        {
+            return;
+        }
+
+        _passThroughChecked = true;
+
+        DebugLog?.Invoke(PassThroughIsWorking()
+            ? "Notch pass-through verified: clicks beside the body reach the window behind it."
+            : "Notch pass-through is NOT working: the notch owns the empty area around its body, so it "
+              + "is swallowing clicks meant for other windows. Check the root Grid's Background.");
+    }
+
+    private bool _passThroughChecked;
+
     private bool ToolsAreReachable()
     {
         if (ToolFreehand.ActualWidth <= 0 || PresentationSource.FromVisual(ToolFreehand) is null)
