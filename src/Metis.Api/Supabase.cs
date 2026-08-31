@@ -265,7 +265,8 @@ public sealed class SupabaseGateway(HttpClient http, GatewayConfig config, ILogg
                 limit.GetProperty("managed_models").EnumerateArray()
                     .Select(model => model.GetString() ?? string.Empty)
                     .Where(model => model.Length > 0)
-                    .ToArray());
+                    .ToArray(),
+                limit.TryGetProperty("max_turns_per_month", out var turns) ? turns.GetInt32() : 0);
         }
 
         return new GatewayRules(

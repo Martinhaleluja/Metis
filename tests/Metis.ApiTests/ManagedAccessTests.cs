@@ -13,8 +13,9 @@ public sealed class ManagedAccessTests
         new("u_1", role, plan, MetisEnvironment.Production);
 
     private static PlanLimits Limits(
-        decimal budget = 6m, int screenshot = 4_194_304, int agentSteps = 600) =>
-        new(budget, screenshot, 12, 20, agentSteps, 30, 500, ["gemini-2.5-flash-lite", "gemini-2.5-flash"]);
+        decimal budget = 6m, int screenshot = 4_194_304, int agentSteps = 600, int turns = 0) =>
+        new(budget, screenshot, 12, 20, agentSteps, 30, 500,
+            ["gemini-2.5-flash-lite", "gemini-2.5-flash"], turns);
 
     private static GatewayRules Rules(
         CostProtection protection = CostProtection.Off,
@@ -43,22 +44,73 @@ public sealed class ManagedAccessTests
     }
 
     /// <summary>
-    /// The line between Free and Plus. Free's screenshot allowance is zero, and
-    /// the refusal has to say that their own key can still do it — otherwise it
-    /// reads as "Metis cannot see your screen", which is not true.
+    /// Free gets a smaller capture, not no capture. Denying screen vision
+    /// outright made the free plan a screenshot of the product rather than a
+    /// trial of it — somebody who cannot watch Metis do the one thing Metis is
+    /// for has not tried Metis.
     /// </summary>
     [Fact]
-    public void Free_cannot_send_a_screenshot_on_Metis_s_own_AI()
+    public void Free_can_send_a_small_screenshot()
+    {
+        var decision = ManagedAccess.Decide(
+            Account(PlanTier.Free), Limits(screenshot: 1_048_576), Spent(0m), Rules(),
+            requestHasScreenshot: true, isAgentStep: false, screenshotBytes: 500_000);
+
+        Assert.True(decision.Allowed);
+    }
+
+    [Fact]
+    public void Free_cannot_send_a_large_one()
+    {
+        var decision = ManagedAccess.Decide(
+            Account(PlanTier.Free), Limits(screenshot: 1_048_576), Spent(0m), Rules(),
+            requestHasScreenshot: true, isAgentStep: false, screenshotBytes: 3_000_000);
+
+        Assert.False(decision.Allowed);
+        Assert.Equal(403, decision.StatusCode);
+        Assert.Equal("plan", decision.Kind);
+    }
+
+    /// <summary>
+    /// A plan with no capture allowance at all still refuses, and still says
+    /// what does work. The configuration is no longer used, but the branch is.
+    /// </summary>
+    [Fact]
+    public void A_plan_with_no_capture_allowance_names_what_still_works()
     {
         var decision = ManagedAccess.Decide(
             Account(PlanTier.Free), Limits(screenshot: 0), Spent(0m), Rules(),
             requestHasScreenshot: true, isAgentStep: false, screenshotBytes: 500_000);
 
         Assert.False(decision.Allowed);
-        Assert.Equal(403, decision.StatusCode);
-        Assert.Equal("plan", decision.Kind);
         Assert.Contains("own API key", decision.Message, StringComparison.OrdinalIgnoreCase);
     }
+
+    // ------------------------------ Turn cap ------------------------------
+
+    /// <summary>
+    /// A count is the limit a person can picture. "A hundred and twenty
+    /// questions a month" means something; "one dollar of inference" does not.
+    /// </summary>
+    [Fact]
+    public void Free_runs_out_of_questions_before_it_runs_out_of_money()
+    {
+        var decision = ManagedAccess.Decide(
+            Account(PlanTier.Free), Limits(budget: 1m, turns: 120),
+            new UsageSnapshot(0.02m, 120, 0, DateTimeOffset.UtcNow),
+            Rules(), false, false, 0);
+
+        Assert.False(decision.Allowed);
+        Assert.Equal(402, decision.StatusCode);
+        Assert.Contains("120", decision.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void A_plan_with_no_turn_cap_is_bounded_only_by_money() =>
+        Assert.True(ManagedAccess.Decide(
+            Account(PlanTier.Plus), Limits(budget: 6m, turns: 0),
+            new UsageSnapshot(1m, 9_000, 0, DateTimeOffset.UtcNow),
+            Rules(), false, false, 0).Allowed);
 
     [Fact]
     public void An_oversized_screenshot_is_refused_but_differently()

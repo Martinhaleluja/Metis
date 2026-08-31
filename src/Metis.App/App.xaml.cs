@@ -518,37 +518,28 @@ public partial class App : System.Windows.Application
     }
 
     /// <summary>
-    /// Signed in. Setup comes next, so the user can add the API key Metis will
-    /// actually answer with, and the welcome page waits until they are done
-    /// with it.
+    /// Signed in. Straight to what Metis needs permission to do.
+    ///
+    /// There used to be a detour here: signing in opened the full 980x700
+    /// settings window and waited for the user to dismiss it before carrying on.
+    /// That was the worst moment in the product. Somebody who had installed
+    /// Metis ninety seconds earlier, and had so far seen one black bar and a
+    /// password field, was handed an eleven-page settings window and left to
+    /// work out which of its twenty-three provider controls they were supposed
+    /// to fill in — before Metis had answered a single question or shown them
+    /// what it was for.
+    ///
+    /// It was also asking twice. The onboarding wizard that runs afterwards has
+    /// its own provider-and-key step, so a new user was made to supply the same
+    /// thing in two different windows, in two different layouts, minutes apart.
+    ///
+    /// Now sign-in leads to permissions and permissions lead to the wizard,
+    /// which is the one place the question is asked.
     /// </summary>
     private void AfterSignIn()
     {
         _notchWindow?.CloseAuth();
-
-        if (_preferencesWindow is null)
-        {
-            ShowWelcomePanel();
-            return;
-        }
-
-        // Setup hides rather than closes — it is created once and lives for the
-        // whole session — so "the user has finished with it" is a visibility
-        // change and not a Closed event. The handler removes itself, because
-        // this should happen on the first run and never again.
-        void OnSetupDismissed(object? sender, DependencyPropertyChangedEventArgs e)
-        {
-            if (_preferencesWindow is null || _preferencesWindow.IsVisible)
-            {
-                return;
-            }
-
-            _preferencesWindow.IsVisibleChanged -= OnSetupDismissed;
-            ShowWelcomePanel();
-        }
-
-        _preferencesWindow.IsVisibleChanged += OnSetupDismissed;
-        ShowSetup();
+        ShowWelcomePanel();
     }
 
     /// <summary>

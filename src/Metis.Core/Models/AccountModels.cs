@@ -223,7 +223,18 @@ public sealed record PlanLimits(
     int MaxAgentStepsPerMonth,
     int MaxAgentStepsPerTask,
     int MemoryEntriesMax,
-    IReadOnlyList<string> ManagedModels)
+    IReadOnlyList<string> ManagedModels,
+
+    /// <summary>
+    /// How many turns a month this plan may have on Metis's own AI, or 0 for no
+    /// separate cap.
+    ///
+    /// Free has one; the paid plans are bounded by money instead. Two ceilings
+    /// that can disagree is one ceiling too many, and on a plan people are
+    /// paying for, the budget is the honest limit — a count would refuse someone
+    /// who had spent almost nothing.
+    /// </summary>
+    int MaxTurnsPerMonth = 0)
 {
     /// <summary>
     /// What to assume when the server has not been reached yet. Deliberately
@@ -231,7 +242,7 @@ public sealed record PlanLimits(
     /// have and lets the client send a screenshot the gateway will only refuse.
     /// </summary>
     public static PlanLimits Unknown { get; } =
-        new(0m, 0, 3, 3, 0, 0, 0, Array.Empty<string>());
+        new(0m, 0, 3, 3, 0, 0, 0, Array.Empty<string>(), 0);
 }
 
 /// <summary>

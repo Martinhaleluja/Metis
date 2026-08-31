@@ -82,6 +82,7 @@ public static class EntitlementSigner
                 snapshot.Limits.MaxAgentStepsPerMonth,
                 snapshot.Limits.MaxAgentStepsPerTask,
                 snapshot.Limits.MemoryEntriesMax,
+                snapshot.Limits.MaxTurnsPerMonth,
                 managedModels = snapshot.Limits.ManagedModels
                     .OrderBy(model => model, StringComparer.Ordinal).ToArray()
             },
@@ -201,7 +202,8 @@ public static class EntitlementSigner
         limits.GetProperty("managedModels").EnumerateArray()
             .Select(model => model.GetString() ?? string.Empty)
             .Where(model => model.Length > 0)
-            .ToArray());
+            .ToArray(),
+        limits.TryGetProperty("MaxTurnsPerMonth", out var turns) ? turns.GetInt32() : 0);
 
     private static string Base64Url(byte[] value) =>
         Convert.ToBase64String(value).TrimEnd('=').Replace('+', '-').Replace('/', '_');

@@ -163,6 +163,17 @@ public static class ManagedAccess
                 "You have used this month's included agent steps. They reset on the 1st.");
         }
 
+        // The conversation cap, where a plan has one. Free is bounded by a count
+        // as well as by money because a count is the thing a person can picture:
+        // "a hundred and twenty questions a month" means something, and "one
+        // dollar of inference" does not.
+        if (limits.MaxTurnsPerMonth > 0 && usage.RequestCount >= limits.MaxTurnsPerMonth)
+        {
+            return ManagedDecision.OutOfAllowance(
+                $"You have used this month's {limits.MaxTurnsPerMonth} included questions. "
+                + "They reset on the 1st.");
+        }
+
         if (usage.SpendUsd >= limits.MonthlyBudgetUsd)
         {
             return ManagedDecision.OutOfAllowance(
