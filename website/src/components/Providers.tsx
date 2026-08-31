@@ -17,7 +17,7 @@ const managed: Mark[] = [
   {
     slug: "googlegemini",
     name: "Google Gemini",
-    note: "The managed model today. Free gets Flash-Lite in text; Plus gets vision-capable models.",
+    note: "The AI behind Free and Plus. Nothing to sign up for and nothing to configure.",
   },
 ];
 
@@ -107,42 +107,39 @@ export function Providers() {
           </h2>
           <p className="mx-auto mt-4 max-w-[60ch] text-center type-body text-ink-muted">
             Either Metis buys the AI for you, or you bring an account you already
-            have. The difference decides who gets the bill and whose servers your
-            question passes through.
+            have. That is the whole difference between the plans.
           </p>
         </Reveal>
 
         <div className="mt-14 grid gap-8 lg:grid-cols-2">
           <Reveal>
             <ProviderWindow
-              title="managed_ai.cfg"
-              heading="Metis-managed AI"
-              blurb="Free and Plus. You do not sign up for anything else and you never see a token bill — the request goes to Metis's gateway, which calls the provider on Metis's key."
+              title="included_ai.txt"
+              heading="AI included with your plan"
+              blurb="Free and Plus. There is nothing else to sign up for and no second bill — Metis pays for the answers, within the monthly allowance your plan includes."
               marks={managed}
-              footer="One provider today, chosen for cost. Which model runs behind a plan can change without notice; what the plan is allowed to do cannot."
+              footer="We may change which model sits behind a plan as better ones arrive. What the plan includes is what we have promised you."
               tilt={-0.8}
             />
           </Reveal>
 
           <Reveal delay={0.08}>
             <ProviderWindow
-              title="bring_your_own.cfg"
-              heading="Bring your own — Pro"
-              blurb="Connect an account you already pay for. Metis stops being the buyer and becomes the interface: you choose the provider and the exact model, per request."
+              title="your_own_account.txt"
+              heading="Your own account — Pro"
+              blurb="Connect an account you already pay for, and choose the exact model yourself. Metis stops buying the AI and simply drives the one you picked."
               marks={bringYourOwn}
-              footer="Your provider bills you for model usage, separately from the $29. Metis charges for the software, not the tokens."
+              footer="Your provider charges you for what the models cost, separately from the $29. That $29 is for the software."
               tilt={0.7}
             />
           </Reveal>
         </div>
 
         <Reveal delay={0.16}>
-          <p className="mx-auto mt-10 max-w-[70ch] text-center type-caption text-ink-muted">
-            There is a third way that costs nothing: paste your own API key into the
-            desktop app on any plan, including Free while signed out. Metis calls the
-            provider directly from your machine, keeps full screen vision and full
-            automation, and no request ever reaches a Metis server. A local model
-            through Ollama works the same way, without leaving the machine at all.
+          <p className="mx-auto mt-10 max-w-[64ch] text-center type-caption text-ink-muted">
+            There is a third option that involves no company at all: run a model on
+            your own computer, and every question, picture and answer stays on the
+            machine. Metis works that way on any plan.
           </p>
         </Reveal>
       </div>

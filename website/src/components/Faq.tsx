@@ -18,88 +18,71 @@ const pro = plans[2];
 
 const faqs: { q: string; a: React.ReactNode }[] = [
   {
-    q: "What am I actually paying for?",
+    q: "What am I paying for?",
     a: (
       <>
-        The software, and the AI Metis buys on your behalf. Plus is{" "}
-        {priceLabel(plus)} a month and includes a monthly allowance of managed AI,
-        including screen vision. Pro is {priceLabel(pro)} a month and includes the
-        same managed AI plus the ability to connect your own provider account.
-        Nothing is charged during early access.
+        The app, and the AI that answers you. Plus is {priceLabel(plus)} a month
+        and takes the monthly question limit off. Pro is {priceLabel(pro)} a month
+        and also lets you connect an AI account of your own. Nothing is being
+        charged yet — Metis is still in early access.
       </>
     ),
   },
   {
-    q: "Do the plans limit what Metis can do on my own API key?",
+    q: "What is the free plan actually like?",
     a: (
       <>
-        No, and this is the part worth reading twice. The plans meter what Metis
-        pays for. If you paste your own API key into the desktop app, the request
-        goes from your machine straight to that provider and never touches a Metis
-        server &mdash; so there is nothing for us to meter. You keep full screen
-        vision and full automation on Free, signed out, indefinitely. A local model
-        through Ollama works the same way.
+        The whole app, with a hundred and twenty questions a month on us. Metis
+        can look at your screen, draw on it, speak, and remember what you are
+        working on. The paid plans lift the limits rather than unlocking the
+        features.
       </>
     ),
   },
   {
-    q: "What does Bring Your Own AI mean, exactly?",
+    q: "Does my own AI account cost extra on Pro?",
     a: (
       <>
-        On Pro you connect an account you already have with OpenAI, Anthropic,
-        Google Gemini, Mistral or OpenRouter, and Metis drives it for you. You keep
-        full control of which provider and which model answers each request.
+        Yes, and it is worth being clear about it. The {priceLabel(pro)} goes to
+        Metis for the software. What the models cost is billed to you by your own
+        provider, on their own invoice, at their own rates. Metis adds nothing on
+        top and never sees that bill — every request shows up on their website,
+        under your account.
       </>
     ),
   },
   {
-    q: "So does my provider charge me on top of the Pro subscription?",
+    q: "Where does my screen go?",
     a: (
       <>
-        Yes, and that is by design. The {priceLabel(pro)} goes to Metis for the
-        software platform. The model usage on your connected account is billed to
-        you by that provider, separately, at their published rates. Metis does not
-        mark it up, does not resell it, and does not see the invoice. Every request
-        shows up in your provider&rsquo;s own dashboard.
+        To whichever AI answers you. On Free and Plus that passes through Metis on
+        the way, because we are the ones paying for the answer; we keep a note of
+        what it cost and nothing else. With your own AI account, or a model running
+        on your own computer, it goes straight there and our servers are not
+        involved. Either way, windows that mark themselves private — banking apps,
+        password managers, view-once photos — are blacked out first, and password
+        boxes are never read.
       </>
     ),
   },
   {
-    q: "Where does my screen actually go?",
+    q: "What happens to my AI key if I connect one?",
     a: (
       <>
-        It depends on which AI answered. On managed Free and Plus, the screenshot
-        and your question go to Metis&rsquo;s gateway, which forwards them to the
-        provider on Metis&rsquo;s key. On Pro with a connected account, and on any
-        plan using your own API key in the desktop app, the request goes to the
-        provider and Metis&rsquo;s servers are not in the path. Either way, windows
-        that mark themselves protected &mdash; banking apps, password managers,
-        view-once media &mdash; are blacked out before the image is encoded, and
-        password fields are never read.
+        It is encrypted the moment it arrives and never shown again, to you or to
+        us. All you see afterwards is the last four characters. Disconnecting
+        deletes it, and you can always cancel the key at your provider instead —
+        it is your account, and that ends it whatever we do.
       </>
     ),
   },
   {
-    q: "How is my API key stored?",
+    q: "What happens when I run out for the month?",
     a: (
       <>
-        If you paste it into the desktop app, it goes into Windows Credential
-        Manager and never leaves your machine. If you connect it through the
-        account page on Pro, the browser posts it once over TLS to Metis&rsquo;s
-        gateway, which stores it encrypted &mdash; never in plain text, never in a
-        log. Nothing can read it back afterwards: the page only ever shows a
-        four-character hint. It is never kept in the browser.
-      </>
-    ),
-  },
-  {
-    q: "What happens when I hit a usage limit?",
-    a: (
-      <>
-        Metis tells you, and managed AI stops answering until the next monthly
-        period. Nothing is charged over the plan price, because the limit exists to
-        stop that happening &mdash; there is no overage bill. Your own API key keeps
-        working normally, since that allowance is between you and your provider.
+        Metis tells you, and waits until the next month. Nothing is ever charged
+        above the plan price — the limit exists so that cannot happen, and there
+        is no overage bill.
       </>
     ),
   },
@@ -144,7 +127,7 @@ export function Faq() {
           <Reveal delay={0.06}>
             <div className="win95-window">
               <div className="win95-titlebar">
-                <span>help_topics.hlp</span>
+                <span>questions.txt &mdash; Notepad</span>
                 <span className="flex h-3.5 w-4 items-center justify-center border border-white border-r-[#808080] border-b-[#808080] bg-[#c0c0c0] text-[8px] font-bold text-black">
                   ?
                 </span>

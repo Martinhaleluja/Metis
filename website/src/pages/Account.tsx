@@ -58,7 +58,7 @@ export function Account() {
     <Frame title="Account">
       <div className="grid gap-6 lg:grid-cols-[1.1fr_1fr]">
         {/* ---------------------------- The plan ---------------------------- */}
-        <Window title={`plan.cfg — ${plan.name}`}>
+        <Window title={`Your plan — ${plan.name}`}>
           <div className="flex items-baseline justify-between gap-4">
             <div>
               <p className="text-[20px] font-bold text-black">Metis {plan.name}</p>
@@ -116,11 +116,11 @@ export function Account() {
         </Window>
 
         {/* ---------------------------- The meter --------------------------- */}
-        <Window title="usage.log — this month">
+        <Window title="This month">
           {budget > 0 ? (
             <>
               <p className="text-[12px] text-black">
-                <strong>${spent.toFixed(4)}</strong> of ${budget.toFixed(2)} of
+                <strong>{Math.round(fraction * 100)}%</strong> of this month&rsquo;s
                 included AI used
               </p>
 
@@ -138,31 +138,41 @@ export function Account() {
               </div>
 
               <p className="mt-2 text-[11px] text-[#444]">
-                Resets on the 1st. {usage?.request_count ?? 0} requests,{" "}
-                {usage?.agent_steps ?? 0} agent steps so far.
+                {usage?.request_count ?? 0} questions asked so far. Resets on the 1st.
               </p>
             </>
           ) : (
             <p className="text-[12px] leading-relaxed text-[#444]">
-              This plan has no included AI allowance yet. Requests you make on
-              your own API key are never counted here — they do not reach Metis's
-              servers at all.
+              Nothing used yet this month.
             </p>
           )}
 
           {limits && (
             <dl className="mt-4 grid grid-cols-2 gap-x-4 gap-y-1.5 border-t border-[#808080] pt-3 text-[11px]">
-              <Row label="Requests / minute" value={String(limits.requests_per_minute)} />
               <Row
-                label="Screen vision on our AI"
+                label="Questions each month"
+                value={limits.max_turns_per_month > 0 ? String(limits.max_turns_per_month) : "No limit"}
+              />
+              <Row
+                label="Looking at your screen"
                 value={
-                  limits.max_screenshot_bytes > 0
-                    ? `up to ${Math.round(limits.max_screenshot_bytes / 1024 / 1024)} MB`
-                    : "not included"
+                  limits.max_screenshot_bytes >= 4_000_000
+                    ? "Full detail"
+                    : limits.max_screenshot_bytes > 0
+                      ? "Included"
+                      : "Not included"
                 }
               />
-              <Row label="Memory entries" value={limits.memory_entries_max.toLocaleString()} />
-              <Row label="Models" value={limits.managed_models.length ? String(limits.managed_models.length) : "—"} />
+              <Row
+                label="How much it remembers"
+                value={
+                  limits.memory_entries_max >= 5000
+                    ? "The most"
+                    : limits.memory_entries_max >= 500
+                      ? "A lot"
+                      : "A little"
+                }
+              />
             </dl>
           )}
         </Window>
@@ -212,11 +222,11 @@ function Connections({
 
   if (!available) {
     return (
-      <Window title="providers.cfg">
+      <Window title="Your own AI account">
         <p className="text-[12px] leading-relaxed text-[#444]">
-          Connecting your own OpenAI, Anthropic, Gemini, Mistral or OpenRouter
-          account is part of Metis Pro. Your provider bills you for what the
-          models cost; the $29 is for the software.
+          Using your own OpenAI, Anthropic, Gemini, Mistral or OpenRouter account
+          is part of Pro. Your provider charges you for what the models cost; the
+          $29 is for the app.
         </p>
       </Window>
     );
@@ -265,11 +275,11 @@ function Connections({
   }
 
   return (
-    <Window title="providers.cfg — bring your own AI">
+    <Window title="Your own AI account">
       <p className="text-[12px] leading-relaxed text-[#444]">
-        Metis tests the key against the provider, then stores it encrypted on the
-        server. It is never sent back to this page, and never written to a log.
-        Your provider bills you directly for what the models cost.
+        Metis checks the key works, then encrypts it. It is never shown again —
+        not here, not in the app, not to us. Your provider charges you directly
+        for what the models cost.
       </p>
 
       {connections.length > 0 && (

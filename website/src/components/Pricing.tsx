@@ -20,13 +20,11 @@ export function Pricing() {
       <div className="mx-auto max-w-[1180px] px-5">
         <Reveal>
           <h2 className="mx-auto max-w-[24ch] text-center type-title text-ink">
-            Pay for the AI we buy, not for the software
+            Start free. Pay when you want more.
           </h2>
-          <p className="mx-auto mt-4 max-w-[62ch] text-center type-body text-ink-muted">
-            Every plan below is a limit on what Metis is willing to spend with an AI
-            provider on your behalf. Point Metis at your own API key and none of it
-            applies &mdash; you keep screen vision and every automation, on Free,
-            signed out, for as long as you like.
+          <p className="mx-auto mt-4 max-w-[58ch] text-center type-body text-ink-muted">
+            Every plan includes the whole app. What changes is how much AI comes
+            with it &mdash; and on Pro, whether you would rather bring your own.
           </p>
         </Reveal>
 

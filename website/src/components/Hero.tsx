@@ -83,7 +83,7 @@ export function Hero({
           {...rise(0.12)}
           className="mx-auto mt-4 max-w-[52ch] type-body text-ink-muted"
         >
-          Metis lives in your Windows notch bar, sees what&rsquo;s on screen, and
+          Metis sits in a small bar at the top of your screen, sees what&rsquo;s on it, and
           teaches you the software you never got shown. Say its name or hold a key
           &mdash; it draws, speaks, and never takes over.
         </motion.p>

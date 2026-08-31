@@ -32,6 +32,7 @@ export type PlanLimits = {
   requests_per_minute: number;
   memory_entries_max: number;
   managed_models: string[];
+  max_turns_per_month: number;
 };
 
 export type UsageThisPeriod = {

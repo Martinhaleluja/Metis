@@ -6,48 +6,63 @@ import { PencilLine } from "@phosphor-icons/react/dist/icons/PencilLine";
 import { UserCircle } from "@phosphor-icons/react/dist/icons/UserCircle";
 import { Reveal } from "./Reveal";
 
+/**
+ * The six things Metis does, said the way someone would say them out loud.
+ *
+ * The window titles used to be .exe, .dll and .sys. On a product whose whole
+ * pitch is "it looks at your screen", a card labelled screen_capture.exe beside
+ * two files named like drivers reads as malware rather than as a joke about
+ * Windows 95. The retro chrome stays — it is the brand — but the filenames are
+ * ordinary documents now.
+ *
+ * The bodies lost their jargon for the same reason. "Key chord" is a phrase from
+ * editor documentation. "That one turn" is what the codebase calls a request and
+ * means nothing to anybody else. Naming ElevenLabs and Ollama in a feature card
+ * hands the reader two more companies to evaluate before they have decided
+ * whether they want this one.
+ */
 const features = [
   {
     icon: Eye,
-    winTitle: "screen_capture.exe",
+    winTitle: "what_it_sees.txt",
     title: "It sees what you see",
-    body: "Ask about anything on screen. Metis captures the full desktop for that one turn, then answers about what's actually there.",
+    body: "Ask about anything on your screen. Metis looks once, when you ask, and answers about what is actually in front of you.",
     tilt: -1.2,
   },
   {
     icon: Microphone,
-    winTitle: "push_to_talk.dll",
-    title: "Push to talk — or just say its name",
-    body: "Hold a key chord from anywhere in Windows, or say the wake word and leave your hands where they are. Metis listens either way.",
+    winTitle: "talking_to_it.txt",
+    title: "Talk to it, or type",
+    body: "Hold a keyboard shortcut from anywhere in Windows and speak, or just say its name. Type instead if you would rather.",
     shortcut: ["Ctrl", "Shift", "1"],
     tilt: 0.8,
   },
   {
     icon: SpeakerHigh,
-    winTitle: "speech_engine.sys",
+    winTitle: "out_loud.txt",
     title: "It answers out loud",
-    body: "Metis speaks back through ElevenLabs or a local voice. You hear the answer while your eyes stay on the work.",
+    body: "You hear the answer while your eyes stay on the work. Turn it off and read instead — some people prefer that.",
     tilt: 1.5,
   },
   {
     icon: PencilLine,
-    winTitle: "guidance_overlay.dll",
+    winTitle: "on_your_screen.txt",
     title: "It draws on your screen",
-    body: "Arrows, highlights, and labels appear directly over the controls you need — then fade away. Metis teaches by pointing, not by taking over.",
+    body: "Arrows and highlights appear over the buttons you need, then fade. It shows you where to click. It never clicks for you.",
     tilt: -0.7,
   },
   {
     icon: UserCircle,
-    winTitle: "preferred_name.cfg",
-    title: "It knows your name",
-    body: "Set a preferred name and Metis calls you by it. The notch bar sits at the top of your screen — always one click or word away.",
+    winTitle: "always_there.txt",
+    title: "Always one word away",
+    body: "Metis lives in a small bar at the top of your screen. It stays out of the way until you ask, and it remembers your name.",
     tilt: 0.5,
   },
   {
     icon: HardDrives,
-    winTitle: "offline_mode.cfg",
-    title: "No cloud needed",
-    body: "Point it at Ollama running locally and the whole loop — voice, vision, speech — stays on your machine.",
+    winTitle: "your_machine.txt",
+    title: "It can run with no internet",
+    body: "Point Metis at a model running on your own computer and nothing you say or show it ever leaves the machine.",
     tilt: -1.0,
   },
 ];

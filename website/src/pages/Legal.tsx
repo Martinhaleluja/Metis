@@ -27,74 +27,73 @@ export function PrivacyPolicy() {
           It does not watch between requests and it does not record.
         </li>
         <li>
-          Where that capture goes depends on whose AI answers. On your own API key
-          or a local model, it never touches a Metis server. On the AI Metis pays
-          for, it passes through Metis&rsquo;s gateway on the way to the provider.
+          Where that picture goes depends on which AI answers. With your own AI
+          account, or a model on your own computer, it never touches a Metis
+          server. With the AI included in your plan, it passes through Metis on
+          the way, because we are the ones paying for the answer.
         </li>
         <li>
           Content an application marks as private &mdash; banking apps, password
           managers, view-once photos in WhatsApp and Signal &mdash; is blacked out
           before anything is sent, on every route.
         </li>
-        <li>API keys are never stored in plain text and never sent to a browser.</li>
-        <li>Chats and memory are encrypted on your own machine, and you can delete all of it.</li>
+        <li>AI keys are encrypted and never shown again, to you or to us.</li>
+        <li>Your conversations stay encrypted on your own computer, and you can delete all of it.</li>
       </ul>
 
-      <H>Where screen content goes, per route</H>
+      <H>Where your screen goes</H>
       <p>
-        This is the part that changed when Metis started offering AI of its own,
-        and it is written per route because the honest answer is different for
-        each.
+        This is the part that changed when Metis started providing AI of its own,
+        and the honest answer is different depending on which AI answered you —
+        so it is written out for each.
       </p>
 
-      <H3>The AI Metis pays for (Free and Plus)</H3>
+      <H3>The AI included with Free and Plus</H3>
       <p>
-        Your question, and on {plus.name} the screenshot, are sent over HTTPS to
-        Metis&rsquo;s gateway. The gateway calls an AI provider using
-        Metis&rsquo;s own API key and streams the answer back. Metis is in the
-        middle of that request by definition &mdash; it is the account being
-        billed for it.
+        Your question and, when you ask about your screen, the picture are sent
+        securely to Metis, and Metis passes them to an AI provider using its own
+        account. We are in the middle of that request because we are the ones
+        paying for the answer; there is no way to buy an answer on somebody
+        else&rsquo;s behalf without the request coming through us.
       </p>
       <p>
-        What the gateway keeps is the metering record: which model answered, how
-        many tokens it used, how long it took, whether it succeeded, and the
-        estimated cost. It does not store your question, the screenshot, or the
-        answer. On Free there is no screen vision on Metis&rsquo;s AI at all, so
-        that route carries text only.
+        What we keep afterwards is a record of what it cost us: which model
+        answered, how long it took, whether it worked, and the price. We do not
+        keep your question, the picture, or the answer.
       </p>
 
-      <H3>Your own provider account ({pro.name}, {priceLabel(pro)}/month)</H3>
+      <H3>Your own AI account ({pro.name}, {priceLabel(pro)}/month)</H3>
       <p>
         You connect an OpenAI, Anthropic, Google Gemini, Mistral or OpenRouter
-        account. The key is tested once, then held encrypted in Supabase Vault and
-        never returned to any browser, including yours. Requests run on your
-        credentials and are billed to you by that provider, separately from what
-        you pay Metis. What the provider keeps is governed by their privacy
-        policy, not this one.
+        account. The key is checked once, then encrypted, and it is never shown
+        again to anyone — including you. Requests run on your account and are
+        billed to you by that provider, separately from what you pay Metis. What
+        they keep is covered by their privacy policy, not this one.
       </p>
 
-      <H3>Your own API key in the desktop app</H3>
+      <H3>Your own key, entered in the app</H3>
       <p>
-        A key pasted into Metis on Windows is stored in Windows Credential
-        Manager, encrypted to your Windows account, and used to call the provider
-        directly from your machine. No Metis server is in that path on any plan,
-        and those requests are never metered.
+        A key entered into Metis on Windows is stored by Windows itself,
+        encrypted to your user account, and used to call the provider straight
+        from your machine. No Metis server is involved, and those requests are
+        never counted against anything.
       </p>
 
       <H3>A local model</H3>
       <p>
-        Point Metis at Ollama and nothing leaves the computer at all.
+        Run a model on your own computer and nothing leaves it at all.
       </p>
 
       <H>What is never captured</H>
       <ul>
         <li>
-          <strong>Windows that mark themselves as protected.</strong> Applications
-          can tell Windows &ldquo;do not record this&rdquo;, and they use it for
-          exactly what you would expect. Metis paints those regions black before
-          the image is encoded, so the pixels never exist in anything that gets
-          sent. The model is told a region was withheld, so it says it cannot see
-          rather than guessing.
+          <strong>Anything an app marks private.</strong> Programs can tell
+          Windows &ldquo;do not record this&rdquo;, and they use it for exactly
+          what you would expect &mdash; banking, password managers, disappearing
+          photos. Metis blacks those areas out before the picture goes anywhere,
+          so they never exist in anything that leaves your machine. The AI is told
+          something was hidden from it, so it says it cannot see rather than
+          guessing.
         </li>
         <li>
           <strong>Password fields.</strong> No password field&rsquo;s contents,
@@ -106,40 +105,40 @@ export function PrivacyPolicy() {
         </li>
       </ul>
 
-      <H>What is stored on Metis&rsquo;s servers</H>
+      <H>What we keep</H>
       <ul>
-        <li>Your email address and a password hash, held by Supabase Auth.</li>
-        <li>Your role, plan, and whether your email is confirmed.</li>
+        <li>Your email address, and your password stored in a form nobody can read back.</li>
+        <li>Which plan you are on, and whether your email is confirmed.</li>
         <li>
-          One metering row per request Metis paid for: model, provider, token
-          counts, latency, status, estimated cost. No content.
+          For each answer we paid for: which model, how long, whether it worked,
+          and what it cost. None of what was said.
         </li>
         <li>
-          For {pro.name}: an encrypted provider key and a four-character hint, plus
-          an audit entry recording that you connected or disconnected it.
+          On {pro.name}: your encrypted AI key, the last four characters of it,
+          and a note of when you connected or disconnected it.
         </li>
         <li>Your waitlist entry, if you joined it.</li>
       </ul>
 
       <H>Deleting it</H>
       <p>
-        Chats, memory and skills are on your own machine and are removed from
-        Settings &rarr; Memory &amp; privacy. Connected provider keys are deleted
-        from your account page, which removes the encrypted secret itself and not
-        merely the row pointing at it. For anything else, write to us and we will
-        delete the account.
+        Your conversations, what Metis has learned, and any notes you wrote are on
+        your own computer, and one button in settings deletes all of it. A
+        connected AI key is deleted properly from your account page — the key
+        itself, not just the record of it. For anything else, write to us and we
+        will delete the account.
       </p>
 
       <H>Getting in touch</H>
       <p>
-        Open an issue at{" "}
-        <a
-          className="text-accent underline underline-offset-4"
-          href="https://github.com/Martinhaleluja/Metis"
-        >
-          github.com/Martinhaleluja/Metis
-        </a>
-        .
+        Email{" "}
+        <a className="text-accent underline underline-offset-4" href="mailto:privacy@metis.software">
+          privacy@metis.software
+        </a>{" "}
+        about anything on this page, including asking for your account and
+        everything in it to be deleted. A request about your own data should not
+        have to be made in public, which is why this is an address and not an
+        issue tracker.
       </p>
     </Document>
   );
