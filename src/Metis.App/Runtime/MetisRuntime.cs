@@ -1126,6 +1126,18 @@ public sealed class MetisRuntime : IDisposable
         _pendingActivation = ActivationKind.Typed;
         _pendingPointer = null;
         MessageAdded?.Invoke(this, new AssistantMessage(AssistantRole.User, normalizedPrompt, DateTimeOffset.Now));
+
+        // Their question is on screen either way — it was worth typing, and
+        // swallowing it would look like Metis ignored them. What follows is an
+        // answer about setup rather than a provider's stack trace.
+        if (!CanAnswer(out var reason))
+        {
+            SetupRequired?.Invoke(this, reason);
+            MessageAdded?.Invoke(this, new AssistantMessage(AssistantRole.Error, reason, DateTimeOffset.Now));
+            SetStatus(reason);
+            return Task.CompletedTask;
+        }
+
         return RunTurnAsync(normalizedPrompt, null, cancellationToken);
     }
 
@@ -3735,6 +3747,29 @@ public sealed class MetisRuntime : IDisposable
     private bool HasConfiguredProviderKey() => CurrentRoute() != ProviderRoute.RefuseNeedsKeyOrPlan;
 
     /// <summary>
+    /// Whether Metis has any way to answer, and if not, what to tell the user.
+    ///
+    /// This exists because the typed path did not check. Voice checked, and said
+    /// something useful; typing went straight to the provider and surfaced
+    /// whatever exception came back — "No Gemini API key is saved. Open Setup and
+    /// add one first." — as a red error bubble. To someone who has just
+    /// installed Metis and typed a question, that reads as a broken program
+    /// rather than as an unfinished setup, and there is nothing in it to click.
+    /// </summary>
+    public bool CanAnswer(out string reason)
+    {
+        if (CurrentRoute() != ProviderRoute.RefuseNeedsKeyOrPlan)
+        {
+            reason = string.Empty;
+            return true;
+        }
+
+        reason = ProviderRouting.ExplainRefusal(Account.IsSignedIn);
+        return false;
+    }
+
+
+    /// <summary>
     /// The stored secret for a provider Metis reaches over a configurable
     /// endpoint. OpenClaw's token is optional; OpenRouter's key is not.
     /// </summary>
@@ -4885,6 +4920,13 @@ public sealed class MetisRuntime : IDisposable
     /// because of the request. The shell shows it as a banner in the notch.
     /// </summary>
     public event EventHandler<PlanLimitNotice>? PlanLimitReached;
+
+    /// <summary>
+    /// Raised when a question could not be answered because Metis has not been
+    /// set up yet. Carries the sentence to show; the surface decides what to
+    /// offer alongside it.
+    /// </summary>
+    public event EventHandler<string>? SetupRequired;
 
     /// <summary>
     /// Whether the gateway turned this turn down over the plan or the month's

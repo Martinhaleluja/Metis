@@ -672,6 +672,14 @@ public partial class NotchWindow : Window
         }
 
         var target = AgentDrawerTargetHeight();
+        // The same guard FitToChat carries. Without it every refresh restarts a
+        // 420ms height animation, and the drawer refreshes on every agent tick —
+        // so a running agent left the notch permanently mid-animation.
+        if (Math.Abs(target - _bodyHeightTarget) < 0.5)
+        {
+            return;
+        }
+
         GrowWindowFor(target);
         AnimateBodyHeight(target);
     }
@@ -839,6 +847,14 @@ public partial class NotchWindow : Window
         }
 
         var target = SpawnAgentTargetHeight();
+        // The same guard FitToChat carries. Without it every refresh restarts a
+        // 420ms height animation, and the drawer refreshes on every agent tick —
+        // so a running agent left the notch permanently mid-animation.
+        if (Math.Abs(target - _bodyHeightTarget) < 0.5)
+        {
+            return;
+        }
+
         GrowWindowFor(target);
         AnimateBodyHeight(target);
     }

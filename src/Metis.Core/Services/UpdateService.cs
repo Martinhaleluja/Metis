@@ -6,6 +6,7 @@ using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Text.Json;
 using System.Threading;
+using Metis.Core.Models;
 using System.Threading.Tasks;
 using Metis.Core.Contracts;
 
@@ -224,7 +225,10 @@ public sealed class UpdateService(IDiagnosticLog log, HttpClient? httpClient = n
     /// progress window and knows why Metis just closed itself, which /VERYSILENT
     /// would leave looking like a crash.
     /// </summary>
-    public async Task<bool> DownloadAndRunAsync(UpdateCheck check, CancellationToken cancellationToken = default)
+    public async Task<bool> DownloadAndRunAsync(
+        UpdateCheck check,
+        IProgress<UpdateProgress>? progress = null,
+        CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(check);
 
@@ -257,13 +261,57 @@ public sealed class UpdateService(IDiagnosticLog log, HttpClient? httpClient = n
                     request, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
                 response.EnsureSuccessStatusCode();
 
+                // Absent when the server does not send one, which is a real
+                // case rather than a fault — the indicator shows an
+                // indeterminate state instead of inventing a percentage.
+                var total = response.Content.Headers.ContentLength;
+                progress?.Report(new UpdateProgress(UpdatePhase.Downloading, 0, total));
+
                 // Written beside the final name and moved into place, so a
                 // download cut off half way cannot leave a truncated installer
                 // that looks complete on the next launch.
                 var partial = target + ".part";
                 await using (var file = File.Create(partial))
                 {
-                    await response.Content.CopyToAsync(file, cancellationToken).ConfigureAwait(false);
+                    await using var stream = await response.Content
+                        .ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
+
+                    // CopyToAsync would be shorter and reports nothing at all,
+                    // which is how this came to have no feedback in the first
+                    // place. The loop is the whole point.
+                    var buffer = new byte[81920];
+                    long read = 0;
+                    long reportedAt = 0;
+                    var lastReport = DateTimeOffset.UtcNow;
+
+                    while (true)
+                    {
+                        var count = await stream
+                            .ReadAsync(buffer.AsMemory(0, buffer.Length), cancellationToken)
+                            .ConfigureAwait(false);
+                        if (count == 0)
+                        {
+                            break;
+                        }
+
+                        await file.WriteAsync(buffer.AsMemory(0, count), cancellationToken).ConfigureAwait(false);
+                        read += count;
+
+                        // Throttled to whichever comes first, a quarter of a
+                        // megabyte or a tenth of a second. Reporting every chunk
+                        // would marshal to the interface thread faster than it
+                        // can repaint, and the marshalling would cost more than
+                        // the download.
+                        var now = DateTimeOffset.UtcNow;
+                        if (read - reportedAt >= 262_144 || (now - lastReport).TotalMilliseconds >= 100)
+                        {
+                            progress?.Report(new UpdateProgress(UpdatePhase.Downloading, read, total));
+                            reportedAt = read;
+                            lastReport = now;
+                        }
+                    }
+
+                    progress?.Report(new UpdateProgress(UpdatePhase.Downloading, read, total ?? read));
                 }
 
                 if (File.Exists(target))
@@ -282,7 +330,10 @@ public sealed class UpdateService(IDiagnosticLog log, HttpClient? httpClient = n
             }
 
             // The file is about to be executed, so this is the last moment
-            // anything can check it is the file that was published.
+            // anything can check it is the file that was published. Reported as
+            // its own phase because on a large installer it takes long enough to
+            // look like a hang immediately after the bar filled.
+            progress?.Report(new UpdateProgress(UpdatePhase.Verifying));
             var actual = await ComputeSha256Async(target, cancellationToken).ConfigureAwait(false);
             if (check.Sha256 is { Length: 64 } expected)
             {
@@ -307,6 +358,8 @@ public sealed class UpdateService(IDiagnosticLog log, HttpClient? httpClient = n
                     $"Update {check.Version} publishes no SHA-256, so the download could not be verified " +
                     $"(its hash is {actual}). Starting the installer.");
             }
+
+            progress?.Report(new UpdateProgress(UpdatePhase.Starting));
 
             Process.Start(new ProcessStartInfo(target)
             {

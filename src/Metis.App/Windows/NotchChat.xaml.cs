@@ -160,7 +160,24 @@ public partial class NotchChat : System.Windows.Controls.UserControl
         }
 
         StatusText.Text = runtime.CurrentStatus;
-        Greet("I'm ready. Ask me about your screen, or tell me what to do.");
+
+        // "I'm ready" has to be true when it is said. Metis with no key, no
+        // account and no local model is not ready, and greeting someone that way
+        // means their first question fails after they have already trusted the
+        // greeting. Say what is actually needed instead.
+        Greet(runtime.CanAnswer(out var reason)
+            ? "I'm ready. Ask me about your screen, or tell me what to do."
+            : reason);
+
+        // A refusal with nothing to click is a wall. This is raised whenever a
+        // question could not be answered for want of setup, and it repeats the
+        // sentence in the transcript beside the question that prompted it.
+        runtime.SetupRequired += (_, message) => Dispatcher.Invoke(() =>
+        {
+            StatusText.Text = message;
+            RaiseSizeChanged();
+        });
+
         RefreshModelChip();
     }
 

@@ -309,7 +309,15 @@ public partial class NotchAgentDrawer : UserControl
                 task.IsActive ? Visibility.Collapsed : Visibility.Visible));
         }
 
-        var countChanged = _tasks.Count != newVms.Count;
+        // Any change at all, not just a change in how many there are.
+        //
+        // This used to compare only the counts, which meant a card that *grew* —
+        // steps arriving, an approval banner opening, a file being written —
+        // never told the notch to make room, and the new content was silently
+        // cut off by the body's clip until some unrelated task happened to be
+        // added or removed. The records are value-equal, so this is the same
+        // comparison the loop below already makes.
+        var layoutChanged = _tasks.Count != newVms.Count;
 
         for (var i = 0; i < newVms.Count; i++)
         {
@@ -318,11 +326,13 @@ public partial class NotchAgentDrawer : UserControl
                 if (_tasks[i] != newVms[i])
                 {
                     _tasks[i] = newVms[i];
+                    layoutChanged = true;
                 }
             }
             else
             {
                 _tasks.Add(newVms[i]);
+                layoutChanged = true;
             }
         }
 
@@ -332,7 +342,7 @@ public partial class NotchAgentDrawer : UserControl
         }
 
         EmptyState.Visibility = _tasks.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
-        if (countChanged)
+        if (layoutChanged)
         {
             ContentSizeChanged?.Invoke(this, EventArgs.Empty);
         }

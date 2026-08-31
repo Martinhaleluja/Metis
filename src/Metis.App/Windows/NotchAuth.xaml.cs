@@ -320,7 +320,7 @@ public partial class NotchAuth : UserControl
             VerticalAlignment = VerticalAlignment.Center,
             Margin = new Thickness(10, 0, 2, 0),
             Cursor = Cursors.Hand,
-            Foreground = (Brush)FindResource("AuthAccent")
+            Foreground = Themed("AccentBrush", 0x0A, 0x7C, 0xFF)
         };
 
         link.MouseLeftButtonUp += (_, _) => OpenMicrophoneSettings();
@@ -343,6 +343,26 @@ public partial class NotchAuth : UserControl
         }
     }
 
+    /// <summary>
+    /// A themed brush by key, or a literal fallback.
+    ///
+    /// This panel used to call <c>FindResource</c> for four keys — AuthAccent,
+    /// AuthInk, AuthMuted, AuthDangerInk — that were never defined in any
+    /// dictionary. <c>FindResource</c> throws on a missing key, and the global
+    /// handler in App.xaml.cs marks the exception handled, so the failure was
+    /// completely silent: <c>Say()</c> threw on the first line of the sign-in
+    /// submit, the button span forever, and nobody was ever signed in. The
+    /// permission rows on the welcome page never rendered for the same reason.
+    ///
+    /// So this uses the tokens that do exist, and it uses TryFindResource with a
+    /// fallback — the pattern NotchWindow.HighlightActiveTool already follows —
+    /// because a colour that is wrong is a far smaller problem than a first-run
+    /// screen that throws. A test now asserts every key named here exists.
+    /// </summary>
+    private Brush Themed(string key, byte r, byte g, byte b) =>
+        TryFindResource(key) as Brush
+        ?? new SolidColorBrush(Color.FromRgb(r, g, b));
+
     private Border BuildRowShell(string title, string detail, UIElement trailing)
     {
         var text = new StackPanel();
@@ -351,7 +371,7 @@ public partial class NotchAuth : UserControl
             Text = title,
             FontSize = 12,
             FontWeight = FontWeights.SemiBold,
-            Foreground = (Brush)FindResource("AuthInk"),
+            Foreground = Themed("NotchTextBrush", 0xF2, 0xF2, 0xF7),
             TextTrimming = TextTrimming.CharacterEllipsis
         });
         text.Children.Add(new TextBlock
@@ -360,7 +380,7 @@ public partial class NotchAuth : UserControl
             FontSize = 10,
             Margin = new Thickness(0, 2, 0, 0),
             TextWrapping = TextWrapping.Wrap,
-            Foreground = (Brush)FindResource("AuthMuted")
+            Foreground = Themed("NotchMutedBrush", 0x8E, 0x8E, 0x93)
         });
 
         var grid = new Grid();
@@ -473,7 +493,9 @@ public partial class NotchAuth : UserControl
     {
         StatusLine.Text = message;
         StatusLine.Visibility = Visibility.Visible;
-        StatusLine.Foreground = (Brush)FindResource(problem ? "AuthDangerInk" : "AuthMuted");
+        StatusLine.Foreground = problem
+            ? Themed("NotchDangerInkBrush", 0xFF, 0x62, 0x57)
+            : Themed("NotchMutedBrush", 0x8E, 0x8E, 0x93);
         RaiseSizeChanged();
     }
 
