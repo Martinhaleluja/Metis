@@ -153,7 +153,7 @@ public static class ManagedAccess
         {
             return limits.MaxScreenshotBytes == 0
                 ? ManagedDecision.PlanLimited(
-                    "Metis reading your screen on its own AI is part of Plus. Your own API key still can.")
+                    "Metis reading your screen on its own AI is part of Pro. Your own API key still can.")
                 : ManagedDecision.PlanLimited(
                     "That screen capture is larger than this plan allows. Metis will send a smaller one next time.");
         }

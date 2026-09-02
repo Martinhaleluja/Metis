@@ -211,10 +211,23 @@ public sealed class AgentTaskManager : IDisposable
     /// </summary>
     public BrowserSessions Browsers { get; private set; } = new(null);
 
-    /// <summary>Gives agents a real browser. Called once at startup.</summary>
-    public void UseBrowser(Metis.Core.Agents.Browsing.IBrowserSessionFactory factory)
+    /// <summary>
+    /// Gives agents a real browser. Called once at startup.
+    /// </summary>
+    /// <param name="factory">What opens a browser window when one is wanted.</param>
+    /// <param name="isAllowed">
+    /// Whether the signed-in account's plan includes browser help. Asked at the
+    /// moment a tool runs rather than here, because this is called once and a
+    /// plan changes underneath it. Null leaves the tools ungated, which is what
+    /// a build with no accounts wants.
+    /// </param>
+    /// <param name="explainRefusal">Why not, in words, when it is not.</param>
+    public void UseBrowser(
+        Metis.Core.Agents.Browsing.IBrowserSessionFactory factory,
+        Func<bool>? isAllowed = null,
+        Func<string>? explainRefusal = null)
     {
-        Browsers = new BrowserSessions(factory);
+        Browsers = new BrowserSessions(factory, isAllowed, explainRefusal);
 
         _toolRegistry.Register(new BrowserOpenTool(Browsers));
         _toolRegistry.Register(new BrowserReadTool(Browsers));

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { getSupabase, isAuthConfigured, readableAuthError, useAuth } from "../lib/auth";
 
 /**
@@ -9,10 +9,16 @@ import { getSupabase, isAuthConfigured, readableAuthError, useAuth } from "../li
  * `account_status` row, one plan. Someone who signed up in Metis on Windows
  * signs in here with what they already have, which is the whole reason this
  * page does not invent its own sign-up flow with different rules.
+ *
+ * Somebody who arrived here from a pricing button was in the middle of buying
+ * something, so `?next=` carries where they were and they are put back there
+ * rather than on the account page wondering what happened to the checkout.
  */
 export function Login() {
   const auth = useAuth();
   const navigate = useNavigate();
+  const [params] = useSearchParams();
+  const next = safeNext(params.get("next"));
 
   const [mode, setMode] = useState<"in" | "up">("in");
   const [email, setEmail] = useState("");
@@ -23,9 +29,9 @@ export function Login() {
 
   useEffect(() => {
     if (auth.status === "signed-in") {
-      navigate("/account", { replace: true });
+      navigate(next, { replace: true });
     }
-  }, [auth.status, navigate]);
+  }, [auth.status, navigate, next]);
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
@@ -53,7 +59,7 @@ export function Login() {
         return;
       }
 
-      navigate("/account", { replace: true });
+      navigate(next, { replace: true });
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Something went wrong. Try again.");
     } finally {
@@ -142,6 +148,22 @@ export function Login() {
       </p>
     </Shell>
   );
+}
+
+/**
+ * Where to go once the password is accepted.
+ *
+ * `next` is read out of the address bar, which anyone can write, so it is only
+ * honoured when it is a path on this site. Two slashes or a slash-backslash
+ * start a protocol-relative URL — `//example.com` is somebody else's origin
+ * wearing a path's clothes — and that is the standard way a login page is
+ * turned into a link that launders a phishing site through a domain people
+ * trust. Anything else falls back to the account page.
+ */
+function safeNext(value: string | null): string {
+  if (!value || !value.startsWith("/")) return "/account";
+  if (value.startsWith("//") || value.startsWith("/\\")) return "/account";
+  return value;
 }
 
 /** The dialog frame both states share. */

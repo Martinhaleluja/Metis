@@ -1,6 +1,6 @@
 import { CheckIcon as Check } from "@phosphor-icons/react/dist/icons/Check";
 import { Link } from "react-router-dom";
-import { plans, priceLabel } from "../lib/plans";
+import { planById, plans, priceLabel } from "../lib/plans";
 import { useBillingIsLive } from "../lib/billing";
 import { Reveal } from "./Reveal";
 import { UpgradeButton } from "./UpgradeButton";
@@ -13,7 +13,7 @@ import { UpgradeButton } from "./UpgradeButton";
  * plan gets the whole app, and a model running on the user's own computer is
  * outside all of it. Bringing a provider key of your own is outside the
  * allowance too — Metis is not paying for those requests — but is itself part
- * of Pro, so this section must never imply that a key gets a Free account the
+ * of Max, so this section must never imply that a key gets a Free account the
  * paid behaviour.
  */
 export function Pricing() {
@@ -28,7 +28,8 @@ export function Pricing() {
           </h2>
           <p className="mx-auto mt-4 max-w-[58ch] text-center type-body text-ink-muted">
             Every plan includes the whole app. What changes is how much AI comes
-            with it &mdash; and on Pro, whether you would rather bring your own.
+            with it &mdash; and on {planById.max.name}, whether you would rather
+            bring your own.
           </p>
         </Reveal>
 

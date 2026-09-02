@@ -154,4 +154,36 @@ public static class PlanCatalogue
         PlanTier.Pro => Max,
         _ => null
     };
+
+    /// <summary>
+    /// The cheapest plan that includes a capability, or null when no plan does
+    /// — a staff-only capability has no price, and a prompt offering to sell one
+    /// would be offering something that is not for sale.
+    ///
+    /// This exists because every sentence of the form "that is part of Metis
+    /// <em>something</em>" was being typed out by hand at the point it was
+    /// shown, and each one was a copy of the plan table that nothing kept in
+    /// step. They rotted exactly as you would expect: the app spent months
+    /// telling people that bringing their own API key was part of Pro after it
+    /// had moved to Max, and offering a plan called Plus that no longer existed.
+    /// Asking the rules which plan grants a thing cannot go stale, because the
+    /// rules are what the gateway enforces.
+    ///
+    /// The probe account is verified, signed in and ordinary on purpose: staff
+    /// hold every capability regardless of plan, so asking with a staff account
+    /// would answer "Free" for all of them.
+    /// </summary>
+    public static PlanOffer? SmallestPlanWith(MetisFeature feature) =>
+        All.FirstOrDefault(offer => Entitlements.Has(
+            new MetisAccount("probe", UserRole.User, offer.Tier, MetisEnvironment.Production),
+            feature,
+            billingIsLive: true));
+
+    /// <summary>
+    /// The name of the cheapest plan that includes a capability, for the
+    /// sentence a person reads. Falls back to the top plan's name rather than to
+    /// an empty string: a refusal that names no plan at all reads as a fault.
+    /// </summary>
+    public static string NameOfPlanWith(MetisFeature feature) =>
+        SmallestPlanWith(feature)?.Name ?? Max.Name;
 }

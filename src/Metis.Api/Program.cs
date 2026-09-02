@@ -34,6 +34,14 @@ builder.Services.AddSingleton(config);
 builder.Services.AddMemoryCache();
 builder.Services.AddHttpClient<SupabaseGateway>();
 builder.Services.AddHttpClient("providers", client => client.Timeout = TimeSpan.FromSeconds(120));
+
+// The payment processor gets its own client rather than borrowing the provider
+// one. Creating a checkout session is a small call with a person standing in
+// front of it waiting to be taken to a payment form, and the two minutes that
+// suit a long model answer would leave them watching a spinner for two minutes
+// before finding out it had failed.
+builder.Services.AddHttpClient("billing", client => client.Timeout = TimeSpan.FromSeconds(20));
+
 builder.Services.AddSingleton<ProviderKeyValidator>();
 builder.Services.AddSingleton<GatewayState>();
 builder.Services.AddHostedService(services => services.GetRequiredService<GatewayState>());
@@ -116,6 +124,21 @@ builder.Services.AddRateLimiter(options =>
                 QueueLimit = 0
             }));
 
+    // Starting a checkout is an authenticated write to a third party on Metis's
+    // own account, and somebody genuinely buying something does it once or
+    // twice. Loose enough that changing your mind and coming back later is
+    // fine; tight enough that a signed-in script cannot fill the processor with
+    // abandoned sessions or spend Metis's API allowance there.
+    options.AddPolicy("checkout", context =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            context.UserId() ?? context.Connection.RemoteIpAddress?.ToString() ?? "anonymous",
+            _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = 10,
+                Window = TimeSpan.FromHours(1),
+                QueueLimit = 0
+            }));
+
     // Not optional on a small instance. A 12 MiB multipart upload holds real
     // buffers, and six of them at once is an out-of-memory kill rather than a
     // slow response.
@@ -129,7 +152,29 @@ builder.Services.AddRateLimiter(options =>
 // per-plan cap cannot be known until the caller is. The per-plan cap is enforced
 // while the body is being read, so an oversized upload is refused partway rather
 // than after Metis has paid to receive all of it.
-builder.WebHost.ConfigureKestrel(kestrel => kestrel.Limits.MaxRequestBodySize = 14 * 1024 * 1024);
+//
+// PORT is honoured here as well, because the platform sometimes chooses it. A
+// Render service created from render.yaml routes to 10000, which is the number
+// the Dockerfile and the blueprint both pin — but one created from Render's
+// dashboard is handed a PORT instead, and a process that ignores it binds to a
+// port nothing is routed to. The health check then fails forever while the
+// service itself is perfectly healthy, which is a miserable thing to find. An
+// endpoint configured in code takes precedence over ASPNETCORE_URLS, so this is
+// the last word when PORT is set and changes nothing at all when it is not.
+builder.WebHost.ConfigureKestrel(kestrel =>
+{
+    kestrel.Limits.MaxRequestBodySize = 14 * 1024 * 1024;
+
+    if (int.TryParse(
+            Environment.GetEnvironmentVariable("PORT"),
+            NumberStyles.Integer,
+            CultureInfo.InvariantCulture,
+            out var port)
+        && port is > 0 and <= 65535)
+    {
+        kestrel.ListenAnyIP(port);
+    }
+});
 
 var app = builder.Build();
 
@@ -144,6 +189,17 @@ if (signingKey is null)
     app.Logger.LogWarning(
         "METIS_ENTITLEMENT_SIGNING_KEY is not set. /v1/me will return unsigned snapshots, "
         + "so desktop clients will not trust a cached plan while offline.");
+}
+
+// Said once at startup rather than discovered by the first person to pay. The
+// checkout works without it, so this is a warning and not a refusal — but a
+// customer who has just handed over money lands on the processor's own page and
+// never comes back to their account, which nobody would think to look for.
+if (config.PolarAccessToken is not null && config.SiteUrl is null)
+{
+    app.Logger.LogWarning(
+        "METIS_SITE_URL is not set while checkout is configured. Customers will finish "
+        + "on the processor's confirmation page instead of being returned to their account.");
 }
 
 // Liveness only. Deliberately says nothing about configuration: a health check
@@ -446,7 +502,8 @@ app.MapPost("/v1/agent-step", async (
 
     // Refused here rather than by the step allowance, and the difference
     // matters to the user: a plan that never included agents is a 403 with a
-    // sentence about Plus, not a 402 that reads as "come back next month".
+    // sentence about what Pro includes, not a 402 that reads as "come back next
+    // month".
     if (!Entitlements.Has(account, MetisFeature.AutonomousAgents, rules.BillingIsLive))
     {
         return Problem(403, "plan",
@@ -691,6 +748,106 @@ app.MapDelete("/v1/connections/{provider}", async (
 
 // ============================== Billing ==============================
 
+// Starting a checkout, which is the half of billing that had no server side at
+// all: the webhook could apply a subscription, and nothing existed that could
+// create one.
+//
+// It is on the gateway rather than in the website's own JavaScript for two
+// reasons that are really the same reason. The processor's API token would have
+// to ship inside the bundle, where anyone could read it and create sessions
+// against Metis's account. And the Supabase user id the subscription is bound to
+// would be a value the browser chose — which is to say, a value anybody could
+// choose, and therefore a way to move someone else's plan. Here the id comes off
+// a token Supabase verified, and there is nothing in the request body that can
+// change whose account is being bought for.
+app.MapPost("/v1/checkout", async (
+    HttpContext context,
+    SupabaseGateway supabase,
+    GatewayConfig gatewayConfig,
+    IHttpClientFactory clients,
+    ILoggerFactory loggers,
+    CheckoutRequest request,
+    CancellationToken cancellationToken) =>
+{
+    var log = loggers.CreateLogger("Metis.Api.Checkout");
+    var account = context.Account(gatewayConfig.Environment);
+    if (account is null)
+    {
+        return NoAccountRow();
+    }
+
+    // Deliberately no entitlement check. Everything else on this service asks
+    // what the account has bought before it does anything; this is the endpoint
+    // people use to buy, and gating it behind a plan would be circular. An
+    // unverified address is no obstacle either — the subscription binds to the
+    // user id, not to the address, so there is nothing here to take over.
+    var decision = Checkout.Decide(gatewayConfig, account.Plan, request?.Plan);
+    if (!decision.Allowed)
+    {
+        return Problem(decision.StatusCode, decision.Kind!, decision.Message!);
+    }
+
+    var email = await supabase.LoadUserEmailAsync(account.UserId, cancellationToken);
+    var payload = Checkout.BuildSessionRequest(
+        decision.ProductId!,
+        account.UserId,
+        decision.Plan,
+        email,
+        Checkout.SuccessUrl(gatewayConfig));
+
+    try
+    {
+        var http = clients.CreateClient("billing");
+        using var upstream = new HttpRequestMessage(
+            HttpMethod.Post, $"{gatewayConfig.PolarApiBase}/v1/checkouts/")
+        {
+            Content = new StringContent(payload, Encoding.UTF8, "application/json")
+        };
+        upstream.Headers.Add("Authorization", $"Bearer {gatewayConfig.PolarAccessToken}");
+
+        using var response = await http.SendAsync(upstream, cancellationToken);
+        var body = await response.Content.ReadAsStringAsync(cancellationToken);
+
+        if (!response.IsSuccessStatusCode)
+        {
+            // The status and nothing else. A processor's error text names the
+            // organisation and the product, and echoes back parts of what was
+            // sent — including the customer's own address. It belongs in the
+            // processor's dashboard rather than in Metis's logs.
+            log.LogError(
+                "The payment processor refused a checkout with {Status}.", (int)response.StatusCode);
+            return Problem(502, "billing",
+                "Metis could not start a checkout just now. Nothing has been charged.");
+        }
+
+        var url = Checkout.ReadCheckoutUrl(body);
+        if (url is null)
+        {
+            log.LogError("The payment processor accepted a checkout and returned no URL.");
+            return Problem(502, "billing",
+                "Metis could not start a checkout just now. Nothing has been charged.");
+        }
+
+        // The plan and the processor, never the URL. A checkout link is a
+        // bearer link to a payment form opened in this person's name.
+        await supabase.RecordAuditAsync(
+            account.UserId,
+            "checkout.started",
+            new { plan = decision.Plan.ToString().ToLowerInvariant(), provider = "polar" },
+            cancellationToken);
+
+        return Results.Ok(new { url });
+    }
+    catch (Exception exception) when (!cancellationToken.IsCancellationRequested)
+    {
+        log.LogError(exception, "The gateway could not reach the payment processor.");
+        return Problem(502, "network",
+            "Metis could not reach its payment processor. Nothing has been charged.");
+    }
+})
+.RequireAuthorization()
+.RequireRateLimiting("checkout");
+
 app.MapPost("/v1/webhooks/{provider}", async (
     HttpContext context,
     SupabaseGateway supabase,
@@ -828,7 +985,7 @@ static void WriteAllowanceHeaders(HttpContext context, decimal used, decimal lim
 /// Streaming is not a nicety here. The desktop app shows the reply while it is
 /// still arriving, and its whole fallback design turns on whether any text has
 /// reached the screen yet. A non-streaming managed path would make every turn on
-/// Free and Plus feel seconds slower than the bring-your-own-key path it
+/// Free and Pro feel seconds slower than the bring-your-own-key path it
 /// replaces — a visible regression on the day people are moved onto it.
 /// </summary>
 static async Task StreamTurnAsync(
@@ -1007,6 +1164,18 @@ static string? ReadCandidateText(JsonElement root)
 
 /// <summary>What connecting a provider looks like on the wire.</summary>
 public sealed record ConnectRequest(string? Provider, string? ApiKey, string? Model);
+
+/// <summary>
+/// What starting a checkout looks like on the wire: which plan, and nothing
+/// else.
+///
+/// The emptiness is the design. An account id, a price, a product, a return
+/// address — each is a field a client might reasonably have sent, and each would
+/// be a way to charge the wrong person, charge the wrong amount, or point
+/// Metis's own domain at a stranger's page. Every one of them is decided on this
+/// side instead: from the verified token, or from configuration.
+/// </summary>
+public sealed record CheckoutRequest(string? Plan);
 
 /// <summary>
 /// One turn of a background agent, on the wire.

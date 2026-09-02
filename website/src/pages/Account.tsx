@@ -66,6 +66,7 @@ export function Account() {
   const plan = planById[currentPlanId] ?? planById.free;
   const limits = data?.limits;
   const usage = data?.usage;
+  const billingIsLive = data?.billingIsLive ?? false;
 
   async function handleSelectPlan(targetPlan: PlanId) {
     if (switchingPlan || !session || targetPlan === currentPlanId) return;
@@ -73,11 +74,15 @@ export function Account() {
     setSwitchingPlan(true);
     setPlanError(null);
 
-    const result = await changePlan(session, targetPlan);
+    const result = await changePlan(targetPlan);
     if (!result.ok) {
       setPlanError(result.error ?? "The plan could not be changed.");
     }
 
+    // Re-read either way. On success it confirms the change came from the
+    // server rather than from this page believing itself; on failure it puts
+    // the cards back on the plan that is actually in force, which the message
+    // above them now explains instead of leaving it to be guessed at.
     await reload();
     setSwitchingPlan(false);
   }
@@ -165,11 +170,31 @@ export function Account() {
                   </span>
                 </div>
 
-                <div className="mt-1 flex items-center gap-2 text-[12px] text-[#444]">
+                {/* The badge used to say "✓ Verified" for everyone, which made
+                    it a decoration rather than a fact — and the fact it was
+                    covering for matters: an account with an unverified address
+                    earns no plan capability at all, on the server, whatever it
+                    has paid. Somebody being refused things needs to be able to
+                    see why. It is drawn only when there is an account row to
+                    read it from; between signing up and the trigger seeding
+                    that row, "not verified" would be a guess rather than an
+                    answer. */}
+                <div className="mt-1 flex flex-wrap items-center gap-2 text-[12px] text-[#444]">
                   <span>{session.user.email}</span>
-                  <span className="rounded bg-[#e8f5e9] px-1.5 py-0.2 text-[10px] font-semibold text-[#2e7d32]">
-                    ✓ Verified
-                  </span>
+                  {data?.status && (
+                    data.status.email_verified ? (
+                      <span className="rounded bg-[#e8f5e9] px-1.5 py-0.2 text-[10px] font-semibold text-[#2e7d32]">
+                        ✓ Verified
+                      </span>
+                    ) : (
+                      <span
+                        title="Open the link in the confirmation email we sent you."
+                        className="rounded border border-[#e65100] bg-[#fff8e1] px-1.5 py-0.2 text-[10px] font-semibold text-[#e65100]"
+                      >
+                        ! Not verified — check your email
+                      </span>
+                    )
+                  )}
                 </div>
               </div>
             </div>
@@ -204,10 +229,15 @@ export function Account() {
            plan is described, and this reads it. */}
       <div className="mb-6">
         <Window title="Your plan">
+          {/* Switching here is a staff-only shortcut and the copy has to say
+              so. It changes what the account may actually do without anything
+              being paid, so `set_my_test_plan` refuses everybody else — and a
+              panel that invites a customer to "choose a plan" and then refuses
+              them reads as a broken page rather than as a rule. */}
           <p className="mb-4 text-[12px] leading-relaxed text-[#444]">
-            Nothing is being charged yet. Choosing a plan here changes what your
-            account can actually do, so you can see exactly what each one
-            includes.
+            {billingIsLive
+              ? "Switching here changes the plan without paying for it, so it is limited to staff accounts. Everyone else changes plan through checkout."
+              : "Nothing is being charged yet. Switching here changes what this account may actually do, so each plan can be seen from the inside — which is why it is limited to staff accounts while the plans are being tested."}
           </p>
 
           {planError && (
@@ -349,11 +379,7 @@ export function Account() {
 
       {/* --------------------------- Your own AI --------------------------- */}
       <div className="mt-6">
-        <Connections
-          session={session}
-          isMax={currentPlanId === "max"}
-          billingIsLive={data?.billingIsLive ?? false}
-        />
+        <Connections session={session} isMax={currentPlanId === "max"} />
       </div>
     </Frame>
   );
@@ -428,21 +454,26 @@ function Meter({
 }
 
 /**
- * Bring your own AI.
+ * Bring your own AI. Max only, and only Max.
  *
- * Only shown on Max when billing is live. While it is not, everyone is
- * effectively entitled to everything, so hiding it would hide a working feature
- * — and the gateway is the thing that actually decides, so this is only ever a
- * question of what to draw.
+ * It used to be drawn for anybody while billing was off, on the theory that
+ * nothing is being charged yet so nothing should be withheld yet. The gateway
+ * does not agree: `POST /v1/connections` checks the Max entitlement whatever
+ * `billing_is_live` says, so a Free account was shown the form, given a key to
+ * paste, and refused with a 403 once it had. Being told no is survivable. Being
+ * invited, made to fetch a key from another website, and then told no is not,
+ * and it is the client that was wrong here rather than the server.
+ *
+ * So this asks the same question the server asks. Staff also qualify, but the
+ * refusal comes back as a sentence rather than a silence, and a staff account
+ * that lands on the explanation can move itself to Max in the panel above.
  */
 function Connections({
   session,
   isMax,
-  billingIsLive,
 }: {
   session: import("@supabase/supabase-js").Session;
   isMax: boolean;
-  billingIsLive: boolean;
 }) {
   const [connections, setConnections] = useState<Connection[]>([]);
   const [provider, setProvider] = useState<string>(connectableProviders[0].key);
@@ -450,20 +481,19 @@ function Connections({
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
-  const available = isMax || !billingIsLive;
-
   useEffect(() => {
-    if (!available || !isGatewayConfigured) return;
+    if (!isMax || !isGatewayConfigured) return;
     void listConnections(session).then(setConnections);
-  }, [session, available]);
+  }, [session, isMax]);
 
-  if (!available) {
+  if (!isMax) {
     return (
       <Window title="Your own AI account">
         <p className="text-[12px] leading-relaxed text-[#444]">
           Using your own OpenAI, Anthropic, Gemini or OpenRouter account is part
-          of Metis Max. Your provider charges you for what the models cost; the
-          {" "}{priceLabel(planById.max)} a month is for Metis.
+          of Metis {planById.max.name}, at {priceLabel(planById.max)} a month.
+          That is what the plan buys; your provider charges you separately for
+          what the models themselves cost.
         </p>
       </Window>
     );

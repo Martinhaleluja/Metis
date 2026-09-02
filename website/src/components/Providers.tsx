@@ -7,7 +7,7 @@ import { Reveal } from "./Reveal";
  *
  * The split is the point of the section. On the included AI, Metis picks the
  * model and pays the bill, so the list is short and it is ours to change. On
- * Pro you connect your own account and the bill is yours, so the list is long
+ * Max you connect your own account and the bill is yours, so the list is long
  * and the choice is yours. Presenting them as one undifferentiated logo wall
  * would hide the only thing a reader needs to understand.
  */
@@ -127,7 +127,7 @@ export function Providers() {
           <Reveal delay={0.08}>
             <ProviderWindow
               title="your_own_account.txt"
-              heading="Your own account — Pro"
+              heading={`Your own account — ${planById.max.name}`}
               blurb="Connect an account you already pay for, and choose the exact model yourself. Metis stops buying the AI and simply drives the one you picked."
               marks={bringYourOwn}
               footer={`Your provider charges you for what the models cost, separately from the ${priceLabel(planById.max)}. That ${priceLabel(planById.max)} is for Metis.`}

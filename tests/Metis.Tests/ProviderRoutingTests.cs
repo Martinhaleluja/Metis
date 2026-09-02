@@ -1,3 +1,4 @@
+﻿using Metis.Core.Models;
 using Metis.Core.Services;
 
 namespace Metis.Tests;
@@ -182,7 +183,15 @@ public sealed class ProviderRoutingTests
     {
         var message = ProviderRouting.ExplainRefusal(signedIn, ownKeyIsAllowed: false);
 
-        Assert.Contains("Pro", message, StringComparison.Ordinal);
+        // Asked of the catalogue rather than written down here. This assertion
+        // used to pin the literal "Pro", which is how the message went on naming
+        // the wrong plan for months after bringing your own key moved to Max:
+        // the test agreed with the bug. Deriving it means the test fails when the
+        // message names a plan that does not actually grant the feature, which
+        // is the thing worth protecting.
+        var granting = PlanCatalogue.NameOfPlanWith(MetisFeature.CustomAiProvider);
+
+        Assert.Contains(granting, message, StringComparison.Ordinal);
         Assert.DoesNotContain("Add your own API key", message, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("local model", message, StringComparison.OrdinalIgnoreCase);
     }

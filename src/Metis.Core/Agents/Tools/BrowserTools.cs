@@ -9,12 +9,42 @@ namespace Metis.Core.Agents.Tools;
 /// fight over the same window, and so closing one task's browser cannot pull
 /// the page out from under another.
 /// </summary>
-public sealed class BrowserSessions(IBrowserSessionFactory? factory) : IAsyncDisposable
+/// <param name="factory">
+/// What makes a browser, or null in a build that has none.
+/// </param>
+/// <param name="isAllowed">
+/// Whether this account's plan includes browser help, asked afresh each time
+/// rather than captured. Null means unrestricted, which is what a test and a
+/// self-hosted build want; the desktop passes the entitlement.
+/// </param>
+/// <param name="explainRefusal">
+/// The sentence to give the agent when it is not, in the same words the rest of
+/// the application refuses in — <c>Entitlements.Explain</c>. The agent reads
+/// this and tells the user, so it has to be a reason rather than a code.
+/// </param>
+public sealed class BrowserSessions(
+    IBrowserSessionFactory? factory,
+    Func<bool>? isAllowed = null,
+    Func<string>? explainRefusal = null) : IAsyncDisposable
 {
     private readonly Dictionary<string, IBrowserSession> _sessions = new(StringComparer.OrdinalIgnoreCase);
     private readonly SemaphoreSlim _gate = new(1, 1);
 
     public bool Available => factory is not null;
+
+    /// <summary>
+    /// Whether the account may have Metis drive a browser for it at all.
+    ///
+    /// Separate from <see cref="Available"/> because the two are different
+    /// answers to different questions: one is about this build, the other about
+    /// this plan, and telling somebody their browser is missing when it is
+    /// really their plan sends them looking for a fault that is not there.
+    /// </summary>
+    public bool IsAllowed => isAllowed?.Invoke() ?? true;
+
+    /// <summary>Why not, when <see cref="IsAllowed"/> is false.</summary>
+    public string RefusalReason =>
+        explainRefusal?.Invoke() ?? "Browser help is not included in your current plan.";
 
     public async Task<IBrowserSession?> ForAsync(string taskId, CancellationToken cancellationToken)
     {
@@ -75,6 +105,18 @@ public abstract class BrowserToolBase(BrowserSessions sessions) : IAgentTool
 {
     public abstract AgentToolDeclaration Declaration { get; }
 
+    /// <summary>
+    /// The plan gate, at the one point all four browser tools pass through.
+    ///
+    /// Browser help is priced as part of a plan and was enforced in exactly no
+    /// place: the tools were registered unconditionally and would happily open a
+    /// window for an account that had not bought them. Checked here rather than
+    /// at registration because a plan changes while the application is running,
+    /// and a gate evaluated once at start-up is a gate that is wrong for the
+    /// rest of the session.
+    /// </summary>
+    public bool IsOffered => sessions.IsAllowed;
+
     protected abstract Task<BrowserActionResult> RunAsync(
         IBrowserSession session,
         IReadOnlyDictionary<string, object?> arguments,
@@ -85,6 +127,16 @@ public abstract class BrowserToolBase(BrowserSessions sessions) : IAgentTool
         AgentToolContext context,
         CancellationToken cancellationToken)
     {
+        // Refused before a window is opened, and before the factory is asked for
+        // anything. A model that calls a tool it was not offered — because it
+        // remembered one from earlier in the conversation, or guessed — gets the
+        // same sentence the user would be shown, so it can stop and say so
+        // rather than retry.
+        if (!sessions.IsAllowed)
+        {
+            return AgentToolResult.Fail(sessions.RefusalReason);
+        }
+
         var session = await sessions.ForAsync(context.TaskId, cancellationToken);
         if (session is null)
         {

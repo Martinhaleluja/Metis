@@ -241,9 +241,14 @@ public partial class NotchWelcome : UserControl
         var entitled = _runtime?.Can(MetisFeature.CustomAiProvider) ?? false;
         OwnKeyBadge.Visibility = Show(!entitled);
         OwnKeyChoice.Opacity = entitled ? 1 : 0.72;
+
+        // Which plan, asked rather than typed here. This card said "Part of
+        // Metis Pro" long after bringing your own key had moved to Max, on the
+        // first screen a new user ever sees.
         OwnKeyBody.Text = entitled
             ? "Bring a key from Google, OpenAI, Anthropic or OpenRouter and pay them directly."
-            : "Part of Metis Pro. Bring a key from Google, OpenAI, Anthropic or OpenRouter and pay them directly.";
+            : $"Part of Metis {PlanCatalogue.NameOfPlanWith(MetisFeature.CustomAiProvider)}. "
+              + "Bring a key from Google, OpenAI, Anthropic or OpenRouter and pay them directly.";
     }
 
     private Brush Chrome(bool selected) =>

@@ -138,35 +138,32 @@ export function useAccountData(session: Session | null) {
 }
 
 /**
- * Switches the active plan tier on the user's account for testing / subscription change.
- */
-/**
- * Changes the plan on the account row.
+ * Changes the plan on the account row, without paying for it.
  *
- * It reports what actually happened. The previous version swallowed the error,
- * wrote the wanted plan into localStorage and returned success regardless, so a
- * failed write left the page cheerfully displaying "Pro" while the server —
- * which is the only thing that enforces anything — still said Free. The desktop
- * app then disagreed with the website about the same account, and the person
- * looking at both had no way to tell which was lying.
+ * It goes through `set_my_test_plan` rather than updating `account_status`
+ * directly, and the reason is that the direct update never worked. That table
+ * has a select policy and no update policy, so the write matched zero rows and
+ * came back with no error at all — the page reported success, re-read the
+ * unchanged plan, and quietly reverted. A button that does nothing and says
+ * nothing is worse than one that refuses, because there is no way to tell it
+ * apart from a bug.
  *
- * There is deliberately no local override any more. A plan is a fact about the
- * account, held in one place, and a client-side copy of it is a second answer
- * to a question that must only have one.
+ * The obvious fix — an update policy — would let anybody grant themselves Max,
+ * so the function does the write instead and refuses anyone who is not staff.
+ * That refusal is the normal case for a real customer and has to read like an
+ * answer rather than a fault.
+ *
+ * There is deliberately no local override. A plan is a fact about the account,
+ * held in one place, and a client-side copy of it is a second answer to a
+ * question that must only have one.
  */
-export async function changePlan(
-  session: Session,
-  newPlan: PlanId,
-): Promise<{ ok: boolean; error?: string }> {
+export async function changePlan(newPlan: PlanId): Promise<{ ok: boolean; error?: string }> {
   try {
     const supabase = await getSupabase();
-    const { error } = await supabase
-      .from("account_status")
-      .update({ plan: newPlan })
-      .eq("user_id", session.user.id);
+    const { error } = await supabase.rpc("set_my_test_plan", { target_plan: newPlan });
 
     if (error) {
-      return { ok: false, error: error.message };
+      return { ok: false, error: readablePlanError(error.code, error.message) };
     }
 
     return { ok: true };
@@ -176,6 +173,32 @@ export async function changePlan(
       error: err instanceof Error ? err.message : "The plan could not be changed.",
     };
   }
+}
+
+/**
+ * The two refusals `set_my_test_plan` raises, in words worth reading.
+ *
+ * They are matched on SQLSTATE rather than on the sentence, so rewording the
+ * function's message cannot silently turn a recognised refusal into a raw
+ * database error on screen. The prose is checked as well because PostgREST does
+ * not always carry the code through. Anything else is passed along untouched:
+ * a wrong-but-specific message beats a right-but-useless one, the same bargain
+ * `readableAuthError` makes.
+ */
+function readablePlanError(code: string | undefined, message: string): string {
+  const text = message.toLowerCase();
+
+  // insufficient_privilege: signed in, but not a developer, founder or admin.
+  if (code === "42501" || text.includes("only staff")) {
+    return "Only staff accounts can switch plan without paying for it.";
+  }
+
+  // invalid_authorization_specification: the session went away mid-click.
+  if (code === "28000" || text.includes("not signed in")) {
+    return "You are signed out. Sign in again to change your plan.";
+  }
+
+  return message;
 }
 
 /**
@@ -217,7 +240,7 @@ function firstRow<T>(value: unknown): T | null {
 // ------------------------- Bring your own provider -------------------------
 
 /**
- * The providers a Pro customer can connect. Matches the `ai_providers` rows the
+ * The providers a Max customer can connect. Matches the `ai_providers` rows the
  * gateway validates against; listed here so the form can be rendered before the
  * network answers.
  */

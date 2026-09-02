@@ -316,8 +316,15 @@ public sealed class MetisRuntime : IDisposable
         // launched here -- only when an agent first asks for one -- because the
         // very first launch may have to download Chromium, and most tasks never
         // need a browser at all.
-        AgentTasks.UseBrowser(new Metis.Windows.PlaywrightBrowserFactory(
-            message => _log.Info($"Browser: {message}")));
+        //
+        // The two delegates are the plan gate, asked at the moment a tool runs
+        // rather than now: a browser opened on Metis's behalf is a capability
+        // the pricing page sells, and this is called once at start-up while the
+        // plan can change under it at any point afterwards.
+        AgentTasks.UseBrowser(
+            new Metis.Windows.PlaywrightBrowserFactory(message => _log.Info($"Browser: {message}")),
+            () => Can(MetisFeature.BrowserAssistance),
+            () => ExplainCapability(MetisFeature.BrowserAssistance));
     }
 
     private readonly IWindowsNotificationService _notifications;
@@ -405,7 +412,18 @@ public sealed class MetisRuntime : IDisposable
         var email = !string.IsNullOrWhiteSpace(account.Email) ? account.Email : Settings.UserEmail;
         var name = !string.IsNullOrWhiteSpace(account.DisplayName) ? account.DisplayName : Settings.UserName;
         var avatar = !string.IsNullOrWhiteSpace(account.Avatar) ? account.Avatar : Settings.UserAvatar;
-        var plan = !string.IsNullOrWhiteSpace(Settings.TestPlanTier) && Enum.TryParse<PlanTier>(Settings.TestPlanTier, true, out var testPlan)
+
+        // The stored plan override is a staff testing tool, so only a staff
+        // account may be signed in under it. It used to apply to everybody, and
+        // that single line made settings.json the authority on what a person had
+        // paid for: RefreshEntitlementsAsync would fetch the real plan from the
+        // gateway, hand it here, and this would throw it away and reinstate
+        // whatever the local file said. Account.Plan and Entitlements.Plan then
+        // disagreed for the rest of the session — and Account.Plan is what the
+        // interface offers from.
+        var plan = account.IsStaff
+                   && !string.IsNullOrWhiteSpace(Settings.TestPlanTier)
+                   && Enum.TryParse<PlanTier>(Settings.TestPlanTier, true, out var testPlan)
             ? testPlan
             : account.Plan;
 
@@ -416,10 +434,39 @@ public sealed class MetisRuntime : IDisposable
     }
 
     /// <summary>
-    /// Switches the user's plan tier (for testing, demo, or tier changing).
+    /// Whether this account may move itself between plans from inside the app.
+    ///
+    /// Staff only, and the interface asks before it offers the buttons. A plan
+    /// is bought on the website; anybody else clicking one of these would be
+    /// asking the client to grant them something the gateway will refuse, and an
+    /// action that is certain to be refused should not be offered at all.
+    /// </summary>
+    public bool CanSwitchPlanLocally => Account.IsStaff;
+
+    /// <summary>
+    /// Moves a staff account on to another plan, so a gate can be watched
+    /// working from both sides without buying anything.
+    ///
+    /// This used to be open to everyone, and it did rather more than its name
+    /// suggests: it rewrote the account, wrote a full granted-feature set into a
+    /// local <see cref="EntitlementSnapshot"/> with billing marked live, and
+    /// persisted the choice — so a click on "Max" in the plan list was, in
+    /// effect, the paid tier, until the next restart reinstated it from
+    /// settings.json. Nothing was ever bought and the gateway would refuse every
+    /// managed request, but everything the client decides for itself believed it.
+    ///
+    /// Fabricating the snapshot is why this stays staff-only rather than merely
+    /// being made honest: a snapshot the client wrote for itself is the one kind
+    /// of entitlement that never came from the server.
     /// </summary>
     public async Task SetPlanAsync(PlanTier newPlan)
     {
+        if (!CanSwitchPlanLocally)
+        {
+            _log.Info($"Plan switch to {newPlan} refused: plans are bought on the website.");
+            return;
+        }
+
         Account = Account with { Plan = newPlan };
         var granted = Metis.Core.Services.Entitlements.GrantedFeatures(Account, billingIsLive: true);
         // From the catalogue rather than written out again here. This table had
@@ -609,8 +656,13 @@ public sealed class MetisRuntime : IDisposable
         if (!Can(MetisFeature.AutonomousAgents))
         {
             _log.Info($"Agent spawn refused: {ExplainCapability(MetisFeature.AutonomousAgents)}");
+
+            // Not "(Plus & Pro)". Plus stopped existing, and agents are on every
+            // plan now — sold by the number of messages rather than withheld —
+            // so naming a tier here was wrong twice over. The sentence
+            // underneath says what the actual reason is.
             PlanLimitReached?.Invoke(this, new PlanLimitNotice(
-                "Background Helpers (Plus & Pro)",
+                "Background helpers",
                 ExplainCapability(MetisFeature.AutonomousAgents)));
             return [];
         }
@@ -893,6 +945,7 @@ public sealed class MetisRuntime : IDisposable
             _log.Error("The global hold-to-talk shortcut could not start.", exception);
             SetStatus("Metis started, but Ctrl+Shift+1 is unavailable. Open diagnostics for details.");
         }
+        StartEntitlementRefreshTimer();
         _log.Info("Metis runtime initialized.");
         PlayCue(MetisSound.AppStarted);
     }
@@ -3875,6 +3928,76 @@ public sealed class MetisRuntime : IDisposable
     };
 
     /// <summary>
+    /// How long to wait for the gateway to say what an account may do.
+    ///
+    /// Sixty seconds, which looks absurd for one small GET and is not. The
+    /// gateway runs on Render's free tier, which stops the container after about
+    /// fifteen minutes with no traffic and takes roughly fifty seconds to build
+    /// a new one on the next request. This call is made at start-up, and
+    /// start-up is very often the first traffic of the day — so a twenty-second
+    /// timeout did not measure a slow network, it measured a cold start, and it
+    /// gave up nine tenths of the way through one. Every time. The user saw
+    /// nothing: the failure logs at info level and the app carries on with its
+    /// cached snapshot, which is why this went unnoticed for as long as it did.
+    ///
+    /// Waiting a minute costs nothing here because nothing waits on it. It runs
+    /// unawaited beside a working interface, and the answer only ever makes the
+    /// interface more accurate than the cache it is already showing.
+    /// </summary>
+    private static readonly TimeSpan EntitlementTimeout = TimeSpan.FromSeconds(60);
+
+    /// <summary>
+    /// How often to ask again.
+    ///
+    /// Fifteen minutes because the thing this catches is a plan bought on the
+    /// website while the app is open, and the app used to catch it never: the
+    /// only two calls were at start-up and just after sign-in, so somebody who
+    /// upgraded saw no change until they next restarted Metis — at precisely the
+    /// moment they had paid for one. Quarter of an hour is short enough that a
+    /// purchase lands while the person is still thinking about it, and long
+    /// enough that a day at the desk is under forty requests.
+    /// </summary>
+    private static readonly TimeSpan EntitlementRefreshInterval = TimeSpan.FromMinutes(15);
+
+    private System.Windows.Threading.DispatcherTimer? _entitlementTimer;
+
+    /// <summary>
+    /// Whether a refresh is already in the air. Not a lock: the correct answer
+    /// to "asked twice at once" is to drop the second, because both would return
+    /// the same snapshot and the first is already on its way.
+    /// </summary>
+    private int _entitlementRefreshRunning;
+
+    /// <summary>
+    /// Starts asking the gateway what this account may do, and keeps asking.
+    ///
+    /// Called once, from <see cref="InitializeAsync"/>, on the interface thread —
+    /// so the ticks arrive there too and the panels listening to
+    /// <see cref="EntitlementsChanged"/> are updated without marshalling. Runs
+    /// whether or not anyone is signed in, because signing in is one of the
+    /// things it needs to notice, and a refresh with no session costs a
+    /// comparison and returns.
+    /// </summary>
+    private void StartEntitlementRefreshTimer()
+    {
+        if (_entitlementTimer is not null)
+        {
+            return;
+        }
+
+        _entitlementTimer = new System.Windows.Threading.DispatcherTimer
+        {
+            Interval = EntitlementRefreshInterval
+        };
+
+        _entitlementTimer.Tick += OnEntitlementRefreshTick;
+        _entitlementTimer.Start();
+    }
+
+    private void OnEntitlementRefreshTick(object? sender, EventArgs e) =>
+        _ = RefreshEntitlementsAsync();
+
+    /// <summary>
     /// Asks the gateway what this account may do, and remembers the answer.
     ///
     /// Everything about this method is written so that failure is quiet. There
@@ -3883,18 +4006,68 @@ public sealed class MetisRuntime : IDisposable
     /// of those are reasons to interrupt anyone, because the client already has
     /// a usable fallback in the cached snapshot and, below that, in its own
     /// compiled table. The one thing it must never do is invent an answer.
+    ///
+    /// Safe to call from anywhere at any time. A second call while one is in
+    /// flight returns immediately rather than queueing behind it: they would
+    /// both fetch the same snapshot, and the timer ticking during a cold start
+    /// must not stack up a queue of minute-long requests.
     /// </summary>
     public async Task RefreshEntitlementsAsync(CancellationToken cancellationToken = default)
     {
         var token = SessionAccessToken;
-        if (token is null || !MetisBackend.HasGateway(Settings.MetisGatewayUrl))
+        if (_disposed || token is null || !MetisBackend.HasGateway(Settings.MetisGatewayUrl))
+        {
+            return;
+        }
+
+        if (Interlocked.CompareExchange(ref _entitlementRefreshRunning, 1, 0) != 0)
         {
             return;
         }
 
         try
         {
-            using var http = new System.Net.Http.HttpClient { Timeout = TimeSpan.FromSeconds(20) };
+            // Two attempts, because the first request after an idle period is
+            // spent waking the container rather than answering: Render returns
+            // it a 502 or drops it once the build takes longer than its own
+            // edge timeout, and the retry lands on a service that is now warm.
+            // Two rather than three — if a minute of waiting and a second go
+            // have not produced an answer, the service is down rather than
+            // asleep, and the cached snapshot is the right thing to keep using.
+            for (var attempt = 1; attempt <= 2; attempt++)
+            {
+                if (await TryRefreshEntitlementsAsync(token, cancellationToken))
+                {
+                    return;
+                }
+
+                if (attempt == 1)
+                {
+                    await Task.Delay(TimeSpan.FromSeconds(2), cancellationToken);
+                }
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // The caller withdrew the question. Not worth a line in the log.
+        }
+        finally
+        {
+            Interlocked.Exchange(ref _entitlementRefreshRunning, 0);
+        }
+    }
+
+    /// <summary>
+    /// One attempt. True when the gateway answered with something this build
+    /// could read and apply; false when it is worth trying again.
+    /// </summary>
+    private async Task<bool> TryRefreshEntitlementsAsync(
+        string token,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            using var http = new System.Net.Http.HttpClient { Timeout = EntitlementTimeout };
             using var request = new System.Net.Http.HttpRequestMessage(
                 System.Net.Http.HttpMethod.Get,
                 new Uri(new Uri(MetisBackend.ResolveGatewayUrl(Settings.MetisGatewayUrl)), "v1/me"));
@@ -3905,7 +4078,11 @@ public sealed class MetisRuntime : IDisposable
             if (!response.IsSuccessStatusCode)
             {
                 _log.Info($"The gateway did not report entitlements ({(int)response.StatusCode}).");
-                return;
+
+                // A refusal is an answer and repeating it changes nothing. Only
+                // the shapes that mean "the service is not up yet" are worth a
+                // second go.
+                return (int)response.StatusCode is not (502 or 503 or 504);
             }
 
             var body = await response.Content.ReadAsStringAsync(cancellationToken);
@@ -3914,7 +4091,7 @@ public sealed class MetisRuntime : IDisposable
 
             if (me is null)
             {
-                return;
+                return true;
             }
 
             // The account is re-read from the same answer, so the plan the
@@ -3960,6 +4137,12 @@ public sealed class MetisRuntime : IDisposable
                 me.Signed);
 
             LastAllowance = me.Allowance;
+            return true;
+        }
+        catch (TaskCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            // Withdrawn rather than timed out. Handled by the caller.
+            throw new OperationCanceledException(cancellationToken);
         }
         catch (Exception exception) when (exception is System.Net.Http.HttpRequestException or TaskCanceledException
                                               or System.Text.Json.JsonException)
@@ -3968,6 +4151,10 @@ public sealed class MetisRuntime : IDisposable
             // read. All three mean the same thing to the caller: carry on with
             // what is already known.
             _log.Info($"Entitlements could not be refreshed right now: {exception.Message}");
+
+            // Only the timeouts and connection failures are worth repeating.
+            // Something this build cannot parse will not parse on a second go.
+            return exception is System.Text.Json.JsonException;
         }
     }
 
@@ -5104,6 +5291,18 @@ public sealed class MetisRuntime : IDisposable
         }
 
         _disposed = true;
+
+        // Stopped and unhooked rather than merely dropped. A DispatcherTimer is
+        // rooted by the dispatcher it was created on, so one that is only
+        // forgotten keeps ticking — and keeps this whole runtime alive — for as
+        // long as the application lives.
+        if (_entitlementTimer is not null)
+        {
+            _entitlementTimer.Stop();
+            _entitlementTimer.Tick -= OnEntitlementRefreshTick;
+            _entitlementTimer = null;
+        }
+
         _turnCancellation?.Cancel();
         _turnCancellation?.Dispose();
         _pushToTalk.Pressed -= OnPushToTalkPressed;

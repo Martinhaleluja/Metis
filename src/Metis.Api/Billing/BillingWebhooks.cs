@@ -25,11 +25,12 @@ public sealed record BillingEvent(
     /// <summary>
     /// Which Metis account this is about.
     ///
-    /// It comes from metadata set when the checkout was created, and never from
-    /// matching an email address. Email matching looks obvious and is an account
-    /// takeover: anyone who can buy a subscription with someone else's address
-    /// in the billing form could otherwise change that person's plan, or be
-    /// handed theirs.
+    /// It comes from what the gateway itself set when it created the checkout —
+    /// the metadata, or the external customer id — and never from matching an
+    /// email address. Email matching looks obvious and is an account takeover:
+    /// anyone who can buy a subscription with someone else's address in the
+    /// billing form could otherwise change that person's plan, or be handed
+    /// theirs.
     /// </summary>
     string? MetisUserId,
 
@@ -113,9 +114,12 @@ internal static class WebhookCrypto
                 if (metadata.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.String)
                 {
                     var raw = value.GetString();
-                    // Accepts both "plus" and "metis_plus", because the two
-                    // processors' product metadata conventions differ and the
-                    // specification names both forms.
+                    // Accepts both the bare and the prefixed form — "pro" and
+                    // "metis_pro" — because the two processors' product metadata
+                    // conventions differ and the specification names both. The
+                    // retired middle-plan name still reads through
+                    // Entitlements.ParsePlan, so a product created before the
+                    // rename does not silently grant Free.
                     var trimmed = raw?.Replace("metis_", string.Empty, StringComparison.OrdinalIgnoreCase);
                     var parsed = Entitlements.ParsePlan(trimmed);
                     if (parsed != PlanTier.Free)
@@ -251,13 +255,61 @@ public sealed class PolarWebhookVerifier(string? secret) : IBillingWebhookVerifi
                 ? WebhookCrypto.StringOrNull(customer, "id")
                 : WebhookCrypto.StringOrNull(data, "customer_id"),
             WebhookCrypto.StringOrNull(data, "id"),
-            metadata.ValueKind == JsonValueKind.Object ? WebhookCrypto.StringOrNull(metadata, "metis_user_id") : null,
+            ReadMetisUserId(data, metadata),
             WebhookCrypto.PlanFromMetadata(metadata),
             WebhookCrypto.StringOrNull(data, "status") ?? "unknown",
             WebhookCrypto.DateOrNull(data, "current_period_end"),
             data.TryGetProperty("cancel_at_period_end", out var cancel)
                 && cancel.ValueKind == JsonValueKind.True);
     }
+
+    /// <summary>
+    /// Which Metis account this event is about, from the first of three places
+    /// it may appear.
+    ///
+    /// The chain exists because only the first place is one Metis controls.
+    /// <c>metadata.metis_user_id</c> is set on the <em>checkout</em>, and whether
+    /// Polar copies checkout metadata onto the subscription object it emits
+    /// afterwards is Polar's behaviour rather than ours — it may change, and it
+    /// is not a thing to bet a payment on. The <c>external_customer_id</c> sent
+    /// alongside it is stored on the <em>customer</em> record instead, which
+    /// Polar includes on the subscription, so it survives where the metadata
+    /// might not. <c>customer_external_id</c> is the same value again, flattened,
+    /// which some payloads carry rather than nesting the customer.
+    ///
+    /// Reading only the first would make the quietest failure in the whole
+    /// system: with no id the event changes no entitlement, the handler stores it
+    /// and answers 200, the processor is satisfied and never retries — and the
+    /// customer has paid, seen a receipt, and been given nothing. Nobody would
+    /// find out until they complained.
+    ///
+    /// All three sources are things the gateway wrote at checkout, so none of
+    /// this weakens the rule the type's own comment states: the account is never
+    /// resolved from anything the buyer typed into the payment form.
+    /// </summary>
+    private static string? ReadMetisUserId(JsonElement data, JsonElement metadata)
+    {
+        // An empty string counts as absent at every step rather than as an
+        // answer. A present-but-blank field would otherwise stop the chain and
+        // be carried into apply_subscription as the account to change, which is
+        // a worse failure than the one this chain exists to prevent.
+        if (metadata.ValueKind == JsonValueKind.Object
+            && NotBlank(WebhookCrypto.StringOrNull(metadata, "metis_user_id")) is { } fromMetadata)
+        {
+            return fromMetadata;
+        }
+
+        if (data.TryGetProperty("customer", out var customer)
+            && customer.ValueKind == JsonValueKind.Object
+            && NotBlank(WebhookCrypto.StringOrNull(customer, "external_id")) is { } fromCustomer)
+        {
+            return fromCustomer;
+        }
+
+        return NotBlank(WebhookCrypto.StringOrNull(data, "customer_external_id"));
+    }
+
+    private static string? NotBlank(string? value) => string.IsNullOrWhiteSpace(value) ? null : value;
 }
 
 /// <summary>

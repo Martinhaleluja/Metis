@@ -76,6 +76,30 @@ services:
       - key: STRIPE_WEBHOOK_SECRET
         sync: false
 
+      # Taking payment, as opposed to being told about one. The webhook secret
+      # above lets the gateway *receive* a subscription; these let it *start*
+      # one, which is what POST /v1/checkout does. All five are optional: without
+      # the token, or without the product id for the plan being bought, that
+      # endpoint answers 404 and nothing else about the service changes. A
+      # deployment with none of them set is a gateway that serves AI and sells
+      # nothing, which is what staging should be until it deliberately is not.
+      - key: POLAR_ACCESS_TOKEN
+        sync: false
+      # "sandbox" for Polar's test environment; anything else is the real one,
+      # with real cards. Set it explicitly on staging rather than relying on the
+      # default, which is production.
+      - key: POLAR_SERVER
+        sync: false
+      - key: POLAR_PRODUCT_PRO
+        sync: false
+      - key: POLAR_PRODUCT_MAX
+        sync: false
+      # Where a customer is returned once they have paid. Read from here rather
+      # than from the request, because a redirect the caller chooses is an open
+      # redirect next to a payment form.
+      - key: METIS_SITE_URL
+        sync: false
+
   # Deliberately not deployed yet: suspended so it exists, holds its own
   # secrets, and cannot be reached until there is something to sell. Remove
   # `suspended` when you are ready for it.
@@ -115,4 +139,17 @@ services:
       - key: POLAR_WEBHOOK_SECRET
         sync: false
       - key: STRIPE_WEBHOOK_SECRET
+        sync: false
+
+      # The same five as staging. Production's are the live ones: a real token,
+      # the real products, and POLAR_SERVER left unset so it means production.
+      - key: POLAR_ACCESS_TOKEN
+        sync: false
+      - key: POLAR_SERVER
+        sync: false
+      - key: POLAR_PRODUCT_PRO
+        sync: false
+      - key: POLAR_PRODUCT_MAX
+        sync: false
+      - key: METIS_SITE_URL
         sync: false

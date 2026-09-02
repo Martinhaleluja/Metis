@@ -26,7 +26,37 @@ public sealed record GatewayConfig(
     string? EntitlementSigningKey,
     IReadOnlyList<string> AllowedOrigins,
     string? PolarWebhookSecret,
-    string? StripeWebhookSecret)
+    string? StripeWebhookSecret,
+
+    /// <summary>
+    /// Polar's own API token, which is what lets this gateway <em>create</em> a
+    /// checkout rather than only be told about one afterwards.
+    ///
+    /// Optional like everything else in this block. Without it /v1/checkout
+    /// answers 404 and nothing else about the service changes, which is the whole
+    /// reason it is read with <c>Read</c> and never <c>Require</c>: a gateway that
+    /// refused to boot without a payment token would take the AI down with the
+    /// shop.
+    /// </summary>
+    string? PolarAccessToken = null,
+
+    /// <summary>
+    /// "sandbox" for Polar's test environment, anything else for the real one.
+    /// </summary>
+    string? PolarServer = null,
+
+    /// <summary>The Polar product a Pro subscription is sold as.</summary>
+    string? PolarProductPro = null,
+
+    /// <summary>The Polar product a Max subscription is sold as.</summary>
+    string? PolarProductMax = null,
+
+    /// <summary>
+    /// Where the website lives, so the gateway can work out for itself where a
+    /// customer should land once they have paid. It is configuration rather than
+    /// something the caller sends for a reason given at the point it is used.
+    /// </summary>
+    string? SiteUrl = null)
 {
     public static GatewayConfig FromEnvironment()
     {
@@ -46,7 +76,16 @@ public sealed record GatewayConfig(
             (Read("ALLOWED_ORIGINS") ?? string.Empty)
                 .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries),
             Read("POLAR_WEBHOOK_SECRET"),
-            Read("STRIPE_WEBHOOK_SECRET"));
+            Read("STRIPE_WEBHOOK_SECRET"),
+            Read("POLAR_ACCESS_TOKEN"),
+            Read("POLAR_SERVER"),
+            Read("POLAR_PRODUCT_PRO"),
+            Read("POLAR_PRODUCT_MAX"),
+
+            // Trailing slash removed here rather than at each use, the same way
+            // SupabaseUrl is treated, so a value pasted out of a browser bar does
+            // not become a double slash in a customer's return link.
+            Read("METIS_SITE_URL")?.TrimEnd('/'));
     }
 
     /// <summary>
@@ -76,6 +115,36 @@ public sealed record GatewayConfig(
         new[] { "google", "anthropic", "openai", "mistral", "openrouter" }
             .Where(provider => KeyFor(provider) is not null)
             .ToArray();
+
+    /// <summary>
+    /// Which Polar to talk to.
+    ///
+    /// Sandbox is a wholly separate environment — its own organisation, its own
+    /// products, its own tokens, and money that is not real. Pointing at the
+    /// wrong one is not a degraded experience but a wrong outcome in either
+    /// direction: a live customer sent to a sandbox that will never charge them,
+    /// or a test run against a card that will.
+    /// </summary>
+    public string PolarApiBase =>
+        string.Equals(PolarServer?.Trim(), "sandbox", StringComparison.OrdinalIgnoreCase)
+            ? "https://sandbox-api.polar.sh"
+            : "https://api.polar.sh";
+
+    /// <summary>
+    /// The product a plan is sold as, or null when this deployment has not been
+    /// told about one.
+    ///
+    /// Written the same way as <see cref="KeyFor"/> and for the same reason: a
+    /// plan whose product id is missing is refused with a reason rather than
+    /// silently becoming some other plan's product. Free is deliberately absent —
+    /// it is what an account already is, not something anyone can buy.
+    /// </summary>
+    public string? PolarProductFor(PlanTier plan) => plan switch
+    {
+        PlanTier.Pro => Blank(PolarProductPro),
+        PlanTier.Max => Blank(PolarProductMax),
+        _ => null
+    };
 
     private static string? Read(string name) => Blank(System.Environment.GetEnvironmentVariable(name));
 
@@ -241,6 +310,54 @@ public sealed class SupabaseGateway(HttpClient http, GatewayConfig config, ILogg
             Entitlements.ParsePlan(row.GetProperty("plan").GetString()),
             config.Environment,
             row.GetProperty("email_verified").GetBoolean());
+    }
+
+    /// <summary>
+    /// The address on a user's auth record, for prefilling a payment form.
+    ///
+    /// It is a convenience and never evidence. Which account a subscription
+    /// belongs to is decided by the user id carried in checkout metadata and on
+    /// the customer record, and never by matching an address — the comment on
+    /// BillingEvent.MetisUserId explains why treating the two as interchangeable
+    /// is an account takeover rather than a shortcut.
+    ///
+    /// Because it is only a convenience, a failure here returns null instead of
+    /// throwing: nobody should be unable to buy Metis because the address that
+    /// would have been typed into the form for them could not be read.
+    /// </summary>
+    public async Task<string?> LoadUserEmailAsync(string userId, CancellationToken cancellationToken)
+    {
+        using var request = new HttpRequestMessage(
+            HttpMethod.Get, $"{config.SupabaseUrl}/auth/v1/admin/users/{Uri.EscapeDataString(userId)}");
+        Authorize(request);
+
+        try
+        {
+            using var response = await http.SendAsync(request, cancellationToken);
+            if (!response.IsSuccessStatusCode)
+            {
+                log.LogWarning(
+                    "Could not read an address to prefill a checkout with ({Status}).",
+                    (int)response.StatusCode);
+                return null;
+            }
+
+            using var document = JsonDocument.Parse(
+                await response.Content.ReadAsStringAsync(cancellationToken));
+            return document.RootElement.TryGetProperty("email", out var email)
+                   && email.ValueKind == JsonValueKind.String
+                ? email.GetString()
+                : null;
+        }
+        catch (Exception exception)
+        {
+            // Not logged with the address, and not logged with the user id
+            // either: the whole reason Redact exists a few lines down is that a
+            // log line naming which account was being read is personal data from
+            // the moment it is written.
+            log.LogWarning(exception, "Could not read an address to prefill a checkout with.");
+            return null;
+        }
     }
 
     /// <summary>

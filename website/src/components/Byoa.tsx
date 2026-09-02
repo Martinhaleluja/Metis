@@ -8,6 +8,11 @@ import { Reveal } from "./Reveal";
  * gets a section of its own that says the number out loud rather than a footnote
  * under a price.
  *
+ * The plan being described is Max. The step below said "Pro" while quoting Max's
+ * price from `planById.max`, which is the worst of both: the name a reader
+ * shops by and the number they would be charged, disagreeing in the same
+ * sentence. Both come from the plan now, so they cannot part company again.
+ *
  * The security list used to be a security review: TLS, local storage, URLs,
  * plain text, logs, audit records, and a rendered sample of a key hint. All
  * true, all the wrong altitude — a reader who needs reassurance is not reassured
@@ -19,7 +24,7 @@ import { Reveal } from "./Reveal";
 const steps = [
   {
     n: "1",
-    title: "You subscribe to Pro",
+    title: `You subscribe to ${planById.max.name}`,
     body: `${priceLabel(planById.max)} a month, paid to Metis. That buys the software — the app, the drawing, the background agents, the memory, and the account that ties them together.`,
   },
   {
@@ -48,8 +53,8 @@ export function Byoa() {
             Use your own AI account
           </h2>
           <p className="mx-auto mt-4 max-w-[58ch] text-center type-body text-ink-muted">
-            Pro is two bills rather than one. Better to know which is which now
-            than to find out on a statement.
+            {planById.max.name} is two bills rather than one. Better to know
+            which is which now than to find out on a statement.
           </p>
         </Reveal>
 

@@ -37,7 +37,7 @@ public static class MetisBackend
     /// the managed route and everyone runs on their own key, exactly as Metis
     /// worked before any of this existed.
     /// </summary>
-    public const string DefaultGatewayUrl = "https://metis-api-staging.onrender.com";
+    public const string DefaultGatewayUrl = "https://metis-gateway.onrender.com";
 
     /// <summary>
     /// The public half of the key the gateway signs entitlement snapshots with,
@@ -49,8 +49,8 @@ public static class MetisBackend
     /// which is correct behaviour rather than a failure.
     /// </summary>
     public const string EntitlementPublicKey =
-        "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEzMcFaM8ZwJvWwaPjez4zHeEmmKx9JCBaFTmkca8N"
-        + "Eq9ORU5j7rjgKxt2hY4LWT1TfPTWJ4crZkGw/V4HMoVb/A==";
+        "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEeqQNRFgPIqj+Gmgn6q0ORiPNRpoPe4FMfNnP98F2"
+        + "gKFDN1LugQt+iizuYAlR+bnTMpu1RGxkt9BCCHJT94bYxQ==";
 
     /// <summary>
     /// The project URL to use: whatever settings say, or the built-in one when

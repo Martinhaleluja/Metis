@@ -83,6 +83,16 @@ public static class EntitlementSigner
                 snapshot.Limits.MaxAgentStepsPerTask,
                 snapshot.Limits.MemoryEntriesMax,
                 snapshot.Limits.MaxTurnsPerMonth,
+
+                // Signed like every other allowance, which it was not until now.
+                // Both halves of this file worked from the same field list, so
+                // the signature still verified and nothing ever failed — the
+                // number was simply absent from the payload, and every snapshot
+                // read back offline reported a dictation cap of zero. Zero means
+                // "no cap" in PlanLimits, and the meter draws no cap as
+                // Unlimited, so a Free account that went offline was shown
+                // unlimited dictation it does not have.
+                snapshot.Limits.MaxDictationMinutesPerMonth,
                 managedModels = snapshot.Limits.ManagedModels
                     .OrderBy(model => model, StringComparer.Ordinal).ToArray()
             },
@@ -191,6 +201,17 @@ public static class EntitlementSigner
         return granted;
     }
 
+    /// <summary>
+    /// Every allowance, read back in the order <see cref="PlanLimits"/> declares
+    /// them. All eleven of them: this reconstructed ten for a while, and the one
+    /// it dropped came back as zero, which the interface reads as "no limit".
+    ///
+    /// The last two are read with <c>TryGetProperty</c> because a snapshot signed
+    /// by an older gateway will not carry them, and refusing to read such a
+    /// snapshot at all would sign a paying user out of their own plan the day
+    /// this shipped. The payload travels with the signature, so an old one still
+    /// verifies; it simply says less.
+    /// </summary>
     private static PlanLimits ReadLimits(JsonElement limits) => new(
         limits.GetProperty("MonthlyBudgetUsd").GetDecimal(),
         limits.GetProperty("MaxScreenshotBytes").GetInt32(),
@@ -203,7 +224,8 @@ public static class EntitlementSigner
             .Select(model => model.GetString() ?? string.Empty)
             .Where(model => model.Length > 0)
             .ToArray(),
-        limits.TryGetProperty("MaxTurnsPerMonth", out var turns) ? turns.GetInt32() : 0);
+        limits.TryGetProperty("MaxTurnsPerMonth", out var turns) ? turns.GetInt32() : 0,
+        limits.TryGetProperty("MaxDictationMinutesPerMonth", out var dictation) ? dictation.GetInt32() : 0);
 
     private static string Base64Url(byte[] value) =>
         Convert.ToBase64String(value).TrimEnd('=').Replace('+', '-').Replace('/', '_');

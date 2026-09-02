@@ -42,10 +42,10 @@ const faqs: { q: string; a: React.ReactNode }[] = [
     ),
   },
   {
-    q: "Does my own AI account cost extra on Pro?",
+    q: `Does my own AI account cost extra on ${max.name}?`,
     a: (
       <>
-        Yes, and it is worth being clear about it. The {priceLabel(pro)} goes to
+        Yes, and it is worth being clear about it. The {priceLabel(max)} goes to
         Metis for the software. What the models cost is billed to you by your own
         provider, on their own invoice, at their own rates. Metis adds nothing on
         top and never sees that bill — every request shows up on their website,

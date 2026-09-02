@@ -345,6 +345,13 @@ public partial class NotchSettings : UserControl
         SignOutChip.Visibility = Collapse(account.IsSignedIn);
         ManageWebChip.Visibility = Collapse(account.IsSignedIn);
 
+        // What a row offers depends on who is reading it. Staff switch in place,
+        // because that is how a plan gate is watched working; everyone else is
+        // taken to the website, because a plan is bought rather than chosen. The
+        // announced name has to say which, or a screen reader promises a switch
+        // that opens a browser instead.
+        var switchesInPlace = _runtime.CanSwitchPlanLocally;
+
         PlanList.ItemsSource = PlanCatalogue.All
             .Select(entry => new PlanRowItem(
                 entry.Tier,
@@ -356,12 +363,16 @@ public partial class NotchSettings : UserControl
                 Collapse(entry.Tier == plan),
                 entry.Tier == plan
                     ? $"{entry.Name}, {entry.PriceLabel} {entry.Cadence}. Your plan. {entry.Summary}"
-                    : $"Switch to {entry.Name}, {entry.PriceLabel} {entry.Cadence}. {entry.Summary}"))
+                    : switchesInPlace
+                        ? $"Switch to {entry.Name}, {entry.PriceLabel} {entry.Cadence}. {entry.Summary}"
+                        : $"{entry.Name}, {entry.PriceLabel} {entry.Cadence}. {entry.Summary} Opens the website to change plan."))
             .ToArray();
 
-        PlanSwitcherNote.Text = account.IsSignedIn
-            ? "Everything is free while Metis is in testing. Choosing a plan here shows you exactly what that plan can and cannot do."
-            : "Sign in to choose a plan. Metis works signed out on a model running on your own computer.";
+        PlanSwitcherNote.Text = !account.IsSignedIn
+            ? "Sign in to choose a plan. Metis works signed out on a model running on your own computer."
+            : switchesInPlace
+                ? "Staff account: choosing a plan here switches to it immediately, so a plan's limits can be seen from the inside."
+                : "Your plan is changed on the website, and Metis picks the change up within a few minutes. Everything below is what each plan includes.";
 
         RefreshUsage(plan);
 
@@ -565,11 +576,12 @@ public partial class NotchSettings : UserControl
     /// Changes plan. One handler rather than three near-identical ones, so a
     /// plan added to the catalogue needs no code here at all.
     ///
-    /// While Metis is in testing this really does change the plan, immediately
-    /// and locally, which is the point: a restriction nobody can watch working
-    /// is indistinguishable from one that was never written. Once billing is
-    /// live this becomes a link to the web, because a plan change that costs
-    /// money does not belong behind a click in a desktop app.
+    /// What a click does depends on who is clicking, and that is the whole
+    /// point. For staff it switches in place, which is how a plan gate gets
+    /// watched working from both sides without buying anything. For everybody
+    /// else it opens the website, because a plan is a purchase — and a desktop
+    /// application that could hand out the paid tier for a click was not a
+    /// testing convenience, it was the paywall.
     /// </summary>
     private async void SelectPlan_OnClick(object sender, RoutedEventArgs e)
     {
@@ -583,15 +595,55 @@ public partial class NotchSettings : UserControl
             return;
         }
 
-        await _runtime.SetPlanAsync(tier);
-        RefreshAccount();
+        if (await ChangePlanAsync(tier))
+        {
+            RefreshAccount();
+        }
     }
 
+    /// <summary>
+    /// Moves the account on to a plan, or sends the user where they can buy it.
+    ///
+    /// True when the plan actually changed here, so the caller knows whether it
+    /// has anything to redraw. False covers both "not allowed to" and "the
+    /// browser has it now", and in neither case has anything on this panel
+    /// moved.
+    /// </summary>
+    private async System.Threading.Tasks.Task<bool> ChangePlanAsync(PlanTier tier)
+    {
+        if (_runtime is null)
+        {
+            return false;
+        }
+
+        if (!_runtime.CanSwitchPlanLocally)
+        {
+            OpenAccountPage();
+            return false;
+        }
+
+        await _runtime.SetPlanAsync(tier);
+        return true;
+    }
 
     private void ManagePlan_OnClick(object sender, MouseButtonEventArgs e)
     {
         e.Handled = true;
+        OpenAccountPage();
+    }
 
+    /// <summary>
+    /// Opens the account page, and asks the gateway again a little afterwards.
+    ///
+    /// Buying happens on the website and the desktop has no way of being told
+    /// when it finishes, so it has to ask. Forty seconds is long enough to have
+    /// paid for something and short enough that the notch is still the thing the
+    /// user was looking at; it is a guess, and it is allowed to be one because
+    /// nothing depends on it — the runtime asks again every fifteen minutes, and
+    /// again whenever this page is opened.
+    /// </summary>
+    private void OpenAccountPage()
+    {
         try
         {
             Process.Start(new ProcessStartInfo(AccountPageUrl) { UseShellExecute = true });
@@ -599,7 +651,25 @@ public partial class NotchSettings : UserControl
         catch (Exception exception)
         {
             _runtime?.Log.Error("Could not open the account page in a browser.", exception);
+            return;
         }
+
+        _ = RefreshAfterWebVisitAsync();
+    }
+
+    private async System.Threading.Tasks.Task RefreshAfterWebVisitAsync()
+    {
+        if (_runtime is null)
+        {
+            return;
+        }
+
+        await System.Threading.Tasks.Task.Delay(TimeSpan.FromSeconds(40));
+
+        // Back on the interface thread: this began on it, so the continuation
+        // returns to it and RefreshAccount may touch the panel directly.
+        await _runtime.RefreshEntitlementsAsync();
+        RefreshAccount();
     }
 
     private void SignIn_OnClick(object sender, MouseButtonEventArgs e)
@@ -659,19 +729,20 @@ public partial class NotchSettings : UserControl
         ByoGatingCard.Visibility = Collapse(isByoProvider && !canBringOwn);
 
         // Which plan this belongs to is asked rather than assumed, so renaming
-        // the top plan does not leave the banner advertising the wrong one.
-        var byoPlan = PlanCatalogue.All.First(
-            plan => Metis.Core.Services.Entitlements.Has(
-                new MetisAccount("u", UserRole.User, plan.Tier, MetisEnvironment.Production),
-                MetisFeature.CustomAiProvider,
-                billingIsLive: true));
+        // the top plan does not leave the banner advertising the wrong one. The
+        // question used to be asked with these four lines in place; it is one
+        // call now because three other panels needed the same answer and were
+        // each writing the name out by hand instead.
+        var byoPlan = OwnKeyPlan;
 
         ByoGatingLabel.Text = $"\U0001F512 PART OF METIS {byoPlan.Name.ToUpperInvariant()}";
         ByoGatingBody.Text =
             $"Answering on your own OpenAI, Anthropic, Gemini or OpenRouter account is part of "
             + $"Metis {byoPlan.Name}, {byoPlan.PriceLabel} a month. Your provider bills you for what "
             + "the models cost, separately from that.";
-        ByoUpgradeLabel.Text = $"Switch to {byoPlan.Name} ({byoPlan.PriceLabel}/mo) ↗";
+        ByoUpgradeLabel.Text = _runtime.CanSwitchPlanLocally
+            ? $"Switch to {byoPlan.Name} ({byoPlan.PriceLabel}/mo)"
+            : $"Get {byoPlan.Name} ({byoPlan.PriceLabel}/mo) ↗";
 
         GeminiCard.Visibility = Collapse(provider == "Gemini" && canBringOwn);
         OpenAiCard.Visibility = Collapse(provider == "OpenAI" && canBringOwn);
@@ -714,13 +785,31 @@ public partial class NotchSettings : UserControl
         }
     }
 
-    private async void UpgradeToPro_OnClick(object sender, MouseButtonEventArgs e)
+    /// <summary>
+    /// The plan that includes answering on a key of your own.
+    ///
+    /// Asked of the entitlement rules rather than named, because the panels that
+    /// mention it are the ones that got it wrong: the banner offered "Switch to
+    /// Max" and the button underneath it set the account to Pro, which cannot
+    /// bring its own key at all. One source, so the label and the action cannot
+    /// disagree again.
+    /// </summary>
+    private static PlanOffer OwnKeyPlan =>
+        PlanCatalogue.SmallestPlanWith(MetisFeature.CustomAiProvider) ?? PlanCatalogue.Max;
+
+    /// <summary>
+    /// Takes the account to the plan that allows a key of its own — or to the
+    /// page where it can be bought.
+    /// </summary>
+    private async void UpgradeForOwnKey_OnClick(object sender, MouseButtonEventArgs e)
     {
         e.Handled = true;
-        if (_runtime is null) return;
-        await _runtime.SetPlanAsync(PlanTier.Pro);
-        RefreshAccount();
-        RefreshIntelligence();
+
+        if (await ChangePlanAsync(OwnKeyPlan.Tier))
+        {
+            RefreshAccount();
+            RefreshIntelligence();
+        }
     }
 
     /// <summary>
@@ -740,9 +829,11 @@ public partial class NotchSettings : UserControl
             return;
         }
 
-        await _runtime.SetPlanAsync(next.Tier);
-        RefreshAccount();
-        RefreshAgents();
+        if (await ChangePlanAsync(next.Tier))
+        {
+            RefreshAccount();
+            RefreshAgents();
+        }
     }
 
     private void RemoveKey_OnClick(object sender, MouseButtonEventArgs e)
@@ -836,10 +927,17 @@ public partial class NotchSettings : UserControl
             UserSkillsCheck.IsChecked = s.UserSkillsEnabled;
             SkillsFolderBox.Text = s.SkillsFolder;
 
+            // Both halves named a plan they had no business naming. The refusal
+            // advertised Pro for a capability that is part of Max, so it sold
+            // the wrong subscription; the granted line said "your Pro plan" to
+            // everybody who had it, including the Max subscribers who had paid
+            // more than that. Both come from the catalogue now.
             var hasSystem = _runtime.Can(MetisFeature.SystemCommands);
             SystemToolsSummary.Text = hasSystem
-                ? "✓ System terminal commands and diagnostic actions are unlocked on your Pro plan."
-                : "🔒 System automation commands are exclusive to Metis Pro.";
+                ? "✓ System terminal commands and diagnostic actions are unlocked on your "
+                  + $"{PlanCatalogue.For(_runtime.Account.Plan).Name} plan."
+                : "🔒 System automation commands are part of Metis "
+                  + $"{PlanCatalogue.NameOfPlanWith(MetisFeature.SystemCommands)}.";
         }
         finally
         {
@@ -1145,8 +1243,12 @@ public partial class NotchSettings : UserControl
             AgentsUpgradeChip.Visibility = Collapse(next is not null);
             if (next is not null)
             {
-                AgentsUpgradeLabel.Text =
-                    $"{next.Name} includes {next.Limits.MaxAgentStepsPerMonth:N0} \u2014 switch to {next.Name}";
+                // "Switch to" only for the accounts that really can. For
+                // everyone else the chip opens the website, and a label that
+                // promised a switch would be describing something else.
+                AgentsUpgradeLabel.Text = _runtime.CanSwitchPlanLocally
+                    ? $"{next.Name} includes {next.Limits.MaxAgentStepsPerMonth:N0} \u2014 switch to {next.Name}"
+                    : $"{next.Name} includes {next.Limits.MaxAgentStepsPerMonth:N0} \u2014 see {next.Name} \u2197";
             }
 
             HighlightAutonomy(settings.AgentAutonomyMode);

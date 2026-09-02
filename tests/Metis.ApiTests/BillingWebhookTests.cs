@@ -131,6 +131,115 @@ public sealed class BillingWebhookTests
         Assert.True(parsed.ChangesEntitlement);
     }
 
+    /// <summary>
+    /// The quietest failure in the whole system, and the fallback that prevents
+    /// it.
+    ///
+    /// Metis sets <c>metis_user_id</c> on the <em>checkout</em>. Whether Polar
+    /// copies checkout metadata onto the subscription object it emits afterwards
+    /// is Polar's behaviour rather than ours. If it does not, an event with no id
+    /// changes no entitlement, is stored, and is answered 200 — the processor is
+    /// satisfied and never retries, and a customer who has paid and holds a
+    /// receipt has been given nothing.
+    ///
+    /// The external customer id sent at the same checkout is stored on the
+    /// customer record, which arrives on the subscription, so it survives where
+    /// the metadata did not. It is still a value Metis wrote and never anything
+    /// the buyer typed.
+    /// </summary>
+    [Fact]
+    public void Polar_falls_back_to_the_customer_record_when_metadata_is_not_carried_over()
+    {
+        var body = Encoding.UTF8.GetBytes("""
+            {"type":"subscription.active","data":{
+              "id":"s_3","status":"active",
+              "customer":{"id":"c_3","external_id":"66666666-6666-6666-6666-666666666666"},
+              "metadata":{}}}
+            """);
+
+        var parsed = new PolarWebhookVerifier(PolarSecret).Parse(body)!;
+
+        Assert.Equal("66666666-6666-6666-6666-666666666666", parsed.MetisUserId);
+        Assert.True(parsed.ChangesEntitlement);
+    }
+
+    /// <summary>The same value flattened, which some payloads carry instead.</summary>
+    [Fact]
+    public void Polar_reads_a_flattened_external_customer_id_too()
+    {
+        var body = Encoding.UTF8.GetBytes("""
+            {"type":"subscription.updated","data":{
+              "id":"s_4","status":"active","customer_id":"c_4",
+              "customer_external_id":"77777777-7777-7777-7777-777777777777"}}
+            """);
+
+        var parsed = new PolarWebhookVerifier(PolarSecret).Parse(body)!;
+
+        Assert.Equal("77777777-7777-7777-7777-777777777777", parsed.MetisUserId);
+        Assert.True(parsed.ChangesEntitlement);
+    }
+
+    /// <summary>
+    /// Metadata still wins where it is present, so an event carrying both is
+    /// read the way the specification describes rather than the way the fallback
+    /// happens to work.
+    /// </summary>
+    [Fact]
+    public void Metadata_is_still_preferred_over_the_customer_record()
+    {
+        var body = Encoding.UTF8.GetBytes("""
+            {"type":"subscription.active","data":{
+              "id":"s_5","status":"active",
+              "customer":{"id":"c_5","external_id":"88888888-8888-8888-8888-888888888888"},
+              "metadata":{"metis_user_id":"99999999-9999-9999-9999-999999999999"}}}
+            """);
+
+        Assert.Equal(
+            "99999999-9999-9999-9999-999999999999",
+            new PolarWebhookVerifier(PolarSecret).Parse(body)!.MetisUserId);
+    }
+
+    /// <summary>
+    /// A field that is present and blank is not an answer. Stopping the chain on
+    /// one would carry an empty string into apply_subscription as the account to
+    /// change, which is worse than the failure the chain exists to prevent.
+    /// </summary>
+    [Fact]
+    public void A_blank_id_is_treated_as_absent_and_the_chain_continues()
+    {
+        var body = Encoding.UTF8.GetBytes("""
+            {"type":"subscription.active","data":{
+              "id":"s_6","status":"active",
+              "customer":{"id":"c_6","external_id":"  "},
+              "customer_external_id":"12121212-1212-1212-1212-121212121212",
+              "metadata":{"metis_user_id":""}}}
+            """);
+
+        Assert.Equal(
+            "12121212-1212-1212-1212-121212121212",
+            new PolarWebhookVerifier(PolarSecret).Parse(body)!.MetisUserId);
+    }
+
+    /// <summary>
+    /// And with none of the three, nothing happens to anyone's plan. The
+    /// fallback widens where the id may be found; it does not weaken the rule
+    /// that an event without one changes nothing.
+    /// </summary>
+    [Fact]
+    public void A_Polar_event_naming_no_account_anywhere_changes_nothing()
+    {
+        var body = Encoding.UTF8.GetBytes("""
+            {"type":"subscription.active","data":{
+              "id":"s_7","status":"active","customer":{"id":"c_7"},
+              "metadata":{"email":"someone@example.com","plan":"max"}}}
+            """);
+
+        var parsed = new PolarWebhookVerifier(PolarSecret).Parse(body)!;
+
+        Assert.Null(parsed.MetisUserId);
+        Assert.False(parsed.ChangesEntitlement);
+    }
+
     // ------------------------------- Shared -------------------------------
 
     /// <summary>

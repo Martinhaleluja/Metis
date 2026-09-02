@@ -121,7 +121,7 @@ public sealed class ManagedAccessTests
 
         Assert.False(decision.Allowed);
         Assert.Equal(403, decision.StatusCode);
-        Assert.DoesNotContain("part of Plus", decision.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("part of Pro", decision.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>

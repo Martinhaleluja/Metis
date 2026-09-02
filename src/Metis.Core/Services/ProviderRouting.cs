@@ -39,10 +39,12 @@ public enum ProviderRoute
 /// readable on its own and testable without a window.
 ///
 /// The rule that matters most is the second one, and it has changed. Bringing
-/// your own API key is now part of Pro. That is a deliberate decision, taken
-/// with its cost understood: Metis has always worked on a personal key with no
-/// account at all, a great many people use it that way, and none of them are
-/// being grandfathered.
+/// your own API key is now part of the top plan — Max, at the time of writing,
+/// though nothing here names it: <c>Entitlements</c> decides which plan grants
+/// <c>CustomAiProvider</c> and <c>PlanCatalogue</c> is asked what that plan is
+/// called. That is a deliberate decision, taken with its cost understood: Metis
+/// has always worked on a personal key with no account at all, a great many
+/// people use it that way, and none of them are being grandfathered.
 ///
 /// What has not changed is the shape of the guard. The gate is on
 /// <paramref name="ownKeyIsAllowed"/>, which the caller derives from the
@@ -69,8 +71,9 @@ public static class ProviderRouting
     /// <param name="ownKeyIsAllowed">
     /// Whether this account may use a key of its own — in practice
     /// <c>Entitlements.Has(account, MetisFeature.CustomAiProvider, billingIsLive)</c>,
-    /// which is true for everybody while billing is off and Pro-only once it is
-    /// on. Passed in rather than looked up so this stays a pure function, and
+    /// which is true for everybody while billing is off and limited to the plan
+    /// that includes it once billing is on. Passed in rather than looked up so
+    /// this stays a pure function, and
     /// deliberately not defaulted: a caller that forgets it should not silently
     /// get the permissive answer.
     /// </param>
@@ -133,9 +136,16 @@ public static class ProviderRouting
         // sitting in Setup already.
         if (!ownKeyIsAllowed)
         {
+            // Asked rather than written down. These two sentences said Pro for
+            // months after bringing your own key moved to Max, which sent people
+            // to buy the wrong plan — the one thing a refusal message must never
+            // do. PlanCatalogue answers from the same table Entitlements
+            // enforces, so it cannot fall out of step with it again.
+            var plan = PlanCatalogue.NameOfPlanWith(MetisFeature.CustomAiProvider);
+
             return signedIn
-                ? "Using your own API key is part of Metis Pro. Upgrade to keep using it, or switch to a local model."
-                : "Sign in to use Metis's own AI, or use a local model. Your own API key is part of Metis Pro.";
+                ? $"Using your own API key is part of Metis {plan}. Upgrade to keep using it, or switch to a local model."
+                : $"Sign in to use Metis's own AI, or use a local model. Your own API key is part of Metis {plan}.";
         }
 
         return signedIn

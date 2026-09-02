@@ -135,8 +135,13 @@ public partial class NotchSpawnAgentPanel : UserControl
         if (_runtime is not null && !_runtime.Can(MetisFeature.AutonomousAgents))
         {
             CloseRequested?.Invoke(this, EventArgs.Empty);
+
+            // The title names no plan. It used to say "(Plus & Pro)", which was
+            // wrong in both halves: Plus was retired, and agents are included on
+            // every plan and metered by the number of messages rather than
+            // withheld from anyone.
             _runtime.ShowPlanNotice(
-                "Background Helpers (Plus & Pro)",
+                "Background helpers",
                 _runtime.ExplainCapability(MetisFeature.AutonomousAgents));
             return;
         }

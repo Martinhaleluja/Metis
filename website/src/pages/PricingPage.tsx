@@ -3,7 +3,6 @@ import { Faq } from "../components/Faq";
 import { Pricing } from "../components/Pricing";
 import { Providers } from "../components/Providers";
 import { Reveal } from "../components/Reveal";
-import { useBillingIsLive } from "../lib/billing";
 import { comparison, plans, type PlanId } from "../lib/plans";
 
 /**
@@ -13,10 +12,12 @@ import { comparison, plans, type PlanId } from "../lib/plans";
  * The cards are reused rather than restyled. A pricing table that disagrees with
  * the pricing cards is the classic way a site ends up quoting two prices, and
  * reusing the component makes that impossible rather than merely unlikely.
+ *
+ * Whether billing is live is asked by <Pricing/> itself, where the answer is
+ * actually used. This page used to call the hook as well and throw the result
+ * away, which cost a second request to say the same thing.
  */
 export function PricingPage() {
-  useBillingIsLive();
-
   return (
     <main id="main" className="relative z-10 pt-16">
       <Pricing />

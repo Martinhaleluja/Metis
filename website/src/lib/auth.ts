@@ -55,11 +55,21 @@ export type AuthState =
  * difference matters on `/account`, where treating "we have not looked yet" as
  * "not signed in" would bounce a signed-in customer to the login page for a
  * fraction of a second on every reload.
+ *
+ * `enabled` exists because asking the question is not free. Looking for a
+ * session downloads `@supabase/supabase-js`, which is the whole reason the
+ * signed-in pages are split into their own chunk, and the marketing pages must
+ * not pull it in just by being read. The pricing buttons need to know whether
+ * somebody is signed in only once there is something to buy, so they ask only
+ * then. While it is false nothing is fetched and the state stays `loading`,
+ * which is the truth: nobody has looked.
  */
-export function useAuth(): AuthState {
+export function useAuth(enabled = true): AuthState {
   const [state, setState] = useState<AuthState>({ status: "loading" });
 
   useEffect(() => {
+    if (!enabled) return;
+
     if (!isAuthConfigured) {
       setState({ status: "signed-out" });
       return;
@@ -89,7 +99,7 @@ export function useAuth(): AuthState {
       cancelled = true;
       unsubscribe?.();
     };
-  }, []);
+  }, [enabled]);
 
   return state;
 }

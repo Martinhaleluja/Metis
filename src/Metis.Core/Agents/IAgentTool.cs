@@ -38,6 +38,20 @@ public interface IAgentTool
     /// <summary>Declaration describing the tool, its parameters, and its safety classification.</summary>
     AgentToolDeclaration Declaration { get; }
 
+    /// <summary>
+    /// Whether this tool should be described to the model at all right now.
+    ///
+    /// True for almost everything, which is why it is defaulted here rather than
+    /// added to twenty tools that would all answer the same. It exists for the
+    /// ones whose availability is not a property of the build: browser help is
+    /// part of a plan, and offering an agent a tool its account may not use
+    /// wastes a turn on a refusal and teaches the model to keep trying.
+    ///
+    /// Asked each time the tool list is built, because the answer can change
+    /// while the application is running.
+    /// </summary>
+    bool IsOffered => true;
+
     /// <summary>Executes the tool asynchronously in the background.</summary>
     Task<AgentToolResult> ExecuteAsync(
         IReadOnlyDictionary<string, object?> arguments,
@@ -94,7 +108,9 @@ public sealed class AgentToolRegistry : IAgentToolRegistry
     {
         lock (_lock)
         {
-            var query = _tools.Values.Select(t => t.Declaration);
+            // Only what this account may actually use. A tool listed here is a
+            // tool the model will be told it has.
+            var query = _tools.Values.Where(tool => tool.IsOffered).Select(t => t.Declaration);
             if (categories is { Count: > 0 })
             {
                 var catSet = new HashSet<string>(categories, StringComparer.OrdinalIgnoreCase);
