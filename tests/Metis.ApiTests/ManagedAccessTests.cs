@@ -9,7 +9,7 @@ namespace Metis.ApiTests;
 /// </summary>
 public sealed class ManagedAccessTests
 {
-    private static MetisAccount Account(PlanTier plan = PlanTier.Plus, UserRole role = UserRole.User) =>
+    private static MetisAccount Account(PlanTier plan = PlanTier.Pro, UserRole role = UserRole.User) =>
         new("u_1", role, plan, MetisEnvironment.Production);
 
     private static PlanLimits Limits(
@@ -108,7 +108,7 @@ public sealed class ManagedAccessTests
     [Fact]
     public void A_plan_with_no_turn_cap_is_bounded_only_by_money() =>
         Assert.True(ManagedAccess.Decide(
-            Account(PlanTier.Plus), Limits(budget: 6m, turns: 0),
+            Account(PlanTier.Pro), Limits(budget: 6m, turns: 0),
             new UsageSnapshot(1m, 9_000, 0, DateTimeOffset.UtcNow),
             Rules(), false, false, 0).Allowed);
 
@@ -138,7 +138,7 @@ public sealed class ManagedAccessTests
 
         Assert.False(decision.Allowed);
         Assert.Equal(402, decision.StatusCode);
-        Assert.Contains("agent steps", decision.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("agent messages", decision.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]

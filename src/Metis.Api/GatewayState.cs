@@ -131,7 +131,8 @@ public static class ManagedAccess
         GatewayRules rules,
         bool requestHasScreenshot,
         bool isAgentStep,
-        int screenshotBytes)
+        int screenshotBytes,
+        bool isDictation = false)
     {
         ArgumentNullException.ThrowIfNull(account);
         ArgumentNullException.ThrowIfNull(limits);
@@ -160,17 +161,37 @@ public static class ManagedAccess
         if (isAgentStep && usage.AgentSteps >= limits.MaxAgentStepsPerMonth)
         {
             return ManagedDecision.OutOfAllowance(
-                "You have used this month's included agent steps. They reset on the 1st.");
+                $"You have used this month's {limits.MaxAgentStepsPerMonth} agent messages. "
+                + "They reset on the 1st.");
         }
 
-        // The conversation cap, where a plan has one. Free is bounded by a count
-        // as well as by money because a count is the thing a person can picture:
-        // "a hundred and twenty questions a month" means something, and "one
-        // dollar of inference" does not.
-        if (limits.MaxTurnsPerMonth > 0 && usage.RequestCount >= limits.MaxTurnsPerMonth)
+        // Dictation has its own allowance and is checked before the turn cap,
+        // because speaking a note is not a talk message and must not be refused
+        // by one running out. The two are separate lines on the pricing page
+        // and are separate counters underneath.
+        if (isDictation
+            && limits.MaxDictationMinutesPerMonth > 0
+            && usage.DictationMinutes >= limits.MaxDictationMinutesPerMonth)
         {
             return ManagedDecision.OutOfAllowance(
-                $"You have used this month's {limits.MaxTurnsPerMonth} included questions. "
+                $"You have used this month's {limits.MaxDictationMinutesPerMonth} minutes of "
+                + "dictation. They reset on the 1st.");
+        }
+
+        // The talk cap, where a plan has one. Free is bounded by a count as well
+        // as by money because a count is the thing a person can picture: "fifty
+        // talk messages a month" means something, and "one dollar of inference"
+        // does not.
+        //
+        // Deliberately not applied to dictation or to agent steps: request_count
+        // in the database excludes both, so a person who has been dictating or
+        // running agents has not quietly spent their answers as well.
+        if (!isAgentStep && !isDictation
+            && limits.MaxTurnsPerMonth > 0
+            && usage.RequestCount >= limits.MaxTurnsPerMonth)
+        {
+            return ManagedDecision.OutOfAllowance(
+                $"You have used this month's {limits.MaxTurnsPerMonth} talk messages. "
                 + "They reset on the 1st.");
         }
 

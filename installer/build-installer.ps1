@@ -1,7 +1,10 @@
 ﻿[CmdletBinding()]
 param(
+    # Defaulted from Directory.Build.props rather than repeated here, so the
+    # installer and an ordinary build can never disagree about what version
+    # this is. Pass -Version to override for a one-off build.
     [ValidatePattern('^\d+\.\d+\.\d+$')]
-    [string]$Version = '3.15.0',
+    [string]$Version = ([xml](Get-Content (Join-Path $PSScriptRoot '..\Directory.Build.props'))).Project.PropertyGroup.Version,
     [ValidateSet('Debug', 'Release')]
     [string]$Configuration = 'Release',
     [switch]$SkipTests,

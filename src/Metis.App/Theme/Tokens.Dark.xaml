@@ -143,6 +143,15 @@
     <SolidColorBrush x:Key="NotchChipHoverBrush" Color="{StaticResource NotchChipHover}" />
     <SolidColorBrush x:Key="NotchDividerBrush" Color="{StaticResource NotchDivider}" />
     <SolidColorBrush x:Key="NotchScrollThumbBrush" Color="{StaticResource NotchScrollThumb}" />
+
+    <!-- The fade at the foot of a page that scrolls. Defined per theme because
+         it has to darken towards the notch's own surface, and the notch is a
+         pale sheet in one theme and a dark one in the other. -->
+    <LinearGradientBrush x:Key="NotchScrollEdgeBrush" StartPoint="0,0" EndPoint="0,1">
+        <GradientStop Offset="0" Color="#00000000" />
+        <GradientStop Offset="1" Color="#73000000" />
+    </LinearGradientBrush>
+
     <SolidColorBrush x:Key="NotchScrollThumbHoverBrush" Color="{StaticResource NotchScrollThumbHover}" />
     <SolidColorBrush x:Key="NotchAccentBedBrush" Color="{StaticResource NotchAccentBed}" />
     <SolidColorBrush x:Key="NotchDangerInkBrush" Color="{StaticResource NotchDangerInk}" />

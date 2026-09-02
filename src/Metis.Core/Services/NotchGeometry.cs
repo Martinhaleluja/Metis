@@ -38,6 +38,22 @@ public static class NotchGeometry
     public const double WorkAreaShare = 0.82;
 
     /// <summary>
+    /// How much of the screen a page that is not about the screen may take.
+    ///
+    /// The 0.82 above exists so that a chat answering a question about what is
+    /// behind it does not cover the thing being asked about. Settings and first
+    /// run are not about anything behind them — nobody opens the companion
+    /// colour picker to look past it — and holding them to the same share was
+    /// costing a laptop over a hundred pixels for no benefit, which is the
+    /// difference between a page that fits and a page that scrolls.
+    ///
+    /// Not 1.0: the notch has to keep looking like something hanging from the
+    /// top edge rather than a full-screen window, and a strip of desktop under
+    /// it is what says so.
+    /// </summary>
+    public const double TallPageShare = 0.94;
+
+    /// <summary>
     /// The floor, for small laptops. On a 768-tall screen the share above gives
     /// about 604px; this only binds on something smaller still, and it exists so
     /// the notch is never so short that a page has no room to say anything.
@@ -50,8 +66,8 @@ public static class NotchGeometry
     /// "Usable" means the work area — the desktop minus the taskbar — because
     /// that is what the notch shares the screen with.
     /// </summary>
-    public static double MaxBodyHeight(double workAreaHeight) =>
-        Math.Max(MinimumMaxHeight, (workAreaHeight * WorkAreaShare) - WindowSlack);
+    public static double MaxBodyHeight(double workAreaHeight, double share = WorkAreaShare) =>
+        Math.Max(MinimumMaxHeight, (workAreaHeight * share) - WindowSlack);
 
     /// <summary>
     /// How tall the body should be for a page that measured
@@ -65,10 +81,11 @@ public static class NotchGeometry
     public static double BodyHeight(
         double measuredContentHeight,
         double chromeHeight,
-        double workAreaHeight)
+        double workAreaHeight,
+        double share = WorkAreaShare)
     {
         var wanted = chromeHeight + Math.Max(0, measuredContentHeight);
-        return Math.Clamp(wanted, RestingHeight, MaxBodyHeight(workAreaHeight));
+        return Math.Clamp(wanted, RestingHeight, MaxBodyHeight(workAreaHeight, share));
     }
 
     /// <summary>
@@ -78,8 +95,45 @@ public static class NotchGeometry
     public static bool NeedsScrolling(
         double measuredContentHeight,
         double chromeHeight,
-        double workAreaHeight) =>
-        chromeHeight + measuredContentHeight > MaxBodyHeight(workAreaHeight);
+        double workAreaHeight,
+        double share = WorkAreaShare) =>
+        chromeHeight + measuredContentHeight > MaxBodyHeight(workAreaHeight, share);
+
+    /// <summary>
+    /// Whether a list of rows should drop its explanatory second lines to fit
+    /// the screen.
+    ///
+    /// The settings menu is ten rows, each a title over a sentence saying what
+    /// the section is for. On a desktop that fits with room to spare. On a
+    /// laptop at 150% scaling the whole work area is around 550 points, and the
+    /// list is cut through the middle of a row — which is the first thing
+    /// somebody sees of settings and reads as a broken window rather than as a
+    /// list that continues.
+    ///
+    /// Dropping the summaries is the right thing to lose. The titles alone are
+    /// still navigable and the whole list becomes visible at once, which is what
+    /// a menu is for; a scrolling front door is worse than a terse one.
+    /// </summary>
+    /// <param name="rows">How many rows the list has.</param>
+    /// <param name="tallRowHeight">A row with its summary line.</param>
+    /// <param name="shortRowHeight">A row with the summary removed.</param>
+    /// <param name="chromeHeight">Header, padding and anything else above.</param>
+    public static bool ListWantsCompactRows(
+        int rows,
+        double tallRowHeight,
+        double shortRowHeight,
+        double chromeHeight,
+        double workAreaHeight,
+        double share = TallPageShare)
+    {
+        var available = MaxBodyHeight(workAreaHeight, share);
+
+        // Only worth doing if it actually rescues the list. A list too long even
+        // without its summaries keeps them and scrolls, because losing them
+        // would cost the explanations and still not fit.
+        return chromeHeight + (rows * tallRowHeight) > available
+            && chromeHeight + (rows * shortRowHeight) <= available;
+    }
 
     /// <summary>
     /// How tall the host window must be to contain a body of this height,

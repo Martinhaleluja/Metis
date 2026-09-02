@@ -285,7 +285,20 @@ public sealed record AssistUsage(
 public sealed record AssistAllowance(
     [property: JsonPropertyName("usedUsd")] decimal UsedUsd,
     [property: JsonPropertyName("limitUsd")] decimal LimitUsd,
-    [property: JsonPropertyName("resetsUtc")] DateTimeOffset ResetsUtc);
+    [property: JsonPropertyName("resetsUtc")] DateTimeOffset ResetsUtc,
+
+    // The counts, alongside the money.
+    //
+    // The dollar figure is what Metis needs to protect itself; these are what
+    // the person spending them can actually act on. "You have used $0.42" tells
+    // nobody whether to slow down, and there is no way to work backwards from it
+    // to how many more questions are left. The account page draws these three.
+    //
+    // Defaulted so an older gateway that sends only the money still deserialises,
+    // and so the client shows an empty meter rather than throwing.
+    [property: JsonPropertyName("turnsUsed")] int TurnsUsed = 0,
+    [property: JsonPropertyName("dictationMinutesUsed")] int DictationMinutesUsed = 0,
+    [property: JsonPropertyName("agentStepsUsed")] int AgentStepsUsed = 0);
 
 /// <summary>
 /// One frame of a streamed reply.

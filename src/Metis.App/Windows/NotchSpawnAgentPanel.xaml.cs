@@ -3,6 +3,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using Metis.App.Runtime;
+using Metis.Core.Models;
 using KeyEventArgs = System.Windows.Input.KeyEventArgs;
 using UserControl = System.Windows.Controls.UserControl;
 
@@ -28,9 +29,9 @@ public partial class NotchSpawnAgentPanel : UserControl
         _runtime = runtime;
     }
 
-    public void Reset()
+    public void Reset(string? prefillGoal = null)
     {
-        GoalBox.Clear();
+        GoalBox.Text = prefillGoal ?? string.Empty;
         _selectedTemplateId = null;
         WorkingDirBox.Text = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
         UpdatePlaceholder();
@@ -82,10 +83,12 @@ public partial class NotchSpawnAgentPanel : UserControl
             _selectedTemplateId = template;
             GoalBox.Text = template switch
             {
-                "organize_downloads" => "Find files in my Downloads folder, sort them into Documents/Images/Archives/Code subfolders, and write a summary log.",
-                "web_research" => "Search the web for top emerging technologies in 2026, synthesize findings into an executive report in research_report.md.",
-                "system_logs" => "Audit recent Windows application error logs, identify top crash sources, and save findings in system_audit.md.",
-                "find_extract" => "Search all text and CSV files in working directory for key metrics and aggregate summary into metrics.json.",
+                "study_tutor" => "Explain key concepts step-by-step with simple examples and practice questions.",
+                "writing_assistant" => "Draft a clear, structured summary and proofread my latest notes.",
+                "web_research" => "Search the web for insights on this topic and synthesize findings into a concise report.",
+                "organize_downloads" => "Scan my Downloads folder, categorize files into Documents/Images/Archives/Code, and create an organized summary.",
+                "system_logs" => "Audit recent Windows application logs, identify any errors, and summarize in system_audit.md.",
+                "find_extract" => "Search all files in working directory for key metrics and aggregate into summary.json.",
                 _ => GoalBox.Text
             };
             FocusGoalBox();
@@ -97,7 +100,7 @@ public partial class NotchSpawnAgentPanel : UserControl
     {
         using var dialog = new System.Windows.Forms.FolderBrowserDialog
         {
-            Description = "Select working directory for background agent",
+            Description = "Select working directory for background helper",
             UseDescriptionForTitle = true,
             SelectedPath = Directory.Exists(WorkingDirBox.Text)
                 ? WorkingDirBox.Text
@@ -129,6 +132,15 @@ public partial class NotchSpawnAgentPanel : UserControl
             return;
         }
 
+        if (_runtime is not null && !_runtime.Can(MetisFeature.AutonomousAgents))
+        {
+            CloseRequested?.Invoke(this, EventArgs.Empty);
+            _runtime.ShowPlanNotice(
+                "Background Helpers (Plus & Pro)",
+                _runtime.ExplainCapability(MetisFeature.AutonomousAgents));
+            return;
+        }
+
         var dir = WorkingDirBox.Text.Trim();
         if (!Directory.Exists(dir))
         {
@@ -139,6 +151,7 @@ public partial class NotchSpawnAgentPanel : UserControl
         {
             var task = _runtime.AgentTasks.SpawnTask(goal, _selectedTemplateId, dir);
             AgentSpawned?.Invoke(this, task.Id);
+            CloseRequested?.Invoke(this, EventArgs.Empty);
         }
 
         Reset();

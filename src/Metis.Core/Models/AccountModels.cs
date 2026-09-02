@@ -39,16 +39,26 @@ public enum UserRole
 ///
 /// The declaration order is load-bearing: <see cref="MetisAccount.IsAtLeast"/>
 /// compares these ordinally, so a tier inserted out of order would quietly make
-/// a smaller plan test as larger than a bigger one. Inserting Plus in the middle
-/// is safe because nothing persists this numerically — it is stored by name in a
+/// a smaller plan test as larger than a bigger one. Renaming them is safe
+/// because nothing persists this numerically — it is stored by name in a
 /// Postgres enum, parsed from a string by <c>Entitlements.ParsePlan</c>, and
 /// absent from settings.json entirely.
+///
+/// These were once Free, Plus and Pro. The middle plan took the name Pro and
+/// the top one became Max, so the word "pro" means something different before
+/// and after that change. Anywhere a stored value is read,
+/// <c>Entitlements.ParsePlan</c> is the only thing that may interpret it.
 /// </summary>
 public enum PlanTier
 {
+    /// <summary>Fifty answers a month, generous dictation, ten agent messages.</summary>
     Free,
-    Plus,
-    Pro
+
+    /// <summary>Answers and dictation without a count, and four hundred agent messages.</summary>
+    Pro,
+
+    /// <summary>All of Pro, and the only plan that may answer on a key of your own.</summary>
+    Max
 }
 
 /// <summary>
@@ -155,7 +165,10 @@ public sealed record MetisAccount(
     UserRole Role,
     PlanTier Plan,
     MetisEnvironment Environment,
-    bool EmailVerified = true)
+    bool EmailVerified = true,
+    string Email = "",
+    string DisplayName = "",
+    string Avatar = "🦊")
 {
     /// <summary>
     /// Nobody signed in. Signed-out Metis still runs, so this has to be a real
@@ -226,15 +239,31 @@ public sealed record PlanLimits(
     IReadOnlyList<string> ManagedModels,
 
     /// <summary>
-    /// How many turns a month this plan may have on Metis's own AI, or 0 for no
-    /// separate cap.
+    /// How many answers a month this plan may have on Metis's own AI, or 0 for
+    /// no separate cap. The pricing page calls these talk messages.
     ///
     /// Free has one; the paid plans are bounded by money instead. Two ceilings
     /// that can disagree is one ceiling too many, and on a plan people are
     /// paying for, the budget is the honest limit — a count would refuse someone
     /// who had spent almost nothing.
     /// </summary>
-    int MaxTurnsPerMonth = 0)
+    int MaxTurnsPerMonth = 0,
+
+    /// <summary>
+    /// Minutes of dictation a month on Metis's own transcription, or 0 for no
+    /// cap.
+    ///
+    /// Metered apart from answers because the two cost very different amounts
+    /// and are different things to buy: an answer is a reasoning model reading
+    /// your screen, dictation is speech turned into text. Charged together, a
+    /// long spoken note would eat the same allowance as a hard question, which
+    /// is neither fair nor what the plan says.
+    ///
+    /// Dictation on the machine's own speech engine, or on a key the user
+    /// brought, never reaches this: Metis is not paying for it, so it is not
+    /// counted. That is the same rule the rest of these limits follow.
+    /// </summary>
+    int MaxDictationMinutesPerMonth = 0)
 {
     /// <summary>
     /// What to assume when the server has not been reached yet. Deliberately
@@ -242,7 +271,7 @@ public sealed record PlanLimits(
     /// have and lets the client send a screenshot the gateway will only refuse.
     /// </summary>
     public static PlanLimits Unknown { get; } =
-        new(0m, 0, 3, 3, 0, 0, 0, Array.Empty<string>(), 0);
+        new(0m, 0, 3, 3, 0, 0, 0, Array.Empty<string>(), 0, 0);
 }
 
 /// <summary>

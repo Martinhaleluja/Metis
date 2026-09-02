@@ -285,7 +285,8 @@
                               HorizontalScrollBarVisibility="Disabled"
                               VerticalAlignment="Top"
                               Focusable="False"
-                              PanningMode="VerticalOnly">
+                              PanningMode="VerticalOnly"
+                              ScrollChanged="PageScroll_OnScrollChanged">
                     <Grid x:Name="PageHost">
                         <!-- The chat. Collapsed rather than hidden while the notch is
                              resting, so it costs no layout until it is asked for. -->
@@ -302,11 +303,38 @@
                         <windows:NotchAgentDrawer x:Name="AgentDrawerHost" VerticalAlignment="Top"
                                                   Visibility="Collapsed" Opacity="0" Cursor="Arrow" />
 
+                        <!-- First run. Four steps in the place people will
+                             be using afterwards, rather than in a wizard
+                             window they close and never see again. -->
+                        <windows:NotchWelcome x:Name="WelcomeHost" VerticalAlignment="Top"
+                                              Visibility="Collapsed" Opacity="0" Cursor="Arrow" />
+
+                        <!-- Settings. The account, the plan, and what Metis
+                             is called — in the one place people already know
+                             where to look, rather than in a window that opened
+                             from a tray menu most of them never found. -->
+                        <windows:NotchSettings x:Name="SettingsHost" VerticalAlignment="Top"
+                                               Visibility="Collapsed" Opacity="0" Cursor="Arrow" />
+
                         <!-- Autonomous background agent spawn panel -->
                         <windows:NotchSpawnAgentPanel x:Name="SpawnAgentHost" VerticalAlignment="Top"
                                                       Visibility="Collapsed" Opacity="0" Cursor="Arrow" />
                     </Grid>
                 </ScrollViewer>
+
+                <!-- The "there is more below" edge.
+                     A page taller than the screen scrolls, and the row it cuts
+                     through used to be cut dead flat — which reads as a broken
+                     window rather than as a list continuing. Fading the last
+                     fourteen pixels into the notch's own colour says the same
+                     thing the scrollbar says, to the people who do not look at
+                     scrollbars. Hit-test invisible so it cannot eat a click on
+                     whatever it is sitting over, and shown only while there is
+                     actually something below. -->
+                <Border x:Name="ScrollEdge" Height="14" VerticalAlignment="Bottom"
+                        Margin="10,0,10,0" IsHitTestVisible="False"
+                        Visibility="Collapsed"
+                        Background="{DynamicResource NotchScrollEdgeBrush}" />
             </Grid>
         </Border>
     </Grid>

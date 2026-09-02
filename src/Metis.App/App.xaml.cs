@@ -18,7 +18,6 @@ public partial class App : System.Windows.Application
     private MetisRuntime? _runtime;
     private CompanionWindow? _companionWindow;
     private PreferencesWindow? _preferencesWindow;
-    private OnboardingWindow? _onboardingWindow;
     private GuidanceOverlayWindow? _overlayWindow;
     private TraceOverlayWindow? _traceWindow;
     private NotchWindow? _notchWindow;
@@ -115,7 +114,6 @@ public partial class App : System.Windows.Application
 
             _companionWindow = new CompanionWindow(_runtime);
             _preferencesWindow = new PreferencesWindow(_runtime, _themeService, ShowChat);
-            _onboardingWindow = new OnboardingWindow(_runtime, _themeService, ShowChat);
             _overlayWindow = new GuidanceOverlayWindow();
             _notchWindow = new NotchWindow { DebugLog = message => _runtime.Log.Info(message) };
             _traceWindow = new TraceOverlayWindow();
@@ -125,7 +123,6 @@ public partial class App : System.Windows.Application
             // to the model inside the very picture it was being asked about.
             _companionWindow.KeepOutOfScreenCaptures(_runtime.Log);
             _preferencesWindow.KeepOutOfScreenCaptures(_runtime.Log);
-            _onboardingWindow.KeepOutOfScreenCaptures(_runtime.Log);
             _overlayWindow.KeepOutOfScreenCaptures(_runtime.Log);
             _notchWindow.KeepOutOfScreenCaptures(_runtime.Log);
             _traceWindow.KeepOutOfScreenCaptures(_runtime.Log);
@@ -134,10 +131,18 @@ public partial class App : System.Windows.Application
             // it is wired here and never shown or hidden as a separate thing.
             _notchWindow.Chat.Attach(_runtime);
             _notchWindow.ConnectChat();
-            _notchWindow.ChatSetupRequested += (_, _) => ShowSetup();
+            _notchWindow.ChatSetupRequested += (_, _) => _notchWindow?.OpenSettings();
             _notchWindow.AgentDrawer.Attach(_runtime);
             _notchWindow.ConnectAgentDrawer(_runtime);
             _notchWindow.ConnectSpawnAgent(_runtime);
+
+            // Settings live 100% inside the notch.
+            _notchWindow.ConnectSettings(_runtime, ShowSetup, () => _notchWindow?.OpenAuth());
+            _notchWindow.ConnectWelcome(
+                _runtime,
+                askQuestion: question => _ = _notchWindow!.AskNowAsync(question),
+                openSettings: () => _notchWindow?.OpenSettings("Account"),
+                onFinished: ShowChat);
 
             // Clicking a Windows notification brings the agent it is about up
             // on screen, rather than merely putting Metis in the foreground and
@@ -212,8 +217,8 @@ public partial class App : System.Windows.Application
             _runtime.GuidanceOverlayRequested += Runtime_OnGuidanceOverlayRequested;
             _runtime.ActivityChanged += Runtime_OnActivityChanged;
             _notchWindow.OpenRequested += (_, _) => ShowChat();
-            _notchWindow.SettingsRequested += (_, _) => ShowSetup();
-            _notchWindow.PlanRequested += (_, _) => ShowAccount();
+            _notchWindow.SettingsRequested += (_, _) => _notchWindow?.OpenSettings();
+            _notchWindow.PlanRequested += (_, _) => _notchWindow?.OpenSettings("Account");
 
             // A plan refusal surfaces as a banner in the chat rather than as an
             // error. Nothing went wrong: an allowance was spent, or a plan does
@@ -243,9 +248,19 @@ public partial class App : System.Windows.Application
             // whole stack quietly slips behind the taskbar and behind any window
             // that raises itself when it is activated.
             _topmostGuard = new TopmostGuard();
+            // Bottom of the stack first; the last one added ends up above the
+            // rest.
+            //
+            // The companion goes above the notch, not below it. It used to be
+            // the other way round on the reasoning that the chat should never be
+            // covered — but the companion is a 56px sprite that appears only
+            // while Metis is explaining something, and hiding it behind the very
+            // window it is explaining meant it silently vanished at the moment
+            // it had something to say. A character that disappears when it acts
+            // is worse than one that briefly overlaps a panel.
             _topmostGuard.Add(_overlayWindow);
-            _topmostGuard.Add(_companionWindow);
             _topmostGuard.Add(_notchWindow);
+            _topmostGuard.Add(_companionWindow);
             _topmostGuard.Start();
             _notchWindow.KeepOnTop = () => _topmostGuard?.Reassert();
 
@@ -400,13 +415,10 @@ public partial class App : System.Windows.Application
 
     private void ShowAccount()
     {
-        if (_preferencesWindow is null)
-        {
-            return;
-        }
-
-        _notchWindow?.CloseChat();
-        _preferencesWindow.ShowAt("Account");
+        // In the notch, where somebody already knows to look, rather than in a
+        // window they have to find. This is the change the whole settings move
+        // was asked for.
+        _notchWindow?.OpenSettings("Account");
     }
 
     // ============================= First run =============================
@@ -819,36 +831,34 @@ public partial class App : System.Windows.Application
     }
 
     /// <summary>
-    /// Preferences is a free-standing, resizable window rather than an anchored
-    /// one. It is a place to work through settings, not a glance at the notch,
-    /// and the paged layout needs more room than the anchored slot allows.
+    /// Opens Settings directly inside the Notch with zero external popup windows.
     /// </summary>
     private void ShowSetup()
     {
-        if (_preferencesWindow is null)
-        {
-            return;
-        }
-
-        _notchWindow?.CloseChat();
-        _preferencesWindow.ShowAt();
+        _notchWindow?.OpenSettings();
     }
 
     /// <summary>
-    /// The wizard is centred and free-standing rather than anchored under the
-    /// notch: on first run the notch has not been explained yet, so it cannot
-    /// serve as the landmark the anchored windows rely on.
+    /// The welcome, in the notch.
+    ///
+    /// It used to be a centred 880x640 wizard, on the reasoning that the notch
+    /// had not been explained yet so it could not be the landmark. That
+    /// reasoning had it backwards: explaining the notch is exactly what the
+    /// first step is for, and a person taught about Metis in a window they then
+    /// close has been taught about the wrong thing. The first step now is the
+    /// notch itself, and every step after it is in the place they will be using
+    /// afterwards.
     /// </summary>
     private void ShowOnboarding()
     {
-        if (_onboardingWindow is null)
+        if (_notchWindow is null)
         {
+            ShowChat();
             return;
         }
 
-        _notchWindow?.CloseChat();
-        _onboardingWindow.Show();
-        _onboardingWindow.Activate();
+        _preferencesWindow?.Hide();
+        _notchWindow.OpenWelcome();
     }
 
     /// <summary>
@@ -889,7 +899,6 @@ public partial class App : System.Windows.Application
         _topmostGuard?.Dispose();
 
         _preferencesWindow?.AllowClose();
-        _onboardingWindow?.AllowClose();
         _overlayWindow?.AllowClose();
         _traceWindow?.AllowClose();
         _notchWindow?.AllowClose();

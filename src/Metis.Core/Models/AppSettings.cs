@@ -101,23 +101,35 @@ public sealed record AppSettings
     public string UserName { get; init; } = string.Empty;
 
     /// <summary>
+    /// The profile avatar or emoji the user selected for their account.
+    /// </summary>
+    public string UserAvatar { get; init; } = "🦊";
+
+    /// <summary>
+    /// User profile email cached for display.
+    /// </summary>
+    public string UserEmail { get; init; } = string.Empty;
+
+    /// <summary>
+    /// Selected test plan tier (e.g. "Free", "Plus", "Pro").
+    /// </summary>
+    public string TestPlanTier { get; init; } = string.Empty;
+
+    /// <summary>
     /// The word that starts a request while Ctrl+Space listening is on. Kept
     /// configurable because a name Metis mishears constantly is worse than no
     /// wake word at all, and which name that is depends on the user's voice.
     /// </summary>
     public string WakeWord { get; init; } = "Metis";
 
-    /// <summary>
-    /// Whether Metis may move the real Windows pointer.
-    ///
-    /// Off by default. Metis works through the accessibility tree and window
-    /// messages instead, which leaves the cursor where the user left it and the
-    /// keyboard focus where they were typing — so they can carry on with
-    /// something else while it works. Moving the pointer is the fallback for
-    /// the applications that refuse both, and it takes the machine over while
-    /// it happens.
-    /// </summary>
-    public bool MoveRealCursor { get; init; }
+    // MoveRealCursor was declared here, described at length as the fallback for
+    // applications that refuse the accessibility tree, and read by nothing at
+    // all: no UI offered it, no service consulted it, no test pinned it. It is
+    // gone rather than wired up, because Metis is a learning instrument and does
+    // not drive the machine — the real Windows pointer is read and never moved,
+    // which is the promise CursorService keeps by exposing no way to move it.
+    // A flag that describes a capability the product deliberately does not have
+    // is worse than no flag: the next person to read it plans around it.
 
     /// <summary>
     /// Which Metis deployment this copy talks to. Read from settings rather
@@ -256,6 +268,22 @@ public sealed record AppSettings
     /// what Metis is able to do.
     /// </summary>
     public string CompanionShape { get; init; } = CompanionShapes.DefaultName;
+
+    /// <summary>
+    /// Keeps the companion on screen even when Metis has nothing to say.
+    ///
+    /// Off by default, which is the change: the companion used to trail the
+    /// cursor from the end of first run until shutdown, so the most visible
+    /// thing about Metis was a shape following the pointer through work it had
+    /// no part in. It now arrives when Metis is listening, thinking, speaking,
+    /// pointing or teaching, and leaves when that is over.
+    ///
+    /// This is on by preference rather than removed outright because a person
+    /// who likes the company should be able to keep it, and because the ability
+    /// to pin it visible is what makes the absent case debuggable. See
+    /// <see cref="CompanionPresence"/> for the rule itself.
+    /// </summary>
+    public bool CompanionAlwaysVisible { get; init; }
 
     /// <summary>
     /// Folder of markdown skills the user has written about their software.
@@ -450,5 +478,39 @@ public sealed record AppSettings
         return model.Contains("tts", StringComparison.OrdinalIgnoreCase)
             ? model
             : fallback;
+    }
+}
+
+/// <summary>
+/// Whether the companion belongs on screen at this moment.
+///
+/// Kept as one pure function, and kept out of the window, because the rule is
+/// the whole feature and a rule that can only be exercised by launching a
+/// desktop is a rule nobody checks. The window still decides *how* it comes and
+/// goes; this decides whether it should be there at all.
+///
+/// The states are split into work and rest rather than listed one by one on
+/// purpose. Every state except idle and paused is Metis doing something the
+/// user is meant to watch — listening, thinking, speaking, or reporting how it
+/// went — so a state added later is present by default, which is the safer of
+/// the two mistakes: a companion that lingers is untidy, one that is missing
+/// while Metis is talking looks broken.
+/// </summary>
+public static class CompanionPresence
+{
+    /// <summary>
+    /// <paramref name="teaching"/> is the lesson flag, not a state: a lesson
+    /// spends most of its time between marks with the runtime idle, and the
+    /// companion has to stay beside the control the learner is working on for
+    /// all of it rather than blinking out between steps.
+    /// </summary>
+    public static bool ShouldBeVisible(AssistantState state, bool alwaysVisible, bool teaching)
+    {
+        if (alwaysVisible || teaching)
+        {
+            return true;
+        }
+
+        return state is not (AssistantState.Idle or AssistantState.Paused);
     }
 }

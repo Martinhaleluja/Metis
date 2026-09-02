@@ -44,24 +44,9 @@ public static class Entitlements
             MetisFeature.StagingAccess or MetisFeature.InternalCostVisibility or
             MetisFeature.AdminDashboard;
 
-        // While nobody can buy anything, every paid capability is free, to
-        // everyone, signed in or not. That is not a placeholder to be tidied
-        // away later — it is the only honest state while there is no way to take
-        // payment, and pretending otherwise would restrict a product nobody can
-        // currently buy.
-        //
-        // It also protects something easy to lose. Metis works entirely without
-        // an account, on the user's own API key, and adding paid plans must not
-        // quietly take features away from people who never asked for one.
-        if (!billingIsLive && !isStaffOnly)
-        {
-            return true;
-        }
-
         // A signed-out copy of Metis still works with local providers and with
         // the user's own key, but it has no account to carry entitlements, so it
-        // gets none of them. Neither of those paths reaches the gateway, so
-        // neither costs Metis anything either.
+        // gets none of them.
         if (!account.IsSignedIn)
         {
             return false;
@@ -81,19 +66,28 @@ public static class Entitlements
             MetisFeature.ManagedAiRouting => true,
             MetisFeature.UsageVisibility => true,
 
-            // ---- Plus and above ----
-            MetisFeature.ManagedPremiumModels => account.IsAtLeast(PlanTier.Plus) || account.IsStaff,
-            MetisFeature.ManagedScreenVision => account.IsAtLeast(PlanTier.Plus) || account.IsStaff,
-            MetisFeature.AdvancedAutomation => account.IsAtLeast(PlanTier.Plus) || account.IsStaff,
-            MetisFeature.AutonomousAgents => account.IsAtLeast(PlanTier.Plus) || account.IsStaff,
-            MetisFeature.PersistentMemory => account.IsAtLeast(PlanTier.Plus) || account.IsStaff,
-            MetisFeature.BrowserAssistance => account.IsAtLeast(PlanTier.Plus) || account.IsStaff,
+            // ---- Every plan, Free included ----
+            //
+            // Agents are here rather than behind Pro because Free is sold with
+            // ten agent messages a month. The plan buys an amount, not a
+            // permission: refusing the capability outright and then quoting an
+            // allowance for it on the pricing page would be selling something
+            // the code will not do. How many is PlanLimits.MaxAgentStepsPerMonth,
+            // checked on the server for every step.
+            MetisFeature.AutonomousAgents => true,
+            MetisFeature.ManagedScreenVision => true,
+            MetisFeature.PersistentMemory => true,
 
-            // ---- Pro only ----
-            MetisFeature.CustomAiProvider => account.IsAtLeast(PlanTier.Pro) || account.IsStaff,
-            MetisFeature.SystemCommands => account.IsAtLeast(PlanTier.Pro) || account.IsStaff,
-            MetisFeature.AdvancedAgents => account.IsAtLeast(PlanTier.Pro) || account.IsStaff,
-            MetisFeature.ProviderManagement => account.IsAtLeast(PlanTier.Pro) || account.IsStaff,
+            // ---- Pro and above ----
+            MetisFeature.ManagedPremiumModels => account.IsAtLeast(PlanTier.Pro) || account.IsStaff,
+            MetisFeature.AdvancedAutomation => account.IsAtLeast(PlanTier.Pro) || account.IsStaff,
+            MetisFeature.BrowserAssistance => account.IsAtLeast(PlanTier.Pro) || account.IsStaff,
+
+            // ---- Max only ----
+            MetisFeature.CustomAiProvider => account.IsAtLeast(PlanTier.Max) || account.IsStaff,
+            MetisFeature.SystemCommands => account.IsAtLeast(PlanTier.Max) || account.IsStaff,
+            MetisFeature.AdvancedAgents => account.IsAtLeast(PlanTier.Max) || account.IsStaff,
+            MetisFeature.ProviderManagement => account.IsAtLeast(PlanTier.Max) || account.IsStaff,
 
             // ---- Staff ----
             MetisFeature.DeveloperMode => account.IsStaff,
@@ -133,12 +127,12 @@ public static class Entitlements
 
         if (Has(account, feature, billingIsLive))
         {
-            return billingIsLive ? "Available on this account." : "Free while Metis is in early access.";
+            return "Available on this account.";
         }
 
         if (!account.IsSignedIn)
         {
-            return "Sign in to use this, or add your own API key in Setup.";
+            return "Sign in to use this, or choose a plan.";
         }
 
         if (!account.EmailVerified)
@@ -148,35 +142,36 @@ public static class Entitlements
 
         return feature switch
         {
-            // Every sentence here has to end somewhere the user can act. The
-            // ones about managed AI say what still works on their own key,
-            // because "your plan is too small" with no way forward reads as a
-            // wall rather than a choice.
+            // Three of these are no longer refusals of the capability at all —
+            // screen vision, agents and memory are on every plan, sold by the
+            // amount rather than withheld. Their sentences stay because Explain
+            // is also reached when the whole account is unverified or signed
+            // out, and because a plan added later might narrow them again.
             MetisFeature.ManagedScreenVision =>
-                "Metis reading your screen on its own AI is part of Plus. Your own API key still can.",
+                "Reading your screen in full detail is part of Metis Pro.",
             MetisFeature.ManagedPremiumModels =>
-                "Models beyond Gemini on Metis's AI are part of Plus.",
+                "The larger AI models are part of Metis Pro.",
             MetisFeature.AdvancedAutomation =>
-                "Advanced automation is part of Plus.",
+                "Advanced automation is part of Metis Pro.",
             MetisFeature.AutonomousAgents =>
-                "Background agents are part of Plus.",
+                "Free includes ten agent messages a month. Metis Pro includes four hundred.",
             MetisFeature.PersistentMemory =>
-                "Memory beyond the free allowance is part of Plus.",
+                "Remembering more of what you are working on is part of Metis Pro.",
             MetisFeature.BrowserAssistance =>
-                "Browser assistance is part of Plus.",
+                "Help with what is in your browser is part of Metis Pro.",
 
             MetisFeature.AdvancedAgents =>
-                "Multi-agent workflows are part of Metis Pro.",
+                "Agents that hand work to each other are part of Metis Max.",
             MetisFeature.ProviderManagement =>
-                "Choosing your own models and endpoints is part of Metis Pro.",
+                "Choosing your own models and endpoints is part of Metis Max.",
             MetisFeature.CustomAiProvider =>
-                "Connecting your own AI provider is part of Metis Pro.",
+                "Answering on your own AI account — OpenAI, Anthropic, Gemini or OpenRouter — is part of Metis Max.",
             MetisFeature.SystemCommands =>
-                "Running system commands is part of Metis Pro.",
+                "Running background system tools is part of Metis Max.",
 
             MetisFeature.AdminDashboard =>
                 "This dashboard is internal to Metis.",
-            _ => "This is not available on your account."
+            _ => "This feature is not included in your current plan."
         };
     }
 
@@ -198,18 +193,23 @@ public static class Entitlements
     /// <summary>
     /// Reads a plan sent by the backend.
     ///
-    /// Only the literal word "pro" earns Pro. The looser words that used to mean
-    /// Pro — "paid", "active" — are really subscription *statuses* rather than
-    /// plan names, and once there are two paid plans they no longer say which
-    /// one was bought. They resolve to Plus, the smaller of the two, on the same
+    /// Only the literal word "max" earns Max. The looser words that used to mean
+    /// a paid plan — "paid", "active" — are really subscription *statuses*
+    /// rather than plan names, and with two paid plans they no longer say which
+    /// one was bought. They resolve to Pro, the smaller of the two, on the same
     /// principle <see cref="ParseRole"/> and <see cref="ParseEnvironment"/>
     /// already follow: a value that arrives ambiguous must not be the reason
     /// someone gets more than they paid for.
+    ///
+    /// "plus" is the old name for the middle plan and resolves to Pro, which is
+    /// what that plan is called now — the same tier, the same person, a
+    /// different word. It is kept because the Postgres enum still carries the
+    /// value and an old row must not silently demote its owner to Free.
     /// </summary>
     public static PlanTier ParsePlan(string? value) => value?.Trim().ToLowerInvariant() switch
     {
-        "pro" => PlanTier.Pro,
-        "plus" or "paid" or "active" => PlanTier.Plus,
+        "max" => PlanTier.Max,
+        "pro" or "plus" or "paid" or "active" => PlanTier.Pro,
         _ => PlanTier.Free
     };
 

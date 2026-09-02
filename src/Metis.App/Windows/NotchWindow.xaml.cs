@@ -1,4 +1,4 @@
-﻿using System.Runtime.InteropServices;
+using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Interop;
@@ -56,15 +56,30 @@ public partial class NotchWindow : Window
     /// Read fresh rather than cached: someone who docks a laptop should not have
     /// to restart Metis for the notch to notice the new screen.
     /// </summary>
-    private static double MaxBodyHeight =>
-        NotchGeometry.MaxBodyHeight(SystemParameters.WorkArea.Height);
+    private double MaxBodyHeight =>
+        NotchGeometry.MaxBodyHeight(SystemParameters.WorkArea.Height, PageShare);
+
+    /// <summary>
+    /// How much of the screen the page that is showing may take.
+    ///
+    /// The chat and the panels that sit beside it are held to 82% so that an
+    /// answer about what is on screen does not cover the thing being asked
+    /// about. Settings and first run are not about anything behind them, so
+    /// they get the taller share — on a laptop that is the difference between a
+    /// section that fits and one that scrolls, and every section was scrolling.
+    /// </summary>
+    private double PageShare =>
+        IsSettingsOpen || IsWelcomeOpen
+            ? NotchGeometry.TallPageShare
+            : NotchGeometry.WorkAreaShare;
 
     /// <summary>
     /// How tall the body should be for whatever page is showing. One rule, one
     /// place, so two panels cannot disagree about what "as tall as it needs" means.
     /// </summary>
     private double TargetBodyHeight(double measured, double padding = 0) =>
-        NotchGeometry.BodyHeight(measured + padding, chromeHeight: 0, SystemParameters.WorkArea.Height);
+        NotchGeometry.BodyHeight(
+            measured + padding, chromeHeight: 0, SystemParameters.WorkArea.Height, PageShare);
 
     /// <summary>
     /// The first-run panel is narrower than the chat. A sign-in form stretched
@@ -159,7 +174,7 @@ public partial class NotchWindow : Window
     /// specifically is what stopped the first-run panel from being tucked away
     /// underneath the user while they were typing their password into it.
     /// </summary>
-    public bool IsPanelOpen => IsChatOpen || IsAuthOpen || IsAgentDrawerOpen || IsSpawnAgentOpen;
+    public bool IsPanelOpen => IsChatOpen || IsAuthOpen || IsAgentDrawerOpen || IsSpawnAgentOpen || IsSettingsOpen || IsWelcomeOpen;
 
     // ============================== The chat ==============================
 
@@ -525,6 +540,19 @@ public partial class NotchWindow : Window
 
     public bool IsAgentDrawerOpen { get; private set; }
 
+    /// <summary>Whether the settings panel is showing.</summary>
+    public bool IsSettingsOpen { get; private set; }
+
+    /// <summary>The settings panel, so the shell can attach it once at startup.</summary>
+    public NotchSettings Settings => SettingsHost;
+
+    private const double SettingsWidth = 640;
+
+    /// <summary>Whether the first-run welcome is showing.</summary>
+    public bool IsWelcomeOpen { get; private set; }
+
+    private const double WelcomeWidth = 640;
+
     public NotchAgentDrawer AgentDrawer => AgentDrawerHost;
 
     private MetisRuntime? _runtime;
@@ -534,6 +562,12 @@ public partial class NotchWindow : Window
         _runtime = runtime;
         AgentDrawerHost.CloseRequested += (_, _) => CloseAgentDrawer();
         AgentDrawerHost.SpawnAgentRequested += (_, _) => OpenSpawnAgentPanel();
+        AgentDrawerHost.UpgradePlanRequested += (_, _) => OpenSettings("Account");
+        AgentDrawerHost.PresetHelperPicked += (_, goal) =>
+        {
+            CloseAgentDrawer();
+            OpenSpawnAgentPanel(goal);
+        };
         AgentDrawerHost.ContentSizeChanged += (_, _) => FitToAgentDrawer();
 
         if (runtime.AgentTasks is not null)
@@ -650,6 +684,331 @@ public partial class NotchWindow : Window
         KeepOnTop?.Invoke();
     }
 
+    /// <summary>
+    /// Opens settings in the notch, optionally on a named section.
+    ///
+    /// Modelled on the agent drawer's open, deliberately, rather than invented:
+    /// four panels already share this sequence — fade the pill, kill the hover
+    /// controls, position, grow the window ahead of the body, animate width,
+    /// height and drop, fade the panel in — and a fifth that did it differently
+    /// would be a fifth thing to keep in step. That the sequence is copied five
+    /// times is the argument for NotchNavigator, which now exists and takes over
+    /// once the remaining sections have moved.
+    /// </summary>
+    public void OpenSettings(string? section = null)
+    {
+        if (IsTracing || IsAuthOpen)
+        {
+            return;
+        }
+
+        if (IsSettingsOpen)
+        {
+            SettingsHost.ShowSection(section);
+            FitToSettings();
+            return;
+        }
+
+        if (IsChatOpen)
+        {
+            CloseChat();
+        }
+
+        if (IsAgentDrawerOpen)
+        {
+            CloseAgentDrawer();
+        }
+
+        if (IsSpawnAgentOpen)
+        {
+            CloseSpawnAgentPanel();
+        }
+
+        IsSettingsOpen = true;
+        _retractTimer.Stop();
+        _pressed = false;
+        Visibility = Visibility.Visible;
+
+        SetThinking(false);
+        StepPips.Visibility = Visibility.Collapsed;
+
+        Animate(NotchContent, OpacityProperty, 0, Fade, null);
+        Animate(Grabber, OpacityProperty, 0, Fade, null);
+        HoverControls.BeginAnimation(OpacityProperty, null);
+        HoverControls.Opacity = 0;
+
+        PositionOverTopEdge();
+
+        SettingsHost.BeginAnimation(OpacityProperty, null);
+        SettingsHost.Visibility = Visibility.Visible;
+        SettingsHost.Opacity = 0;
+        SettingsHost.Width = SettingsWidth;
+        SettingsHost.ShowSection(section);
+        SettingsHost.UpdateLayout();
+
+        var target = SettingsTargetHeight();
+        GrowWindowFor(target);
+
+        Animate(NotchBody, WidthProperty, SettingsWidth, Shape,
+            new BackEase { Amplitude = 0.16, EasingMode = EasingMode.EaseOut });
+        AnimateBodyHeight(target);
+        Animate(NotchDrop, TranslateTransform.YProperty, 0, Shape,
+            new CubicEase { EasingMode = EasingMode.EaseOut });
+        Animate(SettingsHost, OpacityProperty, 1, Fade, null, beginAfter: 90);
+
+        _isShown = true;
+        KeepOnTop?.Invoke();
+    }
+
+    /// <summary>
+    /// Opens the first-run welcome in the notch.
+    ///
+    /// Deliberately not guarded on IsTracing the way the other panels are: this
+    /// runs before the user has ever asked Metis anything, so there is nothing
+    /// to be tracing over, and a welcome that silently declined to appear would
+    /// leave a new user looking at a grey sliver with no idea what it is.
+    /// </summary>
+    public void OpenWelcome()
+    {
+        if (IsWelcomeOpen)
+        {
+            return;
+        }
+
+        if (IsChatOpen)
+        {
+            CloseChat();
+        }
+
+        if (IsSettingsOpen)
+        {
+            CloseSettings();
+        }
+
+        IsWelcomeOpen = true;
+        _retractTimer.Stop();
+        _pressed = false;
+        Visibility = Visibility.Visible;
+
+        SetThinking(false);
+        StepPips.Visibility = Visibility.Collapsed;
+
+        Animate(NotchContent, OpacityProperty, 0, Fade, null);
+        Animate(Grabber, OpacityProperty, 0, Fade, null);
+        HoverControls.BeginAnimation(OpacityProperty, null);
+        HoverControls.Opacity = 0;
+
+        PositionOverTopEdge();
+
+        WelcomeHost.BeginAnimation(OpacityProperty, null);
+        WelcomeHost.Visibility = Visibility.Visible;
+        WelcomeHost.Opacity = 0;
+        WelcomeHost.Width = WelcomeWidth;
+        WelcomeHost.UpdateLayout();
+
+        var target = WelcomeTargetHeight();
+        GrowWindowFor(target);
+
+        Animate(NotchBody, WidthProperty, WelcomeWidth, Shape,
+            new BackEase { Amplitude = 0.16, EasingMode = EasingMode.EaseOut });
+        AnimateBodyHeight(target);
+        Animate(NotchDrop, TranslateTransform.YProperty, 0, Shape,
+            new CubicEase { EasingMode = EasingMode.EaseOut });
+        Animate(WelcomeHost, OpacityProperty, 1, Fade, null, beginAfter: 90);
+
+        _isShown = true;
+        KeepOnTop?.Invoke();
+    }
+
+    public void CloseWelcome()
+    {
+        if (!IsWelcomeOpen)
+        {
+            return;
+        }
+
+        IsWelcomeOpen = false;
+
+        var fade = new DoubleAnimation(0, TimeSpan.FromMilliseconds(140))
+        {
+            EasingFunction = new CubicEase { EasingMode = EasingMode.EaseIn },
+            FillBehavior = FillBehavior.HoldEnd
+        };
+
+        fade.Completed += (_, _) =>
+        {
+            if (!IsWelcomeOpen)
+            {
+                WelcomeHost.Visibility = Visibility.Collapsed;
+            }
+        };
+
+        WelcomeHost.BeginAnimation(OpacityProperty, fade);
+    }
+
+    private double WelcomeTargetHeight() =>
+        FitPanelHeight(WelcomeHost.MeasureDesiredHeight, WelcomeWidth, padding: 6);
+
+    private void FitToWelcome()
+    {
+        if (!IsWelcomeOpen)
+        {
+            return;
+        }
+
+        var target = WelcomeTargetHeight();
+        if (Math.Abs(target - _bodyHeightTarget) < 0.5)
+        {
+            return;
+        }
+
+        GrowWindowFor(target);
+        AnimateBodyHeight(target);
+        ShrinkWindowAfterFold();
+    }
+
+    /// <summary>
+    /// Opens the chat and asks one question, in that order and on the
+    /// interface thread. Used by the first-run starter chips.
+    /// </summary>
+    public async System.Threading.Tasks.Task AskNowAsync(string question)
+    {
+        if (!IsChatOpen)
+        {
+            OpenChat();
+        }
+
+        await ChatHost.AskNowAsync(question);
+    }
+
+    /// <summary>Attaches the welcome. Called once at startup.</summary>
+    public void ConnectWelcome(
+        Metis.App.Runtime.MetisRuntime runtime,
+        Action<string> askQuestion,
+        Action openSettings,
+        Action onFinished)
+    {
+        WelcomeHost.Attach(runtime, askQuestion, openSettings);
+        WelcomeHost.ContentSizeChanged += (_, _) => FitToWelcome();
+        WelcomeHost.Finished += (_, _) =>
+        {
+            CloseWelcome();
+            onFinished();
+        };
+    }
+
+    public void CloseSettings()
+    {
+        if (!IsSettingsOpen)
+        {
+            return;
+        }
+
+        IsSettingsOpen = false;
+
+        var fade = new DoubleAnimation(0, TimeSpan.FromMilliseconds(140))
+        {
+            EasingFunction = new CubicEase { EasingMode = EasingMode.EaseIn },
+            FillBehavior = FillBehavior.HoldEnd
+        };
+
+        fade.Completed += (_, _) =>
+        {
+            if (!IsSettingsOpen)
+            {
+                SettingsHost.Visibility = Visibility.Collapsed;
+            }
+        };
+
+        SettingsHost.BeginAnimation(OpacityProperty, fade);
+
+        Animate(NotchBody, WidthProperty, TuckedWidth, Shape,
+            new CubicEase { EasingMode = EasingMode.EaseOut });
+        AnimateBodyHeight(ExpandedHeight);
+        Tuck();
+        ShrinkWindowAfterFold();
+    }
+
+    private double SettingsTargetHeight() =>
+        FitPanelHeight(SettingsHost.MeasureDesiredHeight, SettingsWidth, padding: 6);
+
+    /// <summary>
+    /// How tall a panel needs to be, measured at the width it will actually be
+    /// given rather than at the width it was asked for.
+    ///
+    /// The difference is a scrollbar, and it matters more than it sounds. A
+    /// panel measured at 640px that then has to scroll is laid out at 640 minus
+    /// the scrollbar, so every wrapping paragraph in it gains a line and the
+    /// content becomes taller than the measurement that decided it would
+    /// scroll. The window was sized from the first number and the content drawn
+    /// at the second, which is why a page could be clipped through the middle
+    /// of a row with a scrollbar beside it that did not go far enough.
+    ///
+    /// So: measure, and if that answer is going to scroll, measure again in the
+    /// narrower space and use that. Twice at most, and only on the pages that
+    /// overflow.
+    /// </summary>
+    private double FitPanelHeight(Func<double, double> measure, double width, double padding)
+    {
+        var workArea = SystemParameters.WorkArea.Height;
+
+        // Deliberately the raw measurement, not the clamped one. TargetBodyHeight
+        // clamps to the screen, so asking whether *that* overflows is asking
+        // whether a number is bigger than the ceiling it was just held under —
+        // always no, and the second measure would never run.
+        var wanted = measure(width) + padding;
+
+        if (!NotchGeometry.NeedsScrolling(wanted, chromeHeight: 0, workArea, PageShare))
+        {
+            return TargetBodyHeight(wanted - padding, padding);
+        }
+
+        var narrower = Math.Max(240, width - SystemParameters.VerticalScrollBarWidth);
+        return TargetBodyHeight(measure(narrower), padding);
+    }
+
+    private void FitToSettings()
+    {
+        if (!IsSettingsOpen)
+        {
+            return;
+        }
+
+        var target = SettingsTargetHeight();
+        if (Math.Abs(target - _bodyHeightTarget) < 0.5)
+        {
+            return;
+        }
+
+        DebugLog?.Invoke(
+            $"Notch settings fit: target={target:F0} was={_bodyHeightTarget:F0} "
+            + $"max={MaxBodyHeight:F0} workArea={SystemParameters.WorkArea.Height:F0}");
+
+        GrowWindowFor(target);
+        AnimateBodyHeight(target);
+
+        // Shrunk afterwards as well as grown beforehand. Settings is the one
+        // panel whose height swings by hundreds of pixels between one view and
+        // the next — the account page is tall, the menu is short — and without
+        // this the window kept the tallest size it had ever needed, leaving an
+        // invisible sheet across the top of the screen eating the user's clicks.
+        ShrinkWindowAfterFold();
+    }
+
+    /// <summary>
+    /// Attaches the settings panel. Called once at startup, alongside the other
+    /// panels' connect methods.
+    /// </summary>
+    public void ConnectSettings(
+        Metis.App.Runtime.MetisRuntime runtime,
+        Action openFullSettings,
+        Action openSignIn)
+    {
+        SettingsHost.Attach(runtime, openFullSettings, openSignIn);
+        SettingsHost.CloseRequested += (_, _) => CloseSettings();
+        SettingsHost.ContentSizeChanged += (_, _) => FitToSettings();
+    }
+
     public void CloseAgentDrawer()
     {
         if (!IsAgentDrawerOpen)
@@ -704,7 +1063,7 @@ public partial class NotchWindow : Window
 
     private double AgentDrawerTargetHeight()
     {
-        return TargetBodyHeight(AgentDrawerHost.MeasureDesiredHeight(AgentDrawerWidth), padding: 20);
+        return FitPanelHeight(AgentDrawerHost.MeasureDesiredHeight, AgentDrawerWidth, padding: 6);
     }
 
     // =========================== Spawn Agent Panel ===========================
@@ -763,7 +1122,7 @@ public partial class NotchWindow : Window
         }
     }
 
-    public void OpenSpawnAgentPanel()
+    public void OpenSpawnAgentPanel(string? prefillGoal = null)
     {
         if (IsSpawnAgentOpen || IsTracing || IsAuthOpen)
         {
@@ -798,7 +1157,7 @@ public partial class NotchWindow : Window
         SpawnAgentHost.Visibility = Visibility.Visible;
         SpawnAgentHost.Opacity = 0;
         SpawnAgentHost.Width = SpawnAgentWidth;
-        SpawnAgentHost.Reset();
+        SpawnAgentHost.Reset(prefillGoal);
         SpawnAgentHost.UpdateLayout();
 
         var target = SpawnAgentTargetHeight();
@@ -878,7 +1237,7 @@ public partial class NotchWindow : Window
 
     private double SpawnAgentTargetHeight()
     {
-        return TargetBodyHeight(SpawnAgentHost.MeasureDesiredHeight(SpawnAgentWidth), padding: 20);
+        return FitPanelHeight(SpawnAgentHost.MeasureDesiredHeight, SpawnAgentWidth, padding: 6);
     }
 
     /// <summary>
@@ -977,6 +1336,26 @@ public partial class NotchWindow : Window
 
         Animate(NotchBody, HeightProperty, target, Shape,
             new CubicEase { EasingMode = EasingMode.EaseOut });
+
+        // Asked after the layout that the new height causes, because until then
+        // the scroller still knows only its old extent.
+        Dispatcher.InvokeAsync(RefreshScrollEdge, DispatcherPriority.Loaded);
+    }
+
+    /// <summary>
+    /// Shows the fade at the foot of the page only while there is something
+    /// under it to scroll to.
+    /// </summary>
+    private void PageScroll_OnScrollChanged(object sender, ScrollChangedEventArgs e) =>
+        RefreshScrollEdge();
+
+    private void RefreshScrollEdge()
+    {
+        var scrollable = !IsChatOpen
+            && PageScroll.ScrollableHeight > 1
+            && PageScroll.VerticalOffset < PageScroll.ScrollableHeight - 1;
+
+        ScrollEdge.Visibility = scrollable ? Visibility.Visible : Visibility.Collapsed;
     }
 
     /// <summary>
@@ -1848,11 +2227,19 @@ public partial class NotchWindow : Window
         var primary = SystemParameters.PrimaryScreenWidth;
 
         // The window is only as wide as the shape the notch is currently in.
-        // Its transparent margin is still a solid sheet as far as the mouse is
-        // concerned, so an oversized window quietly eats clicks aimed at the
-        // windows underneath it.
+        //
+        // That used to be load-bearing: the transparent margin was a solid sheet
+        // as far as the mouse was concerned, so an oversized window quietly ate
+        // clicks aimed at the windows underneath. The root grid no longer paints
+        // a hit-testable background and PassThroughIsWorking checks that at
+        // runtime, so this is now good manners rather than a workaround — but a
+        // window no bigger than it needs to be is still the right shape for
+        // something that lives permanently on top of everything else.
         Width = Math.Min(
-            IsChatOpen ? ChatWindowWidth : IsAuthOpen ? AuthWindowWidth : PillWindowWidth,
+            IsSettingsOpen ? SettingsWidth + WindowSlack
+            : IsChatOpen ? ChatWindowWidth
+            : IsAuthOpen ? AuthWindowWidth
+            : PillWindowWidth,
             primary);
         Left = origin.X + ((primary - Width) / 2);
         Top = origin.Y;

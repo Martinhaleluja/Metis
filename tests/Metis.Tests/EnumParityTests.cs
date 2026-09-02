@@ -23,14 +23,47 @@ namespace Metis.Tests;
 /// </summary>
 public sealed class EnumParityTests
 {
+    /// <summary>
+    /// Enum values Postgres still carries that C# has dropped.
+    ///
+    /// Postgres cannot remove a value from an enum without rewriting every
+    /// dependent column, so a renamed plan leaves its old name behind for good.
+    /// "plus" is the former name of the middle plan, now called Pro; nothing
+    /// writes it any more and Entitlements.ParsePlan maps it to Pro so an old
+    /// row does not silently demote its owner to Free.
+    ///
+    /// This is an allow-list rather than a loosened comparison on purpose. A
+    /// value that appears in Postgres and not in C# is normally exactly the
+    /// drift this test exists to catch, and every exception to that should have
+    /// to be written down here with a reason.
+    /// </summary>
+    private static readonly string[] RetiredPlanTiers = ["plus"];
+
     [Fact]
     public void The_plan_tiers_match()
     {
-        var declared = ReadEnumValues("plan_tier");
+        var declared = ReadEnumValues("plan_tier")
+            .Except(RetiredPlanTiers, StringComparer.Ordinal);
 
         Assert.Equal(
             Enum.GetValues<PlanTier>().Select(Snake).OrderBy(name => name, StringComparer.Ordinal),
             declared.OrderBy(name => name, StringComparer.Ordinal));
+    }
+
+    /// <summary>
+    /// A retired value has to actually be retired. If someone re-adds "plus" to
+    /// the C# enum, the allow-list above would quietly hide the mismatch rather
+    /// than report it.
+    /// </summary>
+    [Fact]
+    public void Retired_tiers_are_gone_from_the_client()
+    {
+        var live = Enum.GetValues<PlanTier>().Select(Snake).ToHashSet(StringComparer.Ordinal);
+
+        foreach (var retired in RetiredPlanTiers)
+        {
+            Assert.DoesNotContain(retired, live);
+        }
     }
 
     [Fact]

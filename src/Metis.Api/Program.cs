@@ -191,7 +191,9 @@ app.MapGet("/v1/me", async (
         snapshot.BillingIsLive,
         snapshot.Granted.Select(feature => feature.ToString()).OrderBy(name => name, StringComparer.Ordinal).ToArray(),
         limits,
-        new AssistAllowance(usage.SpendUsd, limits.MonthlyBudgetUsd, usage.ResetsUtc),
+        new AssistAllowance(
+            usage.SpendUsd, limits.MonthlyBudgetUsd, usage.ResetsUtc,
+            usage.RequestCount, usage.DictationMinutes, usage.AgentSteps),
         snapshot.IssuedUtc,
         snapshot.ExpiresUtc,
         signingKey is null ? string.Empty : EntitlementSigner.Sign(snapshot, signingKey)));
@@ -292,7 +294,28 @@ app.MapPost("/v1/assist", async (
     // client-supplied system prompt running on Metis's key would be free
     // general-purpose inference for whoever pointed a script at this endpoint,
     // and the output ceiling is the only thing bounding what a turn can cost.
-    var geminiRequest = body.ToGeminiRequest(screenshot, audio);
+    // The plan's memory allowance, applied where it can actually be applied.
+    //
+    // Memory itself lives in a JSON file on the user's own machine and no
+    // server can police how many entries are in it. What reaches the model is a
+    // different matter: recall and turn history travel as text on every managed
+    // request, they are the part Metis pays for, and they are the part that
+    // makes memory do anything. So the plan bounds those, here, on requests
+    // Metis is buying — and never on a local model or a Pro account's own key,
+    // neither of which comes through this endpoint at all.
+    //
+    // Trimmed rather than refused: a long-standing user should get a slightly
+    // less well-informed answer, not an error that arrives because they have
+    // been using the product.
+    var (trimmedRecall, trimmedTurns) =
+        PromptContextLimits.Apply(body.ChatRecall, body.RecentTurns, limits);
+
+    var geminiRequest = (body with
+    {
+        ChatRecall = trimmedRecall,
+        RecentTurns = trimmedTurns
+    }).ToGeminiRequest(screenshot, audio);
+
     var systemInstruction = AssistantPromptKernel.BuildSystemInstruction(geminiRequest);
     var userPrompt = AssistantPromptKernel.BuildUserPrompt(geminiRequest);
 
@@ -321,7 +344,9 @@ app.MapPost("/v1/assist", async (
         {
             await StreamTurnAsync(
                 context, http, apiKey, model, payload, requestId,
-                new AssistAllowance(usage.SpendUsd, limits.MonthlyBudgetUsd, usage.ResetsUtc),
+                new AssistAllowance(
+                    usage.SpendUsd, limits.MonthlyBudgetUsd, usage.ResetsUtc,
+                    usage.RequestCount + 1, usage.DictationMinutes, usage.AgentSteps),
                 report => (inputTokens, thoughtTokens, outputTokens) = report,
                 reason => status = reason,
                 cancellationToken);
@@ -350,7 +375,9 @@ app.MapPost("/v1/assist", async (
         return Results.Ok(new AssistResponse(
             requestId, provider, model, text ?? string.Empty,
             new AssistUsage(inputTokens, thoughtTokens, outputTokens),
-            new AssistAllowance(spent, limits.MonthlyBudgetUsd, usage.ResetsUtc)));
+            new AssistAllowance(
+                spent, limits.MonthlyBudgetUsd, usage.ResetsUtc,
+                usage.RequestCount + 1, usage.DictationMinutes, usage.AgentSteps)));
     }
     catch (Exception exception) when (!cancellationToken.IsCancellationRequested)
     {
@@ -369,6 +396,181 @@ app.MapPost("/v1/assist", async (
             provider,
             model,
             body?.Feature ?? "chat",
+            inputTokens,
+            outputTokens,
+            cost,
+            stopwatch.ElapsedMilliseconds,
+            estimated && status == "ok" ? "ok_priced_by_fallback" : status,
+            CancellationToken.None);
+    }
+})
+.RequireAuthorization()
+.RequireRateLimiting("assist");
+
+// =========================== The agent's turn ===========================
+
+// An agent step is not a conversation turn, and it gets its own route because
+// making it borrow /v1/assist was worse than either alternative. That route
+// writes Metis's own system instruction and reads the reply as an assistant
+// plan; an agent asking which tool to call next needs neither, and every one of
+// its turns would have been misparsed into a plan and lost.
+//
+// It is also the only place the agent-step allowance can ever be charged.
+// Background agents ran exclusively on the user's own key until this existed,
+// so plan_limits.max_agent_steps_per_month and the isAgentStep branch in
+// ManagedAccess.Decide were columns and code nothing reached.
+app.MapPost("/v1/agent-step", async (
+    HttpContext context,
+    SupabaseGateway supabase,
+    GatewayState state,
+    GatewayConfig gatewayConfig,
+    IHttpClientFactory clients,
+    ILoggerFactory loggers,
+    AgentStepRequest request,
+    CancellationToken cancellationToken) =>
+{
+    var log = loggers.CreateLogger("Metis.Api.AgentStep");
+    var account = context.Account(gatewayConfig.Environment);
+    if (account is null)
+    {
+        return NoAccountRow();
+    }
+
+    if (!state.Ready)
+    {
+        return Problem(503, "degraded", "Metis's AI service is starting up. Try again in a moment.");
+    }
+
+    var rules = state.Rules;
+    var limits = rules.For(account.Plan);
+
+    // Refused here rather than by the step allowance, and the difference
+    // matters to the user: a plan that never included agents is a 403 with a
+    // sentence about Plus, not a 402 that reads as "come back next month".
+    if (!Entitlements.Has(account, MetisFeature.AutonomousAgents, rules.BillingIsLive))
+    {
+        return Problem(403, "plan",
+            Entitlements.Explain(account, MetisFeature.AutonomousAgents, rules.BillingIsLive));
+    }
+
+    var messages = request?.Messages?
+        .Where(message => !string.IsNullOrWhiteSpace(message?.Content))
+        .ToArray() ?? [];
+
+    if (messages.Length == 0)
+    {
+        return Problem(400, "request", "An agent step needs at least one message.");
+    }
+
+    // The only bound on what one step can cost on the input side. Unlike
+    // /v1/assist, this route forwards the caller's own prompt and history —
+    // that is what an agent step is — so the output ceiling alone does not say
+    // what a turn is worth, and a runaway agent accumulating history forever
+    // would otherwise buy an ever more expensive turn each time round its loop.
+    var characters = (request!.System?.Length ?? 0) + messages.Sum(message => message.Content!.Length);
+    if (characters > AgentStepRequest.MaxCharacters)
+    {
+        return Problem(400, "request",
+            "That agent step carries more history than Metis's AI will run. Start a smaller task.");
+    }
+
+    // Generated here rather than accepted from the client, unlike /v1/assist.
+    // An agent turn has no user-visible request to correlate it with on the
+    // desktop side, so there is nothing for a client-supplied id to join to.
+    var requestId = Guid.NewGuid().ToString("d");
+
+    var usage = await supabase.LoadUsageAsync(account.UserId, cancellationToken);
+    var decision = ManagedAccess.Decide(
+        account, limits, usage, rules,
+        requestHasScreenshot: false,
+        isAgentStep: true,
+        screenshotBytes: 0);
+
+    if (!decision.Allowed)
+    {
+        return Problem(decision.StatusCode, decision.Kind!, decision.Message!);
+    }
+
+    var model = ManagedAccess.ChooseModel(request.Model, limits, rules, account.IsStaff);
+    var provider = "google";
+    var apiKey = gatewayConfig.KeyFor(provider);
+    if (apiKey is null)
+    {
+        return Problem(503, "degraded", "Metis's AI service is not configured to answer right now.");
+    }
+
+    var stopwatch = Stopwatch.StartNew();
+    var status = "ok";
+    var inputTokens = 0;
+    var thoughtTokens = 0;
+    var outputTokens = 0;
+
+    using var scope = log.BeginScope(new Dictionary<string, object>
+    {
+        ["requestId"] = requestId,
+        ["userId"] = account.UserId,
+        ["plan"] = account.Plan.ToString(),
+        ["provider"] = provider,
+        ["model"] = model,
+        ["feature"] = "agent_step"
+    });
+
+    try
+    {
+        var payload = GeminiPayload.BuildAgentTurn(
+            request.System, messages, request.Temperature, request.ResponseFormat);
+        var http = clients.CreateClient("providers");
+
+        // Not streamed. The agent shows nothing while a step is being decided,
+        // so a stream would buy latency nobody can see and cost a second frame
+        // reader to maintain.
+        var (text, report, failure) = await CompleteTurnAsync(
+            http, apiKey, model, payload, cancellationToken);
+
+        if (failure is not null)
+        {
+            status = failure;
+            return Problem(502, "provider", "The AI provider refused the request.");
+        }
+
+        (inputTokens, thoughtTokens, outputTokens) = report;
+
+        var spent = usage.SpendUsd
+            + state.Prices.Estimate(provider, model, inputTokens, outputTokens).Cost;
+
+        WriteAllowanceHeaders(context, spent, limits.MonthlyBudgetUsd, usage.ResetsUtc);
+
+        // The reply goes back unread. An agent's decision is its own free-form
+        // JSON, not an assistant plan, and the client owns the parser that
+        // knows the difference — putting a second one here would misread every
+        // turn and would drift from the good one the moment either changed.
+        return Results.Ok(new AssistResponse(
+            requestId, provider, model, text ?? string.Empty,
+            new AssistUsage(inputTokens, thoughtTokens, outputTokens),
+            new AssistAllowance(
+                spent, limits.MonthlyBudgetUsd, usage.ResetsUtc,
+                usage.RequestCount, usage.DictationMinutes, usage.AgentSteps + 1)));
+    }
+    catch (Exception exception) when (!cancellationToken.IsCancellationRequested)
+    {
+        status = "error";
+        log.LogError(exception, "The gateway could not complete an agent step.");
+        return Problem(502, "network", "Metis could not reach its AI provider.");
+    }
+    finally
+    {
+        stopwatch.Stop();
+
+        // Recorded as agent_step whatever happened, including the failures. The
+        // step allowance is read back from these rows, so a turn that is paid
+        // for and lost still has to count against it.
+        var (cost, estimated) = state.Prices.Estimate(provider, model, inputTokens, outputTokens);
+        await supabase.RecordUsageAsync(
+            account.UserId,
+            requestId,
+            provider,
+            model,
+            "agent_step",
             inputTokens,
             outputTokens,
             cost,
@@ -807,6 +1009,37 @@ static string? ReadCandidateText(JsonElement root)
 public sealed record ConnectRequest(string? Provider, string? ApiKey, string? Model);
 
 /// <summary>
+/// One turn of a background agent, on the wire.
+///
+/// It is deliberately not <see cref="AssistRequest"/>. That record mirrors
+/// GeminiRequest — a screen capture, a pointer, a traced region, an operating
+/// mode — and an agent step has none of those; it has a prompt the agent wrote
+/// and the exchange so far. Sharing the record would have meant a wire format
+/// where most fields are meaningless on half the routes that use it.
+///
+/// This one lives here rather than in Metis.Core because the client sends the
+/// shape and never receives it: the reply comes back as an
+/// <see cref="AssistResponse"/>, which is shared.
+/// </summary>
+public sealed record AgentStepRequest(
+    string? System,
+    IReadOnlyList<AgentStepMessage>? Messages,
+    string? Model,
+    double? Temperature,
+    string? ResponseFormat)
+{
+    /// <summary>
+    /// How much prompt and history one step may carry. Roughly a hundred
+    /// thousand tokens of input, which is far more than a well-behaved agent
+    /// sends and far less than an unbounded loop would.
+    /// </summary>
+    public const int MaxCharacters = 400_000;
+}
+
+/// <summary>One message in an agent's exchange. <c>role</c> is "user" or "assistant".</summary>
+public sealed record AgentStepMessage(string? Role, string? Content);
+
+/// <summary>
 /// Builds the upstream request body. Kept separate so the assist endpoint reads
 /// as a sequence of decisions rather than as JSON assembly.
 /// </summary>
@@ -842,6 +1075,69 @@ public static class GeminiPayload
                 responseMimeType = "application/json"
             }
         });
+    }
+
+    /// <summary>
+    /// The same thing for an agent step: the agent's own instruction, its own
+    /// exchange, and no schema.
+    ///
+    /// The system prompt is the caller's here, which is the one thing
+    /// <see cref="Build"/> refuses to allow. It has to be — the agent's tool
+    /// declarations and its output contract live in that prompt, and a step
+    /// answered against Metis's assistant instruction would be a plan for a
+    /// user who is not there. What keeps it from being free general-purpose
+    /// inference is the pair of limits around it: the plan must include
+    /// autonomous agents at all, and every call spends one of a counted monthly
+    /// allowance whatever it asked for.
+    /// </summary>
+    public static string BuildAgentTurn(
+        string? systemPrompt,
+        IReadOnlyList<AgentStepMessage> messages,
+        double? temperature,
+        string? responseFormat)
+    {
+        ArgumentNullException.ThrowIfNull(messages);
+
+        var contents = messages.Select(message => new
+        {
+            // Gemini calls the model's own turns "model" where every other
+            // provider calls them "assistant". The client speaks the common
+            // dialect and the translation happens here, once.
+            role = message.Role is not null
+                   && (message.Role.Equals("assistant", StringComparison.OrdinalIgnoreCase)
+                       || message.Role.Equals("model", StringComparison.OrdinalIgnoreCase))
+                ? "model"
+                : "user",
+            parts = new[] { new { text = message.Content } }
+        }).ToArray();
+
+        var payload = new Dictionary<string, object>
+        {
+            ["contents"] = contents,
+            ["generationConfig"] = new
+            {
+                // Clamped rather than trusted. Temperature is the caller's to
+                // choose, but it arrives from a desktop settings file that a
+                // user can edit, and a value outside the range is a 400 from
+                // the provider that the agent would read as a broken step.
+                temperature = Math.Clamp(temperature ?? 0.2, 0d, 2d),
+                maxOutputTokens = AssistantPromptKernel.MaxPlanTokens,
+
+                // JSON unless the caller says otherwise, because an agent's
+                // decision is always JSON. Prose is accepted so the endpoint is
+                // not useless to whatever the agent loop grows into next.
+                responseMimeType = string.Equals(responseFormat, "text", StringComparison.OrdinalIgnoreCase)
+                    ? "text/plain"
+                    : "application/json"
+            }
+        };
+
+        if (!string.IsNullOrWhiteSpace(systemPrompt))
+        {
+            payload["systemInstruction"] = new { parts = new[] { new { text = systemPrompt } } };
+        }
+
+        return JsonSerializer.Serialize(payload);
     }
 }
 

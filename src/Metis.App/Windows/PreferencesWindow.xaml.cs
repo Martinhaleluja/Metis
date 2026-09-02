@@ -237,12 +237,7 @@ public partial class PreferencesWindow : System.Windows.Window
             return;
         }
 
-        AccountPlanTitle.Text = account.Plan switch
-        {
-            PlanTier.Pro => "Metis Pro",
-            PlanTier.Plus => "Metis Plus",
-            _ => "Metis Free"
-        };
+        AccountPlanTitle.Text = $"Metis {Metis.Core.Services.PlanCatalogue.For(account.Plan).Name}";
 
         AccountPlanDetail.Text = entitlements is null
             ? "Signed in. Metis has not been able to check what this plan includes yet."
@@ -837,6 +832,24 @@ public partial class PreferencesWindow : System.Windows.Window
         var canBringOwn = _runtime.Can(MetisFeature.CustomAiProvider);
         ProviderPlanNote.Text = canBringOwn ? string.Empty : _runtime.ExplainCapability(MetisFeature.CustomAiProvider);
         ProviderPlanNote.Visibility = Show(!canBringOwn);
+
+        // The gate itself, beside the sentence explaining it. A note above a
+        // working text box is not a restriction, it is a suggestion — somebody
+        // reads it, types their key anyway, saves, and only finds out it was
+        // never going to be used when their first question is answered by
+        // something else. Disabling the box is what makes the sentence true.
+        //
+        // The boxes are disabled rather than hidden, so the card still shows
+        // which provider the setting is about and the note has something to
+        // point at.
+        foreach (var box in new[]
+                 {
+                     GeminiApiKeyBox, OpenAiApiKeyBox, ClaudeApiKeyBox,
+                     OpenRouterApiKeyBox, OpenClawTokenBox
+                 })
+        {
+            box.IsEnabled = canBringOwn;
+        }
     }
 
     private void UpdateSpeechPanels()
@@ -999,17 +1012,26 @@ public partial class PreferencesWindow : System.Windows.Window
 
     private async Task SaveAsync(bool quiet = false)
     {
+        // Checked again here, and not because the box might have been re-enabled
+        // by hand. A disabled control is a courtesy to the user; it is not a
+        // rule. Anything that can be reached by editing a settings file, driving
+        // the window from outside the process, or running a build with the check
+        // patched out has to be refused where the value is actually used, and
+        // this is that place. Speech keys are untouched — they are not the
+        // reasoning provider and were never part of this.
+        var canBringOwn = _runtime.Can(MetisFeature.CustomAiProvider);
+
         _runtime.SaveAdditionalProviderSecrets(
-            NullIfBlank(ClaudeApiKeyBox.Password),
-            NullIfBlank(OpenClawTokenBox.Password),
+            canBringOwn ? NullIfBlank(ClaudeApiKeyBox.Password) : null,
+            canBringOwn ? NullIfBlank(OpenClawTokenBox.Password) : null,
             NullIfBlank(AssemblyAiApiKeyBox.Password),
             NullIfBlank(ElevenLabsApiKeyBox.Password),
-            NullIfBlank(OpenRouterApiKeyBox.Password));
+            canBringOwn ? NullIfBlank(OpenRouterApiKeyBox.Password) : null);
 
         await _runtime.SaveSettingsAsync(
             BuildSettings(),
-            NullIfBlank(GeminiApiKeyBox.Password),
-            NullIfBlank(OpenAiApiKeyBox.Password));
+            canBringOwn ? NullIfBlank(GeminiApiKeyBox.Password) : null,
+            canBringOwn ? NullIfBlank(OpenAiApiKeyBox.Password) : null);
 
         // Clearing the boxes after a save keeps a secret from sitting in a
         // control for the rest of the session.

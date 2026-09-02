@@ -19,15 +19,29 @@ public sealed class AgentReasoningClient : IAgentReasoningClient, IDisposable
     private readonly bool _ownsClient;
     private bool _disposed;
 
+    /// <summary>
+    /// How to reach Metis's own AI, when the user has no key of their own.
+    ///
+    /// A function rather than a value because the session token is short-lived
+    /// and the agent may run for many minutes: capturing one at construction
+    /// would hand a long task a credential that expires halfway through it.
+    /// Null when this build has no gateway, which is a real configuration and
+    /// not a fault — such a build simply runs agents on the user's own key, as
+    /// every build did before.
+    /// </summary>
+    private readonly Func<(Uri? Endpoint, string? AccessToken)>? _gatewayAccess;
+
     public AgentReasoningClient(
         ISettingsStore settingsStore,
         ISecretStore secretStore,
-        HttpClient? httpClient = null)
+        HttpClient? httpClient = null,
+        Func<(Uri? Endpoint, string? AccessToken)>? gatewayAccess = null)
     {
         _settingsStore = settingsStore ?? throw new ArgumentNullException(nameof(settingsStore));
         _secretStore = secretStore ?? throw new ArgumentNullException(nameof(secretStore));
         _ownsClient = httpClient is null;
         _httpClient = httpClient ?? MetisHttp.CreateClient(TimeSpan.FromSeconds(90));
+        _gatewayAccess = gatewayAccess;
     }
 
     public async Task<AgentModelResponse> GenerateNextStepAsync(
@@ -62,6 +76,13 @@ public sealed class AgentReasoningClient : IAgentReasoningClient, IDisposable
             {
                 var rawResponse = provider switch
                 {
+                    // Metis's own AI. Until this existed an agent could not run
+                    // at all for somebody with no key of their own — and since
+                    // the client never reached the gateway, the whole agent-step
+                    // allowance on the server was unreachable code and the
+                    // account page's agent count could only ever read zero.
+                    MetisGatewayAgentClient.ProviderId =>
+                        await CallMetisGatewayAsync(settings, systemPrompt, userPrompt, cancellationToken),
                     "OpenAI" or "OpenRouter" or "Ollama" =>
                         await CallOpenAiCompatibleAsync(settings, systemPrompt, userPrompt, cancellationToken),
                     "Claude" =>
@@ -524,6 +545,41 @@ public sealed class AgentReasoningClient : IAgentReasoningClient, IDisposable
     /// cached and reused for the rest of the task, instead of a task of thirty
     /// turns re-reading its own history thirty times.
     /// </summary>
+    /// <summary>
+    /// Runs one agent step on Metis's own AI.
+    ///
+    /// Every request carries <c>agent_step</c> as its feature, which is what
+    /// lets the server charge it against the agent allowance rather than the
+    /// ordinary conversation budget. That distinction matters more here than
+    /// anywhere else in the product: one thirty-turn task is thirty requests,
+    /// so a stuck agent can spend a month's worth of somebody's plan in ten
+    /// minutes, and a dollar budget alone would not notice until it had.
+    /// </summary>
+    private async Task<string> CallMetisGatewayAsync(
+        AppSettings settings,
+        string systemPrompt,
+        string userPrompt,
+        CancellationToken cancellationToken)
+    {
+        var access = _gatewayAccess?.Invoke() ?? (null, null);
+        if (access.Endpoint is null)
+        {
+            throw ReasoningProviderSupport.Error(
+                MetisGatewayAgentClient.ProviderId,
+                ReasoningProviderErrorKind.InvalidEndpoint,
+                "This copy of Metis has no AI service to run agents on. Add your own API key in Setup.");
+        }
+
+        using var client = new MetisGatewayAgentClient(access.Endpoint, _httpClient);
+        return await client.CompleteStepAsync(
+            access.AccessToken,
+            systemPrompt,
+            [new AgentGatewayMessage("user", userPrompt)],
+            settings.ReasoningModel,
+            temperature: 0.1,
+            cancellationToken);
+    }
+
     private async Task<string> CallClaudeAsync(
         AppSettings settings,
         string systemPrompt,

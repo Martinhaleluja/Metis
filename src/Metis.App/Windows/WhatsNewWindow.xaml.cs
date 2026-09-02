@@ -35,7 +35,14 @@ public partial class WhatsNewWindow : Window
     /// </summary>
     public const string Version = "3.15.0";
 
-    private sealed record Change(string Icon, string Title, string Detail);
+    private sealed record Change(string Icon, string Title, string Detail)
+{
+    /// <summary>
+    /// Without the icon, which is decoration: a screen reader announcing the
+    /// emoji before every line adds nothing and takes time.
+    /// </summary>
+    public override string ToString() => $"{Title}. {Detail}";
+}
 
     /// <summary>
     /// Written for the person using Metis, not for whoever wrote the code.

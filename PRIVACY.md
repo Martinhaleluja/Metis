@@ -19,9 +19,9 @@ get rid of it.
   watch between requests and it does not record.
 - **Where that capture goes depends on whose AI answers it.** On your own API
   key or a local model, it goes straight to the provider and no Metis server is
-  in the path. On the AI Metis pays for — the Free and Plus plans — it passes
-  through Metis's own gateway, because Metis is the account being billed for the
-  request. There is a section below that says exactly what each route does.
+  in the path. On the AI included with your plan it passes through Metis's own
+  gateway, because Metis is the account being billed for the request. There is a
+  section below that says exactly what each route does.
 - Content an application marks as private — banking apps, password managers,
   view-once photos in WhatsApp and Signal — is **blacked out before anything is
   sent**. Password boxes are never read.
@@ -80,19 +80,25 @@ depending on who is paying for the answer.
 
 ### The four routes
 
-**Your own API key, in the desktop app.** Paste a key into Setup and there is no
-Metis server in the path at all — not on any plan, and not while signed out. The
-key is held in Windows Credential Manager, the request goes from your computer
-to the provider, and nothing about it is metered, counted, or visible to Metis.
-This is how Metis worked before there were plans, and it still works exactly the
-same way.
+**Your own API key, in the desktop app (Pro).** Paste a key into Setup and there
+is no Metis server in the path at all. The key is held in Windows Credential
+Manager, the request goes from your computer to the provider, and nothing about
+it is metered, counted, or visible to Metis.
+
+Entering a key of your own is free for everyone until plans go on sale, and
+becomes part of Pro on the day they do — for everybody, including people who
+have run Metis this way since before there were plans. That is a real capability
+being moved behind a plan and it is written here rather than left to be
+discovered. If you want a route that stays free and keeps everything on your own
+machine, that is the local model below.
 
 **A local model through Ollama.** Nothing leaves the machine.
 
-**The AI Metis pays for (Free and Plus).** When you have not brought a key of
-your own and you are signed in, Metis answers on its own provider account. Your
-question — and, on Plus, the screenshot — is sent over HTTPS to Metis's gateway,
-which calls the provider using Metis's API key and streams the answer back.
+**The AI included with your plan.** When you have not brought a key of your own
+and you are signed in, Metis answers on its own provider account. Your question,
+and the screenshot when you have asked about your screen, is sent over HTTPS to
+Metis's gateway, which calls the provider using Metis's API key and streams the
+answer back.
 
 Metis is in the middle of that request. It has to be: it is the account being
 charged for it, and there is no way to pay a provider on someone's behalf

@@ -5,6 +5,8 @@ using System.Windows.Input;
 using System.Windows.Media;
 using Metis.App.Runtime;
 using Metis.Core.Agents;
+using Metis.Core.Services;
+using Metis.Core.Models;
 
 using UserControl = System.Windows.Controls.UserControl;
 using KeyEventArgs = System.Windows.Input.KeyEventArgs;
@@ -28,14 +30,25 @@ public sealed record AgentStepViewModel(
     Brush StatusBrush,
     Brush StatusBgBrush,
     Visibility ErrorVisibility,
-    string ErrorMessage);
+    string ErrorMessage)
+{
+    /// <summary>
+    /// What a screen reader announces for this step. See AgentTaskViewModel's
+    /// override for why every view model in this file needs one.
+    /// </summary>
+    public override string ToString() =>
+        $"Step {Index}, {StatusText}. {Description}";
+}
 
 /// <summary>A file an agent produced, and where it is.</summary>
 public sealed record AgentArtifactViewModel(
     string Name,
     string FilePath,
     string SizeText,
-    string Summary);
+    string Summary)
+{
+    public override string ToString() => $"{Name}, {SizeText}";
+}
 
 public sealed record AgentTaskViewModel(
     string Id,
@@ -84,7 +97,43 @@ public sealed record AgentTaskViewModel(
     string OriginText,
 
     /// <summary>Finished tasks can be cleared out; running ones cannot.</summary>
-    Visibility DismissVisibility);
+    Visibility DismissVisibility,
+
+    /// <summary>
+    /// Whether this agent may reach outside its own workspace, said out loud.
+    ///
+    /// This is the highest-consequence fact on a task record and the drawer did
+    /// not show it anywhere. An agent confined to its workspace can, at worst,
+    /// make a mess of its own folder; one that is not can rewrite anything the
+    /// user can, and the spawn panel offers the user's own folders freely. If a
+    /// card shows one thing about permissions, it should be this one.
+    /// </summary>
+    string ScopeText,
+    Brush ScopeBrush,
+    Visibility ScopeVisibility,
+
+    /// <summary>
+    /// Set when the step list is showing only its tail, so the card can say so
+    /// rather than quietly appearing to have fewer steps than it ran.
+    /// </summary>
+    string StepsTruncatedText,
+    Visibility StepsTruncatedVisibility)
+{
+    /// <summary>
+    /// What a screen reader announces for this task.
+    ///
+    /// An ItemsControl hands its data item to UI Automation as the name of each
+    /// generated container, and a record's default ToString is a dump of every
+    /// field it has — brushes, visibilities and all. Without this, a blind user
+    /// opening the agent drawer heard several hundred characters of
+    /// "AgentTaskViewModel { Id = ..., StatusBrush = #FF0A7CFF, ... }" per task,
+    /// and the goal they actually wanted was somewhere in the middle of it.
+    ///
+    /// Goal first, then status, because the goal is what distinguishes one card
+    /// from another and the status is what changes.
+    /// </summary>
+    public override string ToString() => $"{Goal}. {StatusText}. {CurrentActivity}";
+}
 
 public partial class NotchAgentDrawer : UserControl
 {
@@ -93,6 +142,8 @@ public partial class NotchAgentDrawer : UserControl
 
     public event EventHandler? CloseRequested;
     public event EventHandler? SpawnAgentRequested;
+    public event EventHandler? UpgradePlanRequested;
+    public event EventHandler<string>? PresetHelperPicked;
     public event EventHandler? ContentSizeChanged;
 
     public NotchAgentDrawer()
@@ -135,6 +186,9 @@ public partial class NotchAgentDrawer : UserControl
     /// defeated the change check underneath and forced a full re-render anyway.
     /// </summary>
     private static readonly Dictionary<string, Brush> BrushCache = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>How many of a task's steps a card shows. See the loop that uses it.</summary>
+    private const int MaxStepsShown = 20;
 
     private static Brush Swatch(string hex)
     {
@@ -200,13 +254,26 @@ public partial class NotchAgentDrawer : UserControl
             }
 
             var steps = task.AllSteps;
-            var stepVms = new List<AgentStepViewModel>(steps.Count);
             var completedSteps = 0;
+            foreach (var step in steps)
+            {
+                if (step.Status == AgentStepStatus.Success) completedSteps++;
+            }
 
-            for (var sIdx = 0; sIdx < steps.Count; sIdx++)
+            // Only the tail is built into cards.
+            //
+            // A long-running agent accumulates hundreds of steps and this method
+            // rebuilds every card on every agent event, so an uncapped list is
+            // hundreds of view models allocated several times a second — and a
+            // card taller than the screen, whose interesting end is the part
+            // scrolled off the bottom. The recent steps are the ones somebody is
+            // watching; the rest are history, and the count says they exist.
+            var firstStep = Math.Max(0, steps.Count - MaxStepsShown);
+            var stepVms = new List<AgentStepViewModel>(steps.Count - firstStep);
+
+            for (var sIdx = firstStep; sIdx < steps.Count; sIdx++)
             {
                 var step = steps[sIdx];
-                if (step.Status == AgentStepStatus.Success) completedSteps++;
 
                 var stepBrushHex = step.Status switch
                 {
@@ -226,15 +293,6 @@ public partial class NotchAgentDrawer : UserControl
                     _ => "#1AFFFFFF"
                 };
 
-                var stepStatusLabel = step.Status switch
-                {
-                    AgentStepStatus.Success => "✓ VERIFIED",
-                    AgentStepStatus.Running => "▶ RUNNING",
-                    AgentStepStatus.Failed => "✕ FAILED",
-                    AgentStepStatus.Skipped => "↷ SKIPPED",
-                    _ => "⋯ PENDING"
-                };
-
                 var toolInfo = string.Empty;
                 if (!string.IsNullOrWhiteSpace(step.ToolName))
                 {
@@ -252,7 +310,7 @@ public partial class NotchAgentDrawer : UserControl
                     $"#{sIdx + 1}",
                     step.Description,
                     toolInfo,
-                    stepStatusLabel,
+                    AgentStatusVocabulary.ForStep(step.Status),
                     Swatch(stepBrushHex),
                     Swatch(stepBgHex),
                     string.IsNullOrWhiteSpace(step.ErrorMessage) ? Visibility.Collapsed : Visibility.Visible,
@@ -282,7 +340,7 @@ public partial class NotchAgentDrawer : UserControl
             newVms.Add(new AgentTaskViewModel(
                 task.Id,
                 task.Goal,
-                task.Status.ToString().ToUpperInvariant(),
+                AgentStatusVocabulary.ForTask(task.Status),
                 statusBrush,
                 progressPercent,
                 $"{progressPercent}%",
@@ -306,7 +364,14 @@ public partial class NotchAgentDrawer : UserControl
                 task.WorkingDirectory ?? string.Empty,
                 duration,
                 OriginLabel(task.Origin, task.Depth),
-                task.IsActive ? Visibility.Collapsed : Visibility.Visible));
+                task.IsActive ? Visibility.Collapsed : Visibility.Visible,
+                AgentStatusVocabulary.ForScope(task.AllowOutsideWorkspace),
+                Swatch(task.AllowOutsideWorkspace ? "#FF9F0A" : "#8E8E93"),
+                Visibility.Visible,
+                firstStep == 0
+                    ? string.Empty
+                    : $"Showing the last {steps.Count - firstStep} of {steps.Count} steps.",
+                firstStep == 0 ? Visibility.Collapsed : Visibility.Visible));
         }
 
         // Any change at all, not just a change in how many there are.
@@ -342,6 +407,24 @@ public partial class NotchAgentDrawer : UserControl
         }
 
         EmptyState.Visibility = _tasks.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+        // Which plan, and what it costs, asked at the moment it is drawn.
+        //
+        // The banner used to say "Helpers are part of Metis Plus & Pro" in the
+        // markup. Plus no longer exists and agents are on every plan, so it was
+        // two sentences of untruth on the one screen where somebody is deciding
+        // whether to pay.
+        if (_runtime is not null &&
+            PlanCatalogue.NextAfter(_runtime.Account.Plan) is { } next)
+        {
+            PlanGateTitle.Text =
+                $"✨ {next.Limits.MaxAgentStepsPerMonth:N0} agent messages a month on Metis {next.Name}";
+            PlanGateAction.Text = $"Switch to {next.Name} ↗";
+        }
+
+        PlanGateBanner.Visibility = (_runtime is not null && !_runtime.Can(MetisFeature.AutonomousAgents))
+            ? Visibility.Visible
+            : Visibility.Collapsed;
+
         if (layoutChanged)
         {
             ContentSizeChanged?.Invoke(this, EventArgs.Empty);
@@ -528,5 +611,31 @@ public partial class NotchAgentDrawer : UserControl
         {
             _runtime?.AgentTasks?.ApproveAction(taskId, false);
         }
+    }
+
+    private void UpgradePlan_OnClick(object sender, MouseButtonEventArgs e)
+    {
+        e.Handled = true;
+        UpgradePlanRequested?.Invoke(this, EventArgs.Empty);
+    }
+
+    private void PresetHelper_OnClick(object sender, MouseButtonEventArgs e)
+    {
+        e.Handled = true;
+        if (sender is not FrameworkElement { Tag: string presetTag })
+        {
+            return;
+        }
+
+        var goal = presetTag switch
+        {
+            "study_tutor" => "Explain key concepts step-by-step with simple examples and practice questions.",
+            "writing_assistant" => "Draft a clear, structured summary and proofread my latest notes.",
+            "web_research" => "Search the web for insights on this topic and synthesize findings into a concise report.",
+            "organize_downloads" => "Scan my Downloads folder, categorize files into Documents/Images/Archives/Code, and create an organized summary.",
+            _ => string.Empty
+        };
+
+        PresetHelperPicked?.Invoke(this, goal);
     }
 }

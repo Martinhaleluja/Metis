@@ -5,6 +5,7 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Threading;
+using System.Windows.Media.Animation;
 using Metis.App.Runtime;
 using Metis.Core.Agents;
 using Metis.Core.Models;
@@ -19,7 +20,11 @@ using Brushes = System.Windows.Media.Brushes;
 
 namespace Metis.App.Windows;
 
-public sealed record AgentDotItem(string TaskId, Brush DotBrush, string Tooltip);
+public sealed record AgentDotItem(string TaskId, Brush DotBrush, string Tooltip)
+{
+    /// <summary>The tooltip, which is already the sentence describing the dot.</summary>
+    public override string ToString() => Tooltip;
+}
 
 public static class AgentColors
 {
@@ -288,21 +293,122 @@ public partial class NotchChat : System.Windows.Controls.UserControl
         }
 
         UpdateActionLabel.Text = "Updating…";
-        UpdateSubtitle.Text = "Downloading update and restarting Metis…";
+        UpdateSubtitle.Text = "Starting the download…";
         UpdateButton.IsEnabled = false;
         UpdateButton.Opacity = 0.6;
+        ShowUpdateRail();
         RaiseSizeChanged();
 
         var updater = new UpdateService(_runtime.Log);
-        var started = await updater.DownloadAndRunAsync(_availableUpdate);
+
+        // Marshalled back onto the interface thread by Progress<T>, which
+        // captures the synchronisation context it was constructed on. The
+        // download reports from a worker thread, so building this anywhere but
+        // here would put a cross-thread write on every one of these controls.
+        var progress = new Progress<UpdateProgress>(ReportUpdateProgress);
+
+        var started = await updater.DownloadAndRunAsync(_availableUpdate, progress);
         if (!started)
         {
+            HideUpdateRail();
             UpdateActionLabel.Text = "Retry";
             UpdateSubtitle.Text = "Update download failed. Check your internet connection or retry.";
             UpdateButton.IsEnabled = true;
             UpdateButton.Opacity = 1.0;
             RaiseSizeChanged();
         }
+    }
+
+    /// <summary>
+    /// The download, said out loud.
+    ///
+    /// Metis used to dim the button and then say nothing for however long the
+    /// installer took — no bytes, no percentage, no sign of life — on a
+    /// download that is tens of megabytes over whatever connection the user
+    /// happens to have. The one thing worse than a slow update is a slow update
+    /// that looks like a hang, because the person cancels it and tries again.
+    ///
+    /// The verify phase is reported for the same reason: hashing the installer
+    /// happens after the bar would have reached the end, so without a caption
+    /// for it the progress finishes and then Metis appears to freeze.
+    /// </summary>
+    private void ReportUpdateProgress(UpdateProgress progress)
+    {
+        UpdateSubtitle.Text = progress.Caption;
+
+        if (progress.Phase == UpdatePhase.Failed)
+        {
+            HideUpdateRail();
+            return;
+        }
+
+        var fraction = progress.Fraction;
+        if (fraction is null)
+        {
+            // No Content-Length, so there is no honest percentage to draw. The
+            // sweep says "still working" without claiming to know how far.
+            RunRailSweep();
+            return;
+        }
+
+        UpdateRailSweep.Visibility = Visibility.Collapsed;
+        UpdateRailSweep.BeginAnimation(TranslateTransform.XProperty, null);
+        UpdateRailFill.Visibility = Visibility.Visible;
+
+        // Verifying and restarting are drawn as a full bar rather than a
+        // rewound one: the download really is finished by then, and a bar that
+        // dropped back to nothing would read as a failure.
+        var share = progress.Phase == UpdatePhase.Downloading ? fraction.Value : 1d;
+        UpdateRailFill.Width = Math.Max(0, UpdateRail.ActualWidth * share);
+    }
+
+    private void ShowUpdateRail()
+    {
+        UpdateRail.Visibility = Visibility.Visible;
+        UpdateRailFill.Width = 0;
+        UpdateRailFill.Visibility = Visibility.Visible;
+        RunRailSweep();
+    }
+
+    private void HideUpdateRail()
+    {
+        UpdateRailSweep.BeginAnimation(TranslateTransform.XProperty, null);
+        UpdateRailSweep.Visibility = Visibility.Collapsed;
+        UpdateRail.Visibility = Visibility.Collapsed;
+    }
+
+    /// <summary>
+    /// The indeterminate state: one segment crossing the rail, repeating.
+    ///
+    /// This is the single case where a looping animation is the right answer
+    /// rather than a distraction — it is a loading indicator, and it stops the
+    /// moment the first byte count arrives or the update ends. Skipped entirely
+    /// when the user has asked for less motion, where the caption is doing the
+    /// work anyway.
+    /// </summary>
+    private void RunRailSweep()
+    {
+        if (MotionTuning.Reduced || UpdateRail.Visibility != Visibility.Visible)
+        {
+            return;
+        }
+
+        if (UpdateRailSweep.Visibility == Visibility.Visible)
+        {
+            return;
+        }
+
+        UpdateRailFill.Visibility = Visibility.Collapsed;
+        UpdateRailSweep.Visibility = Visibility.Visible;
+
+        var width = Math.Max(UpdateRail.ActualWidth, 120);
+        UpdateRailSweep.Width = width * 0.28;
+        UpdateRailSweep.BeginAnimation(
+            TranslateTransform.XProperty,
+            new DoubleAnimation(-UpdateRailSweep.Width, width, TimeSpan.FromMilliseconds(1150))
+            {
+                RepeatBehavior = RepeatBehavior.Forever
+            });
     }
 
     // ============================ Sending ============================
@@ -344,6 +450,26 @@ public partial class NotchChat : System.Windows.Controls.UserControl
         {
             _runtime?.Log.Error("Unhandled exception in PromptBox_OnPreviewKeyDown", ex);
         }
+    }
+
+    /// <summary>
+    /// Asks a question the user did not type — a starter chip on first run.
+    ///
+    /// It goes through the prompt box and the ordinary send rather than calling
+    /// the runtime directly, so the question appears in the transcript exactly
+    /// as a typed one would. A first answer that arrives with no visible
+    /// question above it reads as Metis talking to itself.
+    /// </summary>
+    public async Task AskNowAsync(string question)
+    {
+        if (string.IsNullOrWhiteSpace(question))
+        {
+            return;
+        }
+
+        PromptBox.Text = question;
+        UpdatePlaceholder();
+        await SendAsync();
     }
 
     private async Task SendAsync()
@@ -749,10 +875,16 @@ public partial class NotchChat : System.Windows.Controls.UserControl
         System.Windows.Media.Brush TierBrush,
         string Detail,
         string Usage,
-        Visibility TickVisibility);
+        Visibility TickVisibility)
+    {
+        public override string ToString() => $"{DisplayName}, {TierLabel}. {Detail}";
+    }
 
     /// <summary>One earlier conversation, as the history menu shows it.</summary>
-    private sealed record HistoryRow(string Id, string Title, string Subtitle, Visibility TickVisibility);
+    private sealed record HistoryRow(string Id, string Title, string Subtitle, Visibility TickVisibility)
+    {
+        public override string ToString() => $"{Title}. {Subtitle}";
+    }
 }
 
 /// <summary>
@@ -793,4 +925,16 @@ public sealed class ChatBubble : INotifyPropertyChanged
     }
 
     public void Append(string fragment) => Text = _text + fragment;
+
+    /// <summary>
+    /// What a screen reader announces for this message.
+    ///
+    /// An ItemsControl hands its data item to UI Automation as the name of each
+    /// generated container, and the default here was the type name: a
+    /// conversation read out as "Metis.App.Windows.ChatBubble" three times over,
+    /// with the actual words of the answer reachable only as unattributed text
+    /// beneath it. Author first, because in a transcript who is speaking is the
+    /// part that stops making sense when it is missing.
+    /// </summary>
+    public override string ToString() => $"{Author}: {Text}";
 }

@@ -38,6 +38,17 @@
                                 <RotateTransform x:Name="CompanionTilt" />
                                 <ScaleTransform x:Name="FlightScale" />
                                 <RotateTransform x:Name="FlightLean" />
+                                <!-- A third pair, for the two reactions that
+                                     are neither a state nor a journey: the spin
+                                     the companion arrives on, and the bounce it
+                                     lands with. They cannot share the flight's
+                                     transforms, because those are written
+                                     directly on every frame and an animated
+                                     property ignores direct writes — a landing
+                                     bounce held on FlightScale would freeze the
+                                     next flight's swell at its final value. -->
+                                <ScaleTransform x:Name="ReactionScale" />
+                                <RotateTransform x:Name="ArrivalSpin" />
                                 <TranslateTransform x:Name="CompanionShift" />
                             </TransformGroup>
                         </Path.RenderTransform>

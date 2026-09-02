@@ -125,7 +125,7 @@ public sealed class BillingWebhookTests
 
         var parsed = new PolarWebhookVerifier(PolarSecret).Parse(body)!;
 
-        Assert.Equal(PlanTier.Plus, parsed.Plan);
+        Assert.Equal(PlanTier.Pro, parsed.Plan);
         Assert.Equal("22222222-2222-2222-2222-222222222222", parsed.MetisUserId);
         Assert.True(parsed.CancelAtPeriodEnd);
         Assert.True(parsed.ChangesEntitlement);

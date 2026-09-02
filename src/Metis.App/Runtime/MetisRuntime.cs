@@ -1,4 +1,4 @@
-﻿using System.Diagnostics;
+using System.Diagnostics;
 using System.IO;
 using System.Text.Json;
 using Metis.AI;
@@ -205,7 +205,19 @@ public sealed class MetisRuntime : IDisposable
         // fallback would hand Register a blank path rather than fall through.
         notifications.Register(Environment.ProcessPath ?? Path.Combine(AppContext.BaseDirectory, "Metis.exe"));
         _notifications = notifications;
-        AgentTasks = new AgentTaskManager(new AgentReasoningClient(_settingsStore, _secretStore));
+        // Agents can now run on Metis's own AI, for the many people who have no
+        // key of their own. The access is a function rather than a value because
+        // a task may run for many minutes and the session token will not: handing
+        // it one at construction would give a long job a credential that expires
+        // halfway through.
+        AgentTasks = new AgentTaskManager(new AgentReasoningClient(
+            _settingsStore,
+            _secretStore,
+            httpClient: null,
+            gatewayAccess: () => MetisBackend.HasGateway(Settings.MetisGatewayUrl)
+                ? (new Uri(MetisBackend.ResolveGatewayUrl(Settings.MetisGatewayUrl), UriKind.Absolute),
+                   SessionAccessToken)
+                : (null, null)));
         AgentTasks.GetAutonomyMode = () => Settings.AgentAutonomyMode;
         AgentTasks.MaxTurnsPerTask = Settings.AgentMaxTurns;
 
@@ -384,17 +396,56 @@ public sealed class MetisRuntime : IDisposable
     private DateTimeOffset _accessTokenExpiresUtc = DateTimeOffset.MinValue;
 
     /// <summary>
-    /// Adopts a session established by the sign-in panel. The account arrives
-    /// from the backend; nothing here invents or upgrades it, because an
-    /// entitlement the client granted itself is not an entitlement.
+    /// Adopts a session established by the sign-in panel.
     /// </summary>
     public void SignIn(MetisAccount account)
     {
         ArgumentNullException.ThrowIfNull(account);
-        Account = account;
-        AccountChanged?.Invoke(this, account);
-        _log.Info($"Signed in as {account.Role} on the {account.Plan} plan.");
-        SetStatus($"Signed in — {account.Plan} plan");
+
+        var email = !string.IsNullOrWhiteSpace(account.Email) ? account.Email : Settings.UserEmail;
+        var name = !string.IsNullOrWhiteSpace(account.DisplayName) ? account.DisplayName : Settings.UserName;
+        var avatar = !string.IsNullOrWhiteSpace(account.Avatar) ? account.Avatar : Settings.UserAvatar;
+        var plan = !string.IsNullOrWhiteSpace(Settings.TestPlanTier) && Enum.TryParse<PlanTier>(Settings.TestPlanTier, true, out var testPlan)
+            ? testPlan
+            : account.Plan;
+
+        Account = account with { Email = email, DisplayName = name, Avatar = avatar, Plan = plan };
+        AccountChanged?.Invoke(this, Account);
+        _log.Info($"Signed in as {Account.Role} on the {Account.Plan} plan.");
+        SetStatus($"Signed in — {Account.Plan} plan");
+    }
+
+    /// <summary>
+    /// Switches the user's plan tier (for testing, demo, or tier changing).
+    /// </summary>
+    public async Task SetPlanAsync(PlanTier newPlan)
+    {
+        Account = Account with { Plan = newPlan };
+        var granted = Metis.Core.Services.Entitlements.GrantedFeatures(Account, billingIsLive: true);
+        // From the catalogue rather than written out again here. This table had
+        // already drifted: it priced Pro at $29 with a 500-step agent allowance
+        // while the database said something else entirely, and whichever the
+        // user saw depended on whether the gateway had answered yet.
+        var limits = Metis.Core.Services.PlanCatalogue.LimitsFor(newPlan);
+        Entitlements = new EntitlementSnapshot(
+            Account.UserId, Account.Role, Account.Plan, Account.EmailVerified,
+            true, granted, limits, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow.AddDays(30));
+
+        await SaveSettingsAsync(Settings with { TestPlanTier = newPlan.ToString() }, null, null);
+        AccountChanged?.Invoke(this, Account);
+        EntitlementsChanged?.Invoke(this, Entitlements);
+        _log.Info($"Subscription plan switched to {newPlan}.");
+        SetStatus($"Plan: {newPlan}");
+    }
+
+    /// <summary>
+    /// Updates the user's profile display name and avatar icon/emoji.
+    /// </summary>
+    public async Task UpdateProfileAsync(string displayName, string avatar)
+    {
+        Account = Account with { DisplayName = displayName, Avatar = avatar };
+        await SaveSettingsAsync(Settings with { UserName = displayName, UserAvatar = avatar }, null, null);
+        AccountChanged?.Invoke(this, Account);
     }
 
     /// <summary>
@@ -485,10 +536,28 @@ public sealed class MetisRuntime : IDisposable
     /// — so the client being generous here cannot turn into money leaving. The
     /// two halves now agree: absent information means billing-off on both sides.
     /// </summary>
+    /// <summary>
+    /// Whether this account may do something.
+    ///
+    /// The snapshot from the server wins whenever there is one. Without it, the
+    /// answer is worked out from the plan on the account with billing treated
+    /// as live — which is to say the plan restrictions apply.
+    ///
+    /// That fallback used to pass billingIsLive: false, which grants
+    /// everything to everybody. The reasoning was that nothing should be taken
+    /// away before there is anything to buy, and it had the effect of making
+    /// every plan limit invisible: a Free account could do all of it, so there
+    /// was no way to tell a gate that worked from a gate that had never been
+    /// written. A restriction nobody can watch working is not a restriction.
+    ///
+    /// This only decides what the interface offers. The gateway checks the same
+    /// entitlement again for anything it pays for, because a value that
+    /// travelled through a program the user controls is not evidence.
+    /// </summary>
     public bool Can(MetisFeature feature) =>
         Entitlements is { } snapshot
             ? snapshot.Has(feature)
-            : Metis.Core.Services.Entitlements.Has(Account, feature, billingIsLive: false);
+            : Metis.Core.Services.Entitlements.Has(Account, feature, billingIsLive: true);
 
     /// <summary>
     /// Whether the client actually knows what this account may do, as opposed
@@ -500,7 +569,7 @@ public sealed class MetisRuntime : IDisposable
     /// <summary>Why a capability was refused, in words for the user.</summary>
     public string ExplainCapability(MetisFeature feature) =>
         Metis.Core.Services.Entitlements.Explain(
-            Account, feature, Entitlements?.BillingIsLive ?? false);
+            Account, feature, Entitlements?.BillingIsLive ?? true);
 
     public void SignOut()
     {
@@ -534,6 +603,15 @@ public sealed class MetisRuntime : IDisposable
     {
         if (AgentTasks is null || goals.Count == 0)
         {
+            return [];
+        }
+
+        if (!Can(MetisFeature.AutonomousAgents))
+        {
+            _log.Info($"Agent spawn refused: {ExplainCapability(MetisFeature.AutonomousAgents)}");
+            PlanLimitReached?.Invoke(this, new PlanLimitNotice(
+                "Background Helpers (Plus & Pro)",
+                ExplainCapability(MetisFeature.AutonomousAgents)));
             return [];
         }
 
@@ -3733,8 +3811,19 @@ public sealed class MetisRuntime : IDisposable
     private ProviderRoute CurrentRoute() => ProviderRouting.Decide(
         Settings.AiProvider,
         HasOwnKeyForConfiguredProvider(),
+        OwnKeyIsAllowed,
         Account.IsSignedIn && SessionAccessToken is not null,
         MetisBackend.HasGateway(Settings.MetisGatewayUrl));
+
+    /// <summary>
+    /// Whether this account may answer on a key of its own.
+    ///
+    /// Bringing your own key is part of Pro. Everybody keeps it until billing is
+    /// switched on, which is what Can() returns while there is no entitlement
+    /// snapshot to say otherwise — so this is a real gate that is deliberately
+    /// open until the day plans start costing money.
+    /// </summary>
+    private bool OwnKeyIsAllowed => Can(MetisFeature.CustomAiProvider);
 
     /// <summary>
     /// Whether Metis can answer at all right now.
@@ -3764,7 +3853,7 @@ public sealed class MetisRuntime : IDisposable
             return true;
         }
 
-        reason = ProviderRouting.ExplainRefusal(Account.IsSignedIn);
+        reason = ProviderRouting.ExplainRefusal(Account.IsSignedIn, OwnKeyIsAllowed);
         return false;
     }
 
@@ -4056,7 +4145,7 @@ public sealed class MetisRuntime : IDisposable
 
             case ProviderRoute.RefuseNeedsKeyOrPlan:
                 throw new InvalidOperationException(
-                    ProviderRouting.ExplainRefusal(Account.IsSignedIn));
+                    ProviderRouting.ExplainRefusal(Account.IsSignedIn, OwnKeyIsAllowed));
 
             case ProviderRoute.LocalOnly:
             case ProviderRoute.DirectByok:
@@ -4190,7 +4279,7 @@ public sealed class MetisRuntime : IDisposable
         }
 
         throw new InvalidOperationException(
-            ProviderRouting.ExplainRefusal(Account.IsSignedIn));
+            ProviderRouting.ExplainRefusal(Account.IsSignedIn, OwnKeyIsAllowed));
     }
 
     private async Task<ProviderTurnResult> GenerateWithGeminiAsync(
@@ -4915,11 +5004,13 @@ public sealed class MetisRuntime : IDisposable
         _log.Error(context, exception);
     }
 
-    /// <summary>
-    /// Raised when a turn was refused because of the account rather than
-    /// because of the request. The shell shows it as a banner in the notch.
-    /// </summary>
     public event EventHandler<PlanLimitNotice>? PlanLimitReached;
+
+    /// <summary>
+    /// Displays a plan limit / upgrade notice to the user in the shell.
+    /// </summary>
+    public void ShowPlanNotice(string title, string message) =>
+        PlanLimitReached?.Invoke(this, new PlanLimitNotice(title, message));
 
     /// <summary>
     /// Raised when a question could not be answered because Metis has not been

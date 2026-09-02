@@ -248,6 +248,32 @@
                                FontWeight="SemiBold" Foreground="{DynamicResource NotchTextBrush}" />
                     <TextBlock x:Name="UpdateSubtitle" Text="Click update and Metis will automatically restart."
                                FontSize="10.5" Foreground="{DynamicResource NotchMutedBrush}" Margin="0,2,0,0" TextWrapping="Wrap" />
+
+                    <!-- The rail. Hidden until the download starts, so the
+                         banner is a banner until it is a progress report.
+
+                         Two pixels and no chrome: it sits under a line of text
+                         that already says how many megabytes of how many, and a
+                         full-height bar with its own percentage beside that
+                         sentence would be the same fact three times. It is a
+                         real determinate bar wherever the server sent a
+                         Content-Length and an indeterminate one where it did
+                         not, rather than a fabricated percentage. -->
+                    <Grid x:Name="UpdateRail" Height="2" Margin="0,7,0,1"
+                          Visibility="Collapsed" ClipToBounds="True">
+                        <Border Background="{DynamicResource NotchScrollThumbBrush}"
+                                CornerRadius="1" Opacity="0.5" />
+                        <Border x:Name="UpdateRailFill" HorizontalAlignment="Left"
+                                Background="{DynamicResource AccentBrush}" CornerRadius="1"
+                                Width="0" />
+                        <Border x:Name="UpdateRailSweep" HorizontalAlignment="Left"
+                                Background="{DynamicResource AccentBrush}" CornerRadius="1"
+                                Width="60" Visibility="Collapsed">
+                            <Border.RenderTransform>
+                                <TranslateTransform x:Name="UpdateRailSweepSlide" />
+                            </Border.RenderTransform>
+                        </Border>
+                    </Grid>
                 </StackPanel>
                 <Border x:Name="UpdateButton" Grid.Column="1" Style="{StaticResource ChatChip}"
                         Background="{DynamicResource AccentBrush}" BorderThickness="0"

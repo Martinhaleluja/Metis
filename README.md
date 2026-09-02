@@ -45,9 +45,12 @@ distinction matters.
 
 ## Privacy, in one paragraph
 
-Metis photographs your **whole desktop** and sends it to an AI provider **you**
-choose and pay for with **your own key** — there is no Metis server in the
-middle. It captures only when you ask, never in between. Content an application
+Metis photographs your **whole desktop** and sends it to an AI provider. On a
+local model that provider is your own computer and nothing leaves it. On Pro's
+own-key route the provider is one **you** choose and pay for directly, with no
+Metis server in the middle. On the AI included with a plan, the picture passes
+through Metis's own service on its way to the provider — that is what makes an
+allowance possible. It captures only when you ask, never in between. Content an application
 marks as private (banking apps, password managers, view-once photos in WhatsApp
 and Signal) is blacked out before anything is sent, password boxes are never
 read, and you can name other apps to hide. Chats and memory are encrypted on
@@ -80,9 +83,14 @@ one.
 
 ## Providers
 
-Metis needs one AI provider. Bring your own key and the account is yours — that
-is how Metis has always worked, and it still is. Sign in and Metis can also
-answer on its own AI, within whatever your plan includes.
+Metis needs one AI provider. Sign in and it answers on Metis's own AI, within
+whatever your plan includes — nothing to configure. Run Ollama and it answers on
+your own machine, on any plan, with nothing leaving the computer. Bring a key of
+your own and the provider account is yours; that is part of Pro.
+
+Connecting your own key is free for everyone until plans go on sale, and becomes
+a Pro feature on the day they do. That applies to everybody, including people who
+have been using Metis that way from the start.
 
 | Provider | Reasoning | Voice in | Voice out | Notes |
 |---|---|---|---|---|
@@ -97,16 +105,24 @@ answer on its own AI, within whatever your plan includes.
 
 ## Plans
 
-| | Free | Plus | Pro |
+| | Free | Pro | Max |
 |---|---|---|---|
-| Price | $0 | $14/month | $29/month |
-| The AI Metis buys for you | Gemini, text only | Managed, with screen vision | Managed, plus your own account |
-| Your own API key | Everything, always | Everything, always | Everything, always |
+| Price | $0 | $20/month | $50/month |
+| Talk messages a month | 50 | Unlimited | Unlimited |
+| Dictation | 300 minutes | Unlimited | Unlimited |
+| Agent messages a month | 10 | 400 | 2,000 |
+| Reading your screen | ✅ | ✅ full detail | ✅ full detail |
+| Your own API key | — | — | ✅ |
+| A model on your own computer | ✅ | ✅ | ✅ |
+
+A talk message is one answer from Metis. Dictation is speaking instead of
+typing. An agent message is one step an agent takes while getting on with a job
+in the background, so a long job spends several.
 
 The plans limit what Metis is willing to spend with an AI provider on your
-behalf. They do not limit the software. Point Metis at your own key and none of
-it applies: screen vision, automation and agents all work, on Free, signed out,
-for as long as you like.
+behalf. A model running on your own computer is outside all of it — it costs
+Metis nothing, so nothing is metered, on any plan, signed in or not. A key of
+your own is outside the allowance too, and is itself part of Max.
 
 **Nothing is on sale yet.** A payment provider has not been settled, so every
 paid capability is free for everyone in the meantime, and it will be announced

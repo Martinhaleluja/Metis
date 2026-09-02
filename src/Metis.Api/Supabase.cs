@@ -142,9 +142,19 @@ public sealed record UsageSnapshot(
     decimal SpendUsd,
     int RequestCount,
     int AgentSteps,
-    DateTimeOffset PeriodStart)
+    DateTimeOffset PeriodStart,
+
+    /// <summary>
+    /// Seconds of dictation this period. Seconds rather than minutes because
+    /// that is what the events record; the plan is written in minutes and the
+    /// conversion happens once, where the two are compared.
+    /// </summary>
+    int DictationSeconds = 0)
 {
-    public static UsageSnapshot Empty { get; } = new(0m, 0, 0, DateTimeOffset.UtcNow);
+    /// <summary>Whole minutes of dictation used, rounded down.</summary>
+    public int DictationMinutes => DictationSeconds / 60;
+
+    public static UsageSnapshot Empty { get; } = new(0m, 0, 0, DateTimeOffset.UtcNow, 0);
 
     /// <summary>
     /// When this month's allowance resets. The first instant of next month, in
@@ -266,7 +276,10 @@ public sealed class SupabaseGateway(HttpClient http, GatewayConfig config, ILogg
                     .Select(model => model.GetString() ?? string.Empty)
                     .Where(model => model.Length > 0)
                     .ToArray(),
-                limit.TryGetProperty("max_turns_per_month", out var turns) ? turns.GetInt32() : 0);
+                limit.TryGetProperty("max_turns_per_month", out var turns) ? turns.GetInt32() : 0,
+                limit.TryGetProperty("max_dictation_minutes_per_month", out var dictation)
+                    ? dictation.GetInt32()
+                    : 0);
         }
 
         return new GatewayRules(
@@ -315,7 +328,14 @@ public sealed class SupabaseGateway(HttpClient http, GatewayConfig config, ILogg
             row.GetProperty("spend_usd").GetDecimal(),
             row.GetProperty("request_count").GetInt32(),
             row.GetProperty("agent_steps").GetInt32(),
-            row.GetProperty("period_start").GetDateTimeOffset());
+            row.GetProperty("period_start").GetDateTimeOffset(),
+
+            // Tolerated as missing so a gateway can be deployed before the
+            // migration that adds it has run, rather than every request failing
+            // during the gap between the two.
+            row.TryGetProperty("dictation_seconds", out var dictation)
+                ? dictation.GetInt32()
+                : 0);
     }
 
     /// <summary>
