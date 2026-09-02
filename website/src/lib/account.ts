@@ -32,13 +32,30 @@ export type PlanLimits = {
   requests_per_minute: number;
   memory_entries_max: number;
   managed_models: string[];
+
+  /** Answers a month on Metis's own AI, or 0 for no cap. */
   max_turns_per_month: number;
+
+  /** Minutes of dictation a month on Metis's own transcription, or 0 for no cap. */
+  max_dictation_minutes_per_month: number;
+
+  /** Agent messages a month. Always capped, on every plan. */
+  max_agent_steps_per_month: number;
 };
 
 export type UsageThisPeriod = {
   spend_usd: number;
+
+  /**
+   * Talk messages. Deliberately excludes agent steps and dictation, which have
+   * allowances of their own — counting them in here would quietly make the
+   * number of answers smaller than the plan promises.
+   */
   request_count: number;
   agent_steps: number;
+
+  /** Seconds, because that is what the events record. Shown as minutes. */
+  dictation_seconds: number;
   period_start: string;
 };
 
@@ -118,6 +135,73 @@ export function useAccountData(session: Session | null) {
   }, [reload]);
 
   return { data, error, loading, reload };
+}
+
+/**
+ * Switches the active plan tier on the user's account for testing / subscription change.
+ */
+/**
+ * Changes the plan on the account row.
+ *
+ * It reports what actually happened. The previous version swallowed the error,
+ * wrote the wanted plan into localStorage and returned success regardless, so a
+ * failed write left the page cheerfully displaying "Pro" while the server —
+ * which is the only thing that enforces anything — still said Free. The desktop
+ * app then disagreed with the website about the same account, and the person
+ * looking at both had no way to tell which was lying.
+ *
+ * There is deliberately no local override any more. A plan is a fact about the
+ * account, held in one place, and a client-side copy of it is a second answer
+ * to a question that must only have one.
+ */
+export async function changePlan(
+  session: Session,
+  newPlan: PlanId,
+): Promise<{ ok: boolean; error?: string }> {
+  try {
+    const supabase = await getSupabase();
+    const { error } = await supabase
+      .from("account_status")
+      .update({ plan: newPlan })
+      .eq("user_id", session.user.id);
+
+    if (error) {
+      return { ok: false, error: error.message };
+    }
+
+    return { ok: true };
+  } catch (err) {
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : "The plan could not be changed.",
+    };
+  }
+}
+
+/**
+ * Persists the user's chosen avatar and display name.
+ */
+export async function updateUserProfile(
+  avatar: string,
+  displayName: string,
+): Promise<{ ok: boolean; error?: string }> {
+  try {
+    const supabase = await getSupabase();
+    const { error } = await supabase.auth.updateUser({
+      data: { avatar, display_name: displayName },
+    });
+
+    if (error) {
+      return { ok: false, error: error.message };
+    }
+
+    return { ok: true };
+  } catch (err) {
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : "Your profile could not be saved.",
+    };
+  }
 }
 
 /**

@@ -1,10 +1,11 @@
+import { planById, priceLabel } from "../lib/plans";
 import { providerIcons } from "../lib/providerIcons";
 import { Reveal } from "./Reveal";
 
 /**
  * Who is actually answering, split by who pays for the answer.
  *
- * The split is the point of the section. On Free and Plus, Metis picks the
+ * The split is the point of the section. On the included AI, Metis picks the
  * model and pays the bill, so the list is short and it is ours to change. On
  * Pro you connect your own account and the bill is yours, so the list is long
  * and the choice is yours. Presenting them as one undifferentiated logo wall
@@ -17,7 +18,7 @@ const managed: Mark[] = [
   {
     slug: "googlegemini",
     name: "Google Gemini",
-    note: "The AI behind Free and Plus. Nothing to sign up for and nothing to configure.",
+    note: "The AI included with every plan. Nothing to sign up for and nothing to configure.",
   },
 ];
 
@@ -116,7 +117,7 @@ export function Providers() {
             <ProviderWindow
               title="included_ai.txt"
               heading="AI included with your plan"
-              blurb="Free and Plus. There is nothing else to sign up for and no second bill — Metis pays for the answers, within the monthly allowance your plan includes."
+              blurb="Included with every plan. There is nothing else to sign up for and no second bill — Metis pays for the answers, within the monthly allowance your plan includes."
               marks={managed}
               footer="We may change which model sits behind a plan as better ones arrive. What the plan includes is what we have promised you."
               tilt={-0.8}
@@ -129,7 +130,7 @@ export function Providers() {
               heading="Your own account — Pro"
               blurb="Connect an account you already pay for, and choose the exact model yourself. Metis stops buying the AI and simply drives the one you picked."
               marks={bringYourOwn}
-              footer="Your provider charges you for what the models cost, separately from the $29. That $29 is for the software."
+              footer={`Your provider charges you for what the models cost, separately from the ${priceLabel(planById.max)}. That ${priceLabel(planById.max)} is for Metis.`}
               tilt={0.7}
             />
           </Reveal>

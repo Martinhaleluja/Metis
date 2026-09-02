@@ -12,8 +12,8 @@ import { plans, priceLabel } from "../lib/plans";
  * the part that needs a professional.
  */
 
-const plus = plans[1];
-const pro = plans[2];
+const proPlan = plans[1];
+const maxPlan = plans[2];
 
 export function PrivacyPolicy() {
   return (
@@ -48,7 +48,7 @@ export function PrivacyPolicy() {
         so it is written out for each.
       </p>
 
-      <H3>The AI included with Free and Plus</H3>
+      <H3>The AI included with your plan</H3>
       <p>
         Your question and, when you ask about your screen, the picture are sent
         securely to Metis, and Metis passes them to an AI provider using its own
@@ -62,7 +62,7 @@ export function PrivacyPolicy() {
         keep your question, the picture, or the answer.
       </p>
 
-      <H3>Your own AI account ({pro.name}, {priceLabel(pro)}/month)</H3>
+      <H3>Your own AI account ({maxPlan.name}, {priceLabel(maxPlan)}/month)</H3>
       <p>
         You connect an OpenAI, Anthropic, Google Gemini, Mistral or OpenRouter
         account. The key is checked once, then encrypted, and it is never shown
@@ -114,7 +114,7 @@ export function PrivacyPolicy() {
           and what it cost. None of what was said.
         </li>
         <li>
-          On {pro.name}: your encrypted AI key, the last four characters of it,
+          On {maxPlan.name}: your encrypted AI key, the last four characters of it,
           and a note of when you connected or disconnected it.
         </li>
         <li>Your waitlist entry, if you joined it.</li>
@@ -168,29 +168,41 @@ export function Terms() {
 
       <H>Plans and payment</H>
       <p>
-        {plans[0].name} is {priceLabel(plans[0])}. {plus.name} is{" "}
-        {priceLabel(plus)} per month and {pro.name} is {priceLabel(pro)} per
+        {plans[0].name} is {priceLabel(plans[0])}. {proPlan.name} is{" "}
+        {priceLabel(proPlan)} per month and {maxPlan.name} is {priceLabel(maxPlan)} per
         month. Those prices cover the software and the AI Metis buys on your
         behalf, within the monthly allowance shown on your account page.
       </p>
       <p>
-        On {pro.name}, model usage on a provider account you connect is billed by
+        On {maxPlan.name}, model usage on a provider account you connect is billed by
         that provider, directly to you, and is entirely separate from what you pay
         Metis. Metis does not mark it up and does not see the invoice.
       </p>
       <p>
         <strong>No plan is on sale yet.</strong> Until a payment provider is
-        settled, every paid capability is available to everyone at no charge. When
-        that changes it will be announced first, and nothing you rely on today
-        that runs on your own API key will be taken away.
+        settled, every paid capability is available to everyone at no charge,
+        including connecting your own AI account.
+      </p>
+      <p>
+        <strong>Connecting your own AI account will become part of {maxPlan.name}.</strong>{' '}
+        It is free for everyone today and will stay free until plans go on sale.
+        On the day they do, using a key of your own becomes a {maxPlan.name} feature,
+        and that applies to everybody &mdash; there is no arrangement that keeps
+        it for people who were using it beforehand. This is said here plainly
+        because it is a capability being moved behind a plan rather than a new
+        one being added, and you should know that before you build a habit
+        around it. It will be announced before it takes effect. Running a model
+        on your own computer stays free on every plan.
       </p>
 
       <H>Cancelling</H>
       <p>
         A subscription can be cancelled at any time from your account page. Access
         continues to the end of the period already paid for, and there is no
-        cancellation fee. Metis keeps working afterwards on the free plan, and on
-        your own API key exactly as before.
+        cancellation fee. Metis keeps working afterwards on the free plan, with
+        its included AI and its own monthly allowance. Cancelling {maxPlan.name} ends
+        the ability to answer on a provider key of your own; a model running on
+        your own computer keeps working on every plan.
       </p>
 
       <H>Allowances and fair use</H>
@@ -199,7 +211,9 @@ export function Terms() {
         amount, because the underlying providers charge per request and an
         unlimited promise would be one Metis could not keep. The current numbers
         are on your account page and can change; a reduction would be announced
-        before it took effect. Requests on your own key are not counted.
+        before it took effect. Requests answered on a {maxPlan.name} account&rsquo;s
+        own provider key are not counted against any of it, because Metis is not
+        paying for them.
       </p>
       <p>
         Metis may temporarily reduce access to its own AI if costs run beyond what

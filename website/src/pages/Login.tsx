@@ -138,7 +138,7 @@ export function Login() {
 
       <p className="mt-5 text-[11px] leading-relaxed text-[#444]">
         An account is only needed for the AI Metis pays for. Metis works fully
-        without one, on your own API key or a local model — and always will.
+        without one, on a model running on your own computer.
       </p>
     </Shell>
   );

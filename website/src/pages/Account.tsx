@@ -1,31 +1,43 @@
 import { useEffect, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import {
+  changePlan,
   connectableProviders,
   connectProvider,
   disconnectProvider,
   isGatewayConfigured,
   listConnections,
   type Connection,
+  updateUserProfile,
   useAccountData,
 } from "../lib/account";
 import { getSupabase, useAuth } from "../lib/auth";
-import { planById, priceLabel } from "../lib/plans";
+import { planById, plans, priceLabel, type PlanId } from "../lib/plans";
 
-/**
- * The account page: what you are on, what you have used, and what you have
- * connected.
- *
- * Everything about money is deliberately read-only until a payment processor is
- * chosen. Rather than hide the upgrade path behind a comment, the page says
- * plainly that plans are not open yet — read from `billing_state`, so the day
- * that row flips this page changes without being redeployed.
- */
+const AVATARS = ["🦊", "🦉", "⚡", "🔮", "🚀", "🤖", "🎨", "🐼", "👑"];
+
 export function Account() {
   const auth = useAuth();
   const navigate = useNavigate();
   const session = auth.status === "signed-in" ? auth.session : null;
-  const { data, error, loading } = useAccountData(session);
+  const { data, error, loading, reload } = useAccountData(session);
+
+  // Seeded from the account itself rather than from localStorage, and never
+  // from a name typed into the source. The default used to be "Martin", which
+  // greeted every visitor by the author's first name.
+  const metadata = (session?.user.user_metadata ?? {}) as {
+    avatar?: string;
+    display_name?: string;
+  };
+  const [avatar, setAvatar] = useState(metadata.avatar ?? "\u{1F98A}");
+  const [displayName, setDisplayName] = useState(
+    metadata.display_name ?? session?.user.email?.split("@")[0] ?? "You",
+  );
+  const [profileError, setProfileError] = useState<string | null>(null);
+  const [planError, setPlanError] = useState<string | null>(null);
+  const [isEditingName, setIsEditingName] = useState(false);
+  const [showAvatarPicker, setShowAvatarPicker] = useState(false);
+  const [switchingPlan, setSwitchingPlan] = useState(false);
 
   useEffect(() => {
     if (auth.status === "signed-out") {
@@ -47,33 +59,240 @@ export function Account() {
     );
   }
 
-  const plan = planById[data?.status?.plan ?? "free"];
+  // The account row is the only authority on which plan this is. There is no
+  // local override: a plan the page believes in and the server does not is how
+  // the website ended up showing Pro to an account the gateway was refusing.
+  const currentPlanId: PlanId = (data?.status?.plan as PlanId | undefined) ?? "free";
+  const plan = planById[currentPlanId] ?? planById.free;
   const limits = data?.limits;
   const usage = data?.usage;
-  const budget = limits?.monthly_budget_usd ?? 0;
-  const spent = usage?.spend_usd ?? 0;
-  const fraction = budget > 0 ? Math.min(1, spent / budget) : 0;
+
+  async function handleSelectPlan(targetPlan: PlanId) {
+    if (switchingPlan || !session || targetPlan === currentPlanId) return;
+
+    setSwitchingPlan(true);
+    setPlanError(null);
+
+    const result = await changePlan(session, targetPlan);
+    if (!result.ok) {
+      setPlanError(result.error ?? "The plan could not be changed.");
+    }
+
+    await reload();
+    setSwitchingPlan(false);
+  }
+
+  async function handleSaveName() {
+    setIsEditingName(false);
+    setProfileError(null);
+    const result = await updateUserProfile(avatar, displayName);
+    if (!result.ok) setProfileError(result.error ?? "Your name could not be saved.");
+  }
+
+  async function handleSelectAvatar(newAvatar: string) {
+    setAvatar(newAvatar);
+    setShowAvatarPicker(false);
+    setProfileError(null);
+    const result = await updateUserProfile(newAvatar, displayName);
+    if (!result.ok) setProfileError(result.error ?? "Your picture could not be saved.");
+  }
 
   return (
-    <Frame title="Account">
+    <Frame title="Your Account">
+      {/* --------------------------- User Profile Card --------------------------- */}
+      <div className="mb-6">
+        <Window title="Profile &amp; Identity">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div className="flex items-center gap-4">
+              <div className="relative">
+                <button
+                  type="button"
+                  title="Click to change avatar"
+                  onClick={() => setShowAvatarPicker((prev) => !prev)}
+                  className="flex h-16 w-16 items-center justify-center rounded-full border-2 border-[#000080] bg-[#e0e0ff] text-[32px] shadow-sm hover:scale-105 transition-transform"
+                >
+                  {avatar}
+                </button>
+
+                {showAvatarPicker && (
+                  <div className="absolute top-20 left-0 z-50 flex flex-wrap gap-2 rounded border border-[#808080] bg-[#c0c0c0] p-2.5 shadow-lg max-w-[200px]">
+                    {AVATARS.map((av) => (
+                      <button
+                        key={av}
+                        type="button"
+                        onClick={() => handleSelectAvatar(av)}
+                        className="h-8 w-8 rounded text-[18px] hover:bg-white flex items-center justify-center"
+                      >
+                        {av}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div>
+                <div className="flex items-center gap-2">
+                  {isEditingName ? (
+                    <div className="flex items-center gap-1.5">
+                      <input
+                        type="text"
+                        value={displayName}
+                        onChange={(e) => setDisplayName(e.target.value)}
+                        className="win95-field px-2 py-0.5 text-[14px] font-bold text-black outline-none"
+                      />
+                      <button
+                        type="button"
+                        onClick={handleSaveName}
+                        className="win95-button press px-2 py-0.5 text-[11px]"
+                      >
+                        Save
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-2">
+                      <span className="text-[18px] font-bold text-black">{displayName}</span>
+                      <button
+                        type="button"
+                        onClick={() => setIsEditingName(true)}
+                        className="text-[11px] text-[#000080] underline hover:text-blue-800"
+                      >
+                        Edit
+                      </button>
+                    </div>
+                  )}
+                  <span className="rounded bg-[#d0ffd0] border border-[#30b158] px-2 py-0.5 text-[10px] font-bold text-[#107030]">
+                    {plan.name.toUpperCase()}
+                  </span>
+                </div>
+
+                <div className="mt-1 flex items-center gap-2 text-[12px] text-[#444]">
+                  <span>{session.user.email}</span>
+                  <span className="rounded bg-[#e8f5e9] px-1.5 py-0.2 text-[10px] font-semibold text-[#2e7d32]">
+                    ✓ Verified
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => void signOut(navigate)}
+                className="win95-button press px-4 py-1.5 text-[11.5px]"
+              >
+                Sign out
+              </button>
+            </div>
+          </div>
+
+          {profileError && (
+            <p className="mt-3 border border-[#c62828] bg-[#ffebee] px-3 py-2 text-[11.5px] text-[#b71c1c]">
+              {profileError}
+            </p>
+          )}
+        </Window>
+      </div>
+
+      {/* ---------------------- Subscription Plan Switcher ----------------------
+           Rendered from `plans` rather than written out three times.
+
+           The hand-written version had each plan's price, name and feature list
+           typed into the markup, which is how it came to be offering "Metis
+           Plus, $12/mo, 2,000 questions" — three numbers that had stopped being
+           true and that nobody would notice were wrong, because there was
+           nothing for them to disagree with. Now there is exactly one place a
+           plan is described, and this reads it. */}
+      <div className="mb-6">
+        <Window title="Your plan">
+          <p className="mb-4 text-[12px] leading-relaxed text-[#444]">
+            Nothing is being charged yet. Choosing a plan here changes what your
+            account can actually do, so you can see exactly what each one
+            includes.
+          </p>
+
+          {planError && (
+            <p className="mb-3 border border-[#c62828] bg-[#ffebee] px-3 py-2 text-[11.5px] text-[#b71c1c]">
+              {planError}
+            </p>
+          )}
+
+          <div className="grid items-stretch gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {plans.map((option) => {
+              const isCurrent = option.id === currentPlanId;
+              return (
+                <div
+                  key={option.id}
+                  className={`flex h-full flex-col justify-between rounded border-2 p-4 ${
+                    isCurrent ? "border-[#000080] bg-[#f0f4ff]" : "border-[#808080] bg-white"
+                  }`}
+                >
+                  <div>
+                    <div className="flex items-start justify-between gap-2">
+                      <span className="text-[13px] font-bold uppercase tracking-wide text-[#000080]">
+                        Metis {option.name}
+                      </span>
+                      {isCurrent && (
+                        <span className="shrink-0 rounded bg-[#000080] px-2 py-0.5 text-[9.5px] font-bold text-white">
+                          CURRENT
+                        </span>
+                      )}
+                    </div>
+
+                    <p className="mt-2 text-[22px] font-bold text-black">
+                      {priceLabel(option)}
+                      <span className="text-[12px] font-normal text-[#666]">
+                        {option.priceUsd === 0 ? "" : "/mo"}
+                      </span>
+                    </p>
+
+                    <p className="mt-1 text-[11px] leading-snug text-[#555]">{option.tagline}</p>
+
+                    <ul className="mt-3 space-y-1 border-t border-[#ddd] pt-2 text-[11px] text-[#333]">
+                      {option.features.map((feature) => (
+                        <li key={feature} className="flex gap-1.5">
+                          <span aria-hidden="true" className="text-[#107030]">
+                            &#10003;
+                          </span>
+                          <span>{feature}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+
+                  <button
+                    type="button"
+                    disabled={isCurrent || switchingPlan}
+                    onClick={() => void handleSelectPlan(option.id)}
+                    className={`win95-button press mt-4 w-full py-1.5 text-[11.5px] font-bold ${
+                      isCurrent ? "opacity-60" : ""
+                    }`}
+                  >
+                    {isCurrent
+                      ? "Your plan"
+                      : switchingPlan
+                        ? "Changing\u2026"
+                        : `Switch to ${option.name}`}
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        </Window>
+      </div>
+
       <div className="grid gap-6 lg:grid-cols-[1.1fr_1fr]">
-        {/* ---------------------------- The plan ---------------------------- */}
-        <Window title={`Your plan — ${plan.name}`}>
+        {/* ---------------------------- Plan Summary & Details ---------------------------- */}
+        <Window title={`Plan Details — Metis ${plan.name}`}>
           <div className="flex items-baseline justify-between gap-4">
             <div>
-              <p className="text-[20px] font-bold text-black">Metis {plan.name}</p>
+              <p className="text-[18px] font-bold text-black">Metis {plan.name}</p>
               <p className="mt-0.5 text-[12px] text-[#444]">{plan.aiSummary}</p>
             </div>
-            <p className="shrink-0 text-[18px] font-bold text-black">
+            <p className="shrink-0 text-[16px] font-bold text-black">
               {priceLabel(plan)}
               {plan.priceUsd > 0 && <span className="text-[11px] font-normal">/mo</span>}
             </p>
           </div>
-
-          <p className="mt-3 text-[11px] text-[#444]">
-            Signed in as {session.user.email}
-            {data?.status?.email_verified === false && " — email not confirmed yet"}
-          </p>
 
           <div className="mt-4 border-t border-[#808080] pt-4">
             {data?.subscription ? (
@@ -87,94 +306,44 @@ export function Account() {
                   </>
                 )}
               </p>
-            ) : data?.billingIsLive ? (
-              <p className="text-[12px] text-[#444]">No paid subscription on this account.</p>
             ) : (
               <p className="text-[12px] leading-relaxed text-[#444]">
-                Paid plans are not open yet — we are still settling on a payment
-                provider. Everything Plus and Pro describe is free for everyone in
-                the meantime, and nothing you are using today will be taken away
-                when they do open.
+                Active subscription managed directly on your Metis profile. You can change plans anytime above.
               </p>
             )}
-
-            <div className="mt-3 flex flex-wrap gap-2">
-              {data?.billingIsLive ? (
-                <Link to="/pricing" className="win95-button press px-4 py-1.5 no-underline">
-                  Change plan
-                </Link>
-              ) : (
-                <a href="/#join" className="win95-button press px-4 py-1.5 no-underline">
-                  Join the waitlist
-                </a>
-              )}
-              <button type="button" onClick={() => void signOut(navigate)} className="win95-button press px-4 py-1.5">
-                Sign out
-              </button>
-            </div>
           </div>
         </Window>
 
-        {/* ---------------------------- The meter --------------------------- */}
+        {/* ---------------------------- The meters ---------------------------
+             One per thing the plan is actually sold in.
+
+             It used to be a single bar against a dollar budget, which is the
+             one number a customer cannot act on: nobody knows whether $0.42 of
+             Gemini is a lot, and there is no way to work backwards from it to
+             how many more questions are left. These three are countable by the
+             person spending them and are the same words the pricing page uses. */}
         <Window title="This month">
-          {budget > 0 ? (
-            <>
-              <p className="text-[12px] text-black">
-                <strong>{Math.round(fraction * 100)}%</strong> of this month&rsquo;s
-                included AI used
-              </p>
+          <Meter
+            label="Talk messages"
+            used={usage?.request_count ?? 0}
+            cap={limits?.max_turns_per_month ?? 0}
+          />
+          <Meter
+            label="Dictation"
+            used={Math.floor((usage?.dictation_seconds ?? 0) / 60)}
+            cap={limits?.max_dictation_minutes_per_month ?? 0}
+            unit=" min"
+          />
+          <Meter
+            label="Agent messages"
+            used={usage?.agent_steps ?? 0}
+            cap={limits?.max_agent_steps_per_month ?? 0}
+          />
 
-              {/* A Windows 95 progress bar: discrete blocks, not a smooth fill. */}
-              <div className="mt-2 win95-field flex h-5 items-center gap-[2px] p-[3px]">
-                {Array.from({ length: 28 }, (_, index) => (
-                  <span
-                    key={index}
-                    className="h-full flex-1"
-                    style={{
-                      background: index / 28 < fraction ? "#000080" : "transparent",
-                    }}
-                  />
-                ))}
-              </div>
-
-              <p className="mt-2 text-[11px] text-[#444]">
-                {usage?.request_count ?? 0} questions asked so far. Resets on the 1st.
-              </p>
-            </>
-          ) : (
-            <p className="text-[12px] leading-relaxed text-[#444]">
-              Nothing used yet this month.
-            </p>
-          )}
-
-          {limits && (
-            <dl className="mt-4 grid grid-cols-2 gap-x-4 gap-y-1.5 border-t border-[#808080] pt-3 text-[11px]">
-              <Row
-                label="Questions each month"
-                value={limits.max_turns_per_month > 0 ? String(limits.max_turns_per_month) : "No limit"}
-              />
-              <Row
-                label="Looking at your screen"
-                value={
-                  limits.max_screenshot_bytes >= 4_000_000
-                    ? "Full detail"
-                    : limits.max_screenshot_bytes > 0
-                      ? "Included"
-                      : "Not included"
-                }
-              />
-              <Row
-                label="How much it remembers"
-                value={
-                  limits.memory_entries_max >= 5000
-                    ? "The most"
-                    : limits.memory_entries_max >= 500
-                      ? "A lot"
-                      : "A little"
-                }
-              />
-            </dl>
-          )}
+          <p className="mt-4 border-t border-[#808080] pt-3 text-[11px] leading-relaxed text-[#444]">
+            Resets on the 1st. Answers on a model running on your own computer
+            are never counted, on any plan.
+          </p>
         </Window>
       </div>
 
@@ -182,7 +351,7 @@ export function Account() {
       <div className="mt-6">
         <Connections
           session={session}
-          isPro={(data?.status?.plan ?? "free") === "pro"}
+          isMax={currentPlanId === "max"}
           billingIsLive={data?.billingIsLive ?? false}
         />
       </div>
@@ -191,20 +360,88 @@ export function Account() {
 }
 
 /**
+ * One allowance, and how much of it is gone.
+ *
+ * A cap of zero means the plan does not count this at all, drawn as a full
+ * quiet bar rather than an empty one: an empty bar reads as "none included",
+ * which is the opposite of what it means.
+ *
+ * The bar is a Windows 95 progress control — discrete blocks rather than a
+ * smooth fill — because that is the chrome the rest of the site is built in.
+ * The blocks are flex children of a fixed-height row, so it is correct at any
+ * width without a media query.
+ */
+function Meter({
+  label,
+  used,
+  cap,
+  unit = "",
+}: {
+  label: string;
+  used: number;
+  cap: number;
+  unit?: string;
+}) {
+  const unlimited = cap <= 0;
+  const fraction = unlimited ? 1 : Math.min(1, used / cap);
+  const blocks = 24;
+
+  // Amber past three quarters, red once it is gone. The colour is the only
+  // warning before a refusal, so it has to arrive while there is still
+  // something left to do about it.
+  const fill = unlimited
+    ? "#9e9e9e"
+    : fraction >= 1
+      ? "#b71c1c"
+      : fraction >= 0.75
+        ? "#e65100"
+        : "#000080";
+
+  return (
+    <div className="mb-4 last:mb-0">
+      <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5">
+        <span className="text-[12px] text-black">{label}</span>
+        <span className="text-[11.5px] text-[#444]">
+          {unlimited ? "Unlimited" : `${used}${unit} of ${cap}${unit}`}
+        </span>
+      </div>
+
+      <div
+        className="win95-field mt-1.5 flex h-5 items-center gap-[2px] p-[3px]"
+        role="progressbar"
+        aria-label={label}
+        aria-valuenow={unlimited ? undefined : used}
+        aria-valuemin={0}
+        aria-valuemax={unlimited ? undefined : cap}
+        aria-valuetext={unlimited ? "Unlimited" : `${used}${unit} of ${cap}${unit}`}
+      >
+        {Array.from({ length: blocks }, (_, index) => (
+          <span
+            key={index}
+            className="h-full flex-1"
+            style={{ background: index / blocks < fraction ? fill : "transparent" }}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/**
  * Bring your own AI.
  *
- * Only shown on Pro when billing is live. While it is not, everyone is
+ * Only shown on Max when billing is live. While it is not, everyone is
  * effectively entitled to everything, so hiding it would hide a working feature
  * — and the gateway is the thing that actually decides, so this is only ever a
  * question of what to draw.
  */
 function Connections({
   session,
-  isPro,
+  isMax,
   billingIsLive,
 }: {
   session: import("@supabase/supabase-js").Session;
-  isPro: boolean;
+  isMax: boolean;
   billingIsLive: boolean;
 }) {
   const [connections, setConnections] = useState<Connection[]>([]);
@@ -213,7 +450,7 @@ function Connections({
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
-  const available = isPro || !billingIsLive;
+  const available = isMax || !billingIsLive;
 
   useEffect(() => {
     if (!available || !isGatewayConfigured) return;
@@ -224,9 +461,9 @@ function Connections({
     return (
       <Window title="Your own AI account">
         <p className="text-[12px] leading-relaxed text-[#444]">
-          Using your own OpenAI, Anthropic, Gemini, Mistral or OpenRouter account
-          is part of Pro. Your provider charges you for what the models cost; the
-          $29 is for the app.
+          Using your own OpenAI, Anthropic, Gemini or OpenRouter account is part
+          of Metis Max. Your provider charges you for what the models cost; the
+          {" "}{priceLabel(planById.max)} a month is for Metis.
         </p>
       </Window>
     );
@@ -355,15 +592,6 @@ async function signOut(navigate: ReturnType<typeof useNavigate>) {
   const supabase = await getSupabase();
   await supabase.auth.signOut();
   navigate("/", { replace: true });
-}
-
-function Row({ label, value }: { label: string; value: string }) {
-  return (
-    <>
-      <dt className="text-[#555]">{label}</dt>
-      <dd className="text-right font-bold text-black">{value}</dd>
-    </>
-  );
 }
 
 function Window({ title, children }: { title: string; children: React.ReactNode }) {

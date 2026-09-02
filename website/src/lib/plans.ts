@@ -5,14 +5,19 @@
  * itself, and the version a customer sees is whichever one you forgot. Every
  * card, table, FAQ answer and legal page reads its numbers from here.
  *
- * The important thing these plans do NOT do is limit the software. They limit
- * what Metis is willing to pay a provider for on your behalf. A person running
- * Metis on their own API key gets screen vision and every automation on the
- * free plan, signed out, forever, because those requests never reach Metis at
- * all. Copy anywhere on the site has to keep saying that.
+ * Keep this in step with `src/Metis.Core/Services/PlanCatalogue.cs` and with
+ * the `plan_limits` rows in Postgres. Those three exist separately because each
+ * has to work without the other two — the site renders before anyone signs in,
+ * the app runs offline, and the gateway is the only one that can actually
+ * enforce anything — but they describe the same ladder and must agree about it.
+ *
+ * The plans were once Free, Plus and Pro. The middle one is now Pro and the top
+ * one Max, so the word "pro" means different things either side of that change.
+ * Anything reading a stored plan value has to go through the app's ParsePlan
+ * rather than comparing strings here.
  */
 
-export type PlanId = "free" | "plus" | "pro";
+export type PlanId = "free" | "pro" | "max";
 
 export type Plan = {
   id: PlanId;
@@ -35,61 +40,63 @@ export const plans: Plan[] = [
     name: "Free",
     priceUsd: 0,
     cadence: "forever",
-    tagline: "Everything Metis does, with a small monthly allowance on us.",
-    aiSummary: "AI included — nothing to sign up for",
+    tagline: "Enough to find out whether Metis is for you.",
+    aiSummary: "AI included — nothing to set up",
     features: [
-      "The whole app: voice, on-screen drawing, and the bar at the top of your screen",
-      "120 questions a month, on us",
-      "Metis can look at your screen",
-      "Remembers what you are working on",
+      "50 talk messages a month",
+      "Plenty of dictation — 300 minutes a month",
+      "10 agent messages a month",
+      "The whole app: voice, drawing on screen, and the bar at the top",
+      "Metis can look at your screen when you ask",
     ],
-    ctaLabel: "Try Free",
+    ctaLabel: "Start free",
     featured: false,
-  },
-  {
-    id: "plus",
-    name: "Plus",
-    priceUsd: 14,
-    cadence: "per month",
-    tagline: "For using it every day, without counting.",
-    aiSummary: "A much larger allowance, and better models",
-    features: [
-      "Everything in Free",
-      "No monthly question limit",
-      "Sees your screen in full detail, not a scaled-down copy",
-      "Background agents that get on with a job while you work",
-      "Help with what is in your browser",
-      "Remembers far more of what you are working on",
-    ],
-    ctaLabel: "Upgrade to Plus",
-    featured: true,
   },
   {
     id: "pro",
     name: "Pro",
-    priceUsd: 29,
+    priceUsd: 20,
     cadence: "per month",
-    tagline: "Use your own AI account, and choose the model yourself.",
-    aiSummary: "Everything in Plus, plus your own AI account",
+    tagline: "For using it every day, without counting.",
+    aiSummary: "Talk and dictate as much as you like",
     features: [
-      "Everything in Plus",
-      "Connect your own OpenAI, Anthropic, Gemini, Mistral or OpenRouter account",
-      "Your provider charges you for the models, separately from this $29",
-      "Pick the exact model, question by question",
-      "Agents that can run for much longer, and hand work to each other",
+      "Everything in Free",
+      "Unlimited talk messages",
+      "Unlimited dictation",
+      "400 agent messages a month",
+      "Sees your screen in full detail, not a scaled-down copy",
+      "Help with what is in your browser",
+      "Remembers far more of what you are working on",
     ],
     ctaLabel: "Go Pro",
+    featured: true,
+  },
+  {
+    id: "max",
+    name: "Max",
+    priceUsd: 50,
+    cadence: "per month",
+    tagline: "Everything, and your own AI account when you want it.",
+    aiSummary: "Everything in Pro, plus your own AI account",
+    features: [
+      "Everything in Pro",
+      "2,000 agent messages a month",
+      "Connect your own OpenAI, Anthropic, Gemini or OpenRouter account",
+      "Pick the exact model, question by question",
+      "Agents that run for longer and hand work to each other",
+    ],
+    ctaLabel: "Go Max",
     featured: false,
   },
 ];
 
 export const planById: Record<PlanId, Plan> = {
   free: plans[0],
-  plus: plans[1],
-  pro: plans[2],
+  pro: plans[1],
+  max: plans[2],
 };
 
-/** "$0" and "$14" rather than "$0.00" — none of the plans have cents yet. */
+/** "$0" and "$20" rather than "$0.00" — none of the plans have cents. */
 export function priceLabel(plan: Plan): string {
   return `$${plan.priceUsd}`;
 }
@@ -109,44 +116,51 @@ export type ComparisonRow = {
 export const comparison: ComparisonRow[] = [
   {
     label: "Price",
-    values: { free: "$0", plus: "$14/mo", pro: "$29/mo" },
+    values: { free: "$0", pro: "$20/mo", max: "$50/mo" },
+  },
+  {
+    label: "Talk messages a month",
+    values: { free: "50", pro: "Unlimited", max: "Unlimited" },
+    note: "A talk message is one answer from Metis.",
+  },
+  {
+    label: "Dictation",
+    values: { free: "300 minutes", pro: "Unlimited", max: "Unlimited" },
+    note: "Speaking instead of typing. Dictation on your own computer is never counted.",
+  },
+  {
+    label: "Agent messages a month",
+    values: { free: "10", pro: "400", max: "2,000" },
+    note: "An agent gets on with a job while you work. Each step it takes is one message.",
   },
   {
     label: "The whole app — voice, drawing, everything",
-    values: { free: true, plus: true, pro: true },
-  },
-  {
-    label: "Questions included each month",
-    values: { free: "120", plus: "No limit", pro: "No limit" },
+    values: { free: true, pro: true, max: true },
   },
   {
     label: "Metis can look at your screen",
-    values: { free: "Yes", plus: "In full detail", pro: "In full detail" },
+    values: { free: "Yes", pro: "In full detail", max: "In full detail" },
   },
   {
     label: "Help with what is in your browser",
-    values: { free: false, plus: true, pro: true },
-  },
-  {
-    label: "Background agents",
-    values: { free: false, plus: true, pro: "Longer, and in teams" },
+    values: { free: false, pro: true, max: true },
   },
   {
     label: "How much it remembers",
-    values: { free: "A little", plus: "A lot", pro: "The most" },
+    values: { free: "A little", pro: "A lot", max: "The most" },
   },
   {
     label: "Use your own AI account",
-    values: { free: false, plus: false, pro: true },
-    note: "OpenAI, Anthropic, Gemini, Mistral or OpenRouter.",
+    values: { free: false, pro: false, max: true },
+    note: "OpenAI, Anthropic, Gemini or OpenRouter. Your provider bills you for the models, separately from the $50.",
   },
   {
     label: "Choose the model yourself",
-    values: { free: false, plus: false, pro: true },
+    values: { free: false, pro: false, max: true },
   },
   {
     label: "Run it with no internet at all",
-    values: { free: true, plus: true, pro: true },
-    note: "With a model on your own computer, nothing leaves the machine.",
+    values: { free: true, pro: true, max: true },
+    note: "With a model on your own computer, nothing leaves the machine and nothing is counted.",
   },
 ];

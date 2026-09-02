@@ -1,3 +1,4 @@
+import { planById, priceLabel } from "../lib/plans";
 import { Reveal } from "./Reveal";
 
 /**
@@ -19,7 +20,7 @@ const steps = [
   {
     n: "1",
     title: "You subscribe to Pro",
-    body: "$29 a month, paid to Metis. That buys the software — the app, the drawing, the background agents, the memory, and the account that ties them together.",
+    body: `${priceLabel(planById.max)} a month, paid to Metis. That buys the software — the app, the drawing, the background agents, the memory, and the account that ties them together.`,
   },
   {
     n: "2",

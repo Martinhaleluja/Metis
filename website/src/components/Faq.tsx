@@ -13,18 +13,20 @@ import { Reveal } from "./Reveal";
  * from the pricing cards.
  */
 
-const plus = plans[1];
-const pro = plans[2];
+const pro = plans[1];
+const max = plans[2];
 
 const faqs: { q: string; a: React.ReactNode }[] = [
   {
     q: "What am I paying for?",
     a: (
       <>
-        The app, and the AI that answers you. Plus is {priceLabel(plus)} a month
-        and takes the monthly question limit off. Pro is {priceLabel(pro)} a month
-        and also lets you connect an AI account of your own. Nothing is being
-        charged yet — Metis is still in early access.
+        The app, and the AI that answers you. Free includes 50 talk messages a
+        month, plenty of dictation and 10 agent messages. {pro.name} is{" "}
+        {priceLabel(pro)} a month and takes the limit off talking and dictating
+        entirely. {max.name} is {priceLabel(max)} a month and also lets you
+        connect an AI account of your own. Nothing is being charged yet — Metis
+        is still in early access.
       </>
     ),
   },
@@ -55,9 +57,9 @@ const faqs: { q: string; a: React.ReactNode }[] = [
     q: "Where does my screen go?",
     a: (
       <>
-        To whichever AI answers you. On Free and Plus that passes through Metis on
-        the way, because we are the ones paying for the answer; we keep a note of
-        what it cost and nothing else. With your own AI account, or a model running
+        To whichever AI answers you. On the AI included with your plan that
+        passes through Metis on the way, because we are the ones paying for the
+        answer; we keep a note of what it cost and nothing else. With your own AI account, or a model running
         on your own computer, it goes straight there and our servers are not
         involved. Either way, windows that mark themselves private — banking apps,
         password managers, view-once photos — are blacked out first, and password

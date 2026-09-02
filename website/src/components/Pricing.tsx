@@ -8,9 +8,13 @@ import { UpgradeButton } from "./UpgradeButton";
 /**
  * Three Win95 windows, one per plan.
  *
- * The line under the heading is the whole pricing argument and it is true: the
- * plans meter Metis's own AI bill, not the software. Anyone who plugs in their
- * own key is outside all of this.
+ * The line under the heading is the whole pricing argument and it has to stay
+ * true. The plans meter Metis's own AI bill rather than the software: every
+ * plan gets the whole app, and a model running on the user's own computer is
+ * outside all of it. Bringing a provider key of your own is outside the
+ * allowance too — Metis is not paying for those requests — but is itself part
+ * of Pro, so this section must never imply that a key gets a Free account the
+ * paid behaviour.
  */
 export function Pricing() {
   const billingIsLive = useBillingIsLive();
