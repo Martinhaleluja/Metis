@@ -429,6 +429,17 @@ public sealed class MetisRuntime : IDisposable
 
         Account = account with { Email = email, DisplayName = name, Avatar = avatar, Plan = plan };
         AccountChanged?.Invoke(this, Account);
+
+        // Written down, not merely held. Settings.UserEmail was read on every
+        // sign-in and written by nothing anywhere in the repository, so it was
+        // permanently empty and the fallback above could never do anything. The
+        // profile now persists with the session that produced it, which is what
+        // makes the sign-out below able to tell whose it was.
+        if (!string.Equals(Settings.UserEmail, email, StringComparison.Ordinal))
+        {
+            _ = SaveSettingsAsync(Settings with { UserEmail = email }, null, null);
+        }
+
         _log.Info($"Signed in as {Account.Role} on the {Account.Plan} plan.");
         SetStatus($"Signed in — {Account.Plan} plan");
     }
@@ -520,6 +531,69 @@ public sealed class MetisRuntime : IDisposable
         _accessToken is not null && DateTimeOffset.UtcNow < _accessTokenExpiresUtc.AddSeconds(-30)
             ? _accessToken
             : null;
+
+    /// <summary>
+    /// The account page's address, carrying a one-time sign-in when it can.
+    ///
+    /// "Manage on Web" was a plain link, and the desktop app and the website
+    /// keep completely separate Supabase sessions, so it opened whichever
+    /// account the browser was already signed in as. On a machine where more
+    /// than one account has ever been used that is routinely not the one Metis
+    /// is signed in to, and the user is shown a different plan and a different
+    /// address than the panel they clicked from -- which reads as Metis having
+    /// lost their account rather than as two sessions disagreeing.
+    ///
+    /// Falls back to the plain address on any failure. Landing on the site
+    /// signed in as nobody is a small annoyance; refusing to open it because
+    /// the handoff could not be minted would be a larger one.
+    /// </summary>
+    public async Task<string> ResolveAccountPageUrlAsync(CancellationToken cancellationToken = default)
+    {
+        var token = SessionAccessToken;
+        if (_disposed || token is null || !MetisBackend.HasGateway(Settings.MetisGatewayUrl))
+        {
+            return MetisBackend.AccountPageUrl;
+        }
+
+        try
+        {
+            using var http = new System.Net.Http.HttpClient { Timeout = TimeSpan.FromSeconds(20) };
+            using var request = new System.Net.Http.HttpRequestMessage(
+                System.Net.Http.HttpMethod.Post,
+                new Uri(new Uri(MetisBackend.ResolveGatewayUrl(Settings.MetisGatewayUrl)), "v1/web-session"));
+            request.Headers.Authorization =
+                new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
+
+            using var response = await WhileGatewayMayBeWakingAsync(
+                () => http.SendAsync(request, cancellationToken));
+
+            if (!response.IsSuccessStatusCode)
+            {
+                _log.Info($"No web handoff was issued ({(int)response.StatusCode}); opening the site signed out.");
+                return MetisBackend.AccountPageUrl;
+            }
+
+            using var document = System.Text.Json.JsonDocument.Parse(
+                await response.Content.ReadAsStringAsync(cancellationToken));
+
+            if (!document.RootElement.TryGetProperty("token", out var handoff)
+                || handoff.ValueKind != System.Text.Json.JsonValueKind.String)
+            {
+                return MetisBackend.AccountPageUrl;
+            }
+
+            // The token goes in the fragment rather than the query string, so it
+            // is never sent to the server in a request line and never lands in
+            // an access log or a Referer header. The page reads it and clears it.
+            return MetisBackend.AccountPageUrl
+                   + "#handoff=" + Uri.EscapeDataString(handoff.GetString() ?? string.Empty);
+        }
+        catch (Exception exception)
+        {
+            _log.Info($"No web handoff could be prepared ({exception.Message}); opening the site signed out.");
+            return MetisBackend.AccountPageUrl;
+        }
+    }
 
     /// <summary>
     /// Adopts what the gateway said about this account, and remembers it so a
@@ -629,6 +703,19 @@ public sealed class MetisRuntime : IDisposable
         // be rejected anyway — it names its user — but leaving it behind means
         // leaving a record of who used this machine, for no benefit at all.
         _entitlementCache.Clear();
+
+        // Neither must the profile, for exactly the same reason and one more:
+        // SignIn falls back to these when a session does not carry them, so a
+        // name and avatar left behind here were adopted by whoever signed in
+        // next. Sign in as one person after another and Metis showed you the
+        // first one's identity attached to the second one's account -- while
+        // the website, holding its own separate session, showed the truth. That
+        // is the "it showed another account" report, and it was Metis that had
+        // it wrong.
+        _ = SaveSettingsAsync(
+            Settings with { UserEmail = string.Empty, UserName = string.Empty, UserAvatar = string.Empty },
+            null,
+            null);
 
         AccountChanged?.Invoke(this, Account);
         EntitlementsChanged?.Invoke(this, null);

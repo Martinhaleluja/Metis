@@ -313,6 +313,72 @@ public sealed class SupabaseGateway(HttpClient http, GatewayConfig config, ILogg
     }
 
     /// <summary>
+    /// Mints a single-use sign-in token for a user who is already signed in to
+    /// the desktop app, so following "Manage on Web" lands them on the website
+    /// as the same person.
+    ///
+    /// The desktop app and the website hold two entirely separate Supabase
+    /// sessions. "Manage on Web" was a plain link, so it opened whatever account
+    /// the browser happened to be signed in as -- which, on a machine where more
+    /// than one account has ever been used, is routinely not the one the app is
+    /// using. The user then sees a different plan and a different address than
+    /// Metis just showed them and reasonably concludes one of the two is lying.
+    ///
+    /// The address is read from the user id in the caller's own verified token,
+    /// never from anything in the request. That is the whole of the security
+    /// story here: if this took an email as a parameter it would be an account
+    /// takeover endpoint, because minting a sign-in link is exactly what it does.
+    /// Supabase enforces the rest -- these tokens are single use and short lived
+    /// by its own rules, not by ours.
+    /// </summary>
+    public async Task<string?> CreateWebHandoffTokenAsync(string userId, CancellationToken cancellationToken)
+    {
+        var email = await LoadUserEmailAsync(userId, cancellationToken);
+        if (string.IsNullOrWhiteSpace(email))
+        {
+            return null;
+        }
+
+        using var request = new HttpRequestMessage(
+            HttpMethod.Post, $"{config.SupabaseUrl}/auth/v1/admin/generate_link")
+        {
+            Content = new StringContent(
+                JsonSerializer.Serialize(new { type = "magiclink", email }),
+                Encoding.UTF8,
+                "application/json")
+        };
+        Authorize(request);
+
+        try
+        {
+            using var response = await http.SendAsync(request, cancellationToken);
+            if (!response.IsSuccessStatusCode)
+            {
+                log.LogWarning(
+                    "Could not mint a web handoff token ({Status}).", (int)response.StatusCode);
+                return null;
+            }
+
+            using var document = JsonDocument.Parse(
+                await response.Content.ReadAsStringAsync(cancellationToken));
+
+            // The hashed token, not the action link. The link points at
+            // Supabase's own redirect flow; the hash is what verifyOtp takes,
+            // which lets the website establish the session itself without a
+            // round trip through a third page.
+            return document.RootElement.TryGetProperty("hashed_token", out var hashed)
+                   && hashed.ValueKind == JsonValueKind.String
+                ? hashed.GetString()
+                : null;
+        }
+        catch (Exception exception)
+        {
+            log.LogWarning(exception, "Could not mint a web handoff token.");
+            return null;
+        }
+    }
+
+    /// <summary>
     /// The address on a user's auth record, for prefilling a payment form.
     ///
     /// It is a convenience and never evidence. Which account a subscription

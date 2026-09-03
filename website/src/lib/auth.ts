@@ -32,9 +32,10 @@ export function getSupabase(): Promise<SupabaseClient> {
       auth: {
         persistSession: true,
         autoRefreshToken: true,
-        // The desktop app signs in with email and password, and this is the
-        // same account. Nothing here uses a magic link, so there is no fragment
-        // to pick out of the URL.
+        // Still false, and still deliberately. The handoff below reads its own
+        // fragment and calls verifyOtp directly, rather than letting the client
+        // consume anything it finds in the URL — so a link someone was sent
+        // cannot sign them in as somebody else just by being opened.
         detectSessionInUrl: false,
       },
     }),
@@ -79,6 +80,13 @@ export function useAuth(enabled = true): AuthState {
     let unsubscribe: (() => void) | undefined;
 
     void getSupabase().then(async (supabase) => {
+      // Before the session is read, not after. A handoff from the desktop app
+      // is an instruction about *which* account this page is for, so reading
+      // the existing session first would show the wrong one and then swap it
+      // underneath the reader.
+      await redeemDesktopHandoff();
+      if (cancelled) return;
+
       const { data } = await supabase.auth.getSession();
       if (cancelled) return;
 
@@ -133,4 +141,53 @@ export function readableAuthError(message: string): string {
   }
 
   return message;
+}
+
+
+/**
+ * Redeems a one-time sign-in handed over by the desktop app.
+ *
+ * Metis and this site keep entirely separate Supabase sessions. "Manage on Web"
+ * used to be a plain link, so it opened whichever account this browser was last
+ * signed in as — and on a shared or re-used machine that is routinely not the
+ * account Metis is signed in to. People saw a different plan and a different
+ * address than the app had just shown them, and concluded the two disagreed
+ * about who they were. They did.
+ *
+ * The token arrives in the fragment, which browsers do not send to the server:
+ * it stays out of access logs and out of `Referer`. It is spent immediately and
+ * stripped from the address bar either way, so a reload or a shared URL cannot
+ * replay it — and Supabase treats these as single-use regardless.
+ *
+ * Returns true when a session was established, so the caller can re-read it.
+ */
+export async function redeemDesktopHandoff(): Promise<boolean> {
+  const fragment = window.location.hash;
+  if (!fragment.includes("handoff=")) {
+    return false;
+  }
+
+  const token = new URLSearchParams(fragment.slice(1)).get("handoff");
+
+  // Cleared before the await, not after. Whatever happens next, the token must
+  // not survive in the address bar to be copied, shared or reloaded.
+  history.replaceState(null, "", window.location.pathname + window.location.search);
+
+  if (!token) {
+    return false;
+  }
+
+  try {
+    const supabase = await getSupabase();
+    const { error } = await supabase.auth.verifyOtp({
+      token_hash: token,
+      type: "magiclink",
+    });
+    return !error;
+  } catch {
+    // An expired or already-spent token is the ordinary case here, not an
+    // exceptional one: the page simply carries on showing the session it
+    // already had, or the signed-out state.
+    return false;
+  }
 }

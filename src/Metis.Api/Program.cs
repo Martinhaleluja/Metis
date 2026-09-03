@@ -202,12 +202,99 @@ if (config.PolarAccessToken is not null && config.SiteUrl is null)
         + "on the processor's confirmation page instead of being returned to their account.");
 }
 
+// Whether the key this gateway spends money with actually works.
+//
+// Every AI answer on every Free and Pro account goes through GOOGLE_API_KEY. If
+// it is expired, restricted to the wrong project, or out of quota, every single
+// turn fails -- and until this commit the only place that was visible was a
+// sentence on the user's screen that did not say what had gone wrong. Nothing
+// checked at boot, so a broken key looked exactly like a healthy deployment:
+// /health answered 200 and the service came up clean.
+//
+// One cheap request at startup, so the answer is in the deploy log rather than
+// in a support conversation. It never blocks startup: a gateway that cannot
+// reach Google right now may be perfectly able to ten seconds later, and
+// refusing to boot over it would turn a temporary fault into an outage.
+_ = Task.Run(async () =>
+{
+    var key = config.KeyFor("google");
+    if (key is null)
+    {
+        app.Logger.LogWarning(
+            "GOOGLE_API_KEY is not set. Every managed AI turn will be refused until it is.");
+        return;
+    }
+
+    try
+    {
+        using var probe = app.Services.GetRequiredService<IHttpClientFactory>().CreateClient();
+        probe.Timeout = TimeSpan.FromSeconds(20);
+
+        using var request = new HttpRequestMessage(
+            HttpMethod.Get, "https://generativelanguage.googleapis.com/v1beta/models");
+        request.Headers.Add("x-goog-api-key", key);
+
+        using var response = await probe.SendAsync(request);
+        if (response.IsSuccessStatusCode)
+        {
+            app.Logger.LogInformation("Startup check: GOOGLE_API_KEY is accepted by the provider.");
+            return;
+        }
+
+        var body = await response.Content.ReadAsStringAsync();
+        var (_, explanation) = ProviderFailures.Describe((int)response.StatusCode);
+        app.Logger.LogError(
+            "Startup check: GOOGLE_API_KEY was REFUSED with {Status}. Every managed AI turn will "
+            + "fail this way until it is fixed. Metis will tell users: \"{Explanation}\". "
+            + "Provider said: {Body}",
+            (int)response.StatusCode, explanation, ProviderFailures.Truncate(body, 600));
+    }
+    catch (Exception exception)
+    {
+        // Could not reach Google at all. Worth saying, but not worth alarming
+        // about: this is as likely to be a cold start as a real fault.
+        app.Logger.LogWarning(
+            exception, "Startup check: could not reach the AI provider to verify GOOGLE_API_KEY.");
+    }
+});
+
 // Liveness only. Deliberately says nothing about configuration: a health check
 // is reachable by anyone, so it must not become a way to learn which providers
 // are configured or which environment this is.
 app.MapGet("/health", () => Results.Ok(new { status = "ok" }));
 
 // ============================ Who is asking ============================
+
+// Hands the desktop app's identity to the browser, once.
+//
+// Metis and the website hold separate Supabase sessions, so "Manage on Web" --
+// a plain link until now -- opened whichever account the browser was already
+// signed in as. On a machine where more than one account has been used that is
+// routinely the wrong one, and the user sees a different plan and a different
+// address than the app just showed them.
+//
+// The token is minted for the address behind the caller's own verified token
+// and for no other, which is the only thing keeping this from being an account
+// takeover endpoint.
+app.MapPost("/v1/web-session", async (
+    HttpContext context,
+    SupabaseGateway supabase,
+    GatewayConfig gatewayConfig,
+    CancellationToken cancellationToken) =>
+{
+    var account = context.Account(gatewayConfig.Environment);
+    if (account is null)
+    {
+        return NoAccountRow();
+    }
+
+    var token = await supabase.CreateWebHandoffTokenAsync(account.UserId, cancellationToken);
+    return token is null
+        ? Problem(503, "handoff",
+            "Metis could not prepare a web sign-in just now. Open the site and sign in there.")
+        : Results.Ok(new { token });
+})
+.RequireAuthorization();
 
 app.MapGet("/v1/me", async (
     HttpContext context,
@@ -414,11 +501,19 @@ app.MapPost("/v1/assist", async (
 
         if (failure is not null)
         {
-            status = failure;
-            // The provider's own error text can name the account the key belongs
-            // to and the model it was refused for, so the caller gets the fact
-            // of the failure and nothing else.
-            return Problem(502, "provider", "The AI provider refused the request.");
+            var (failureStatus, providerBody) = ProviderFailures.Split(failure);
+            status = failureStatus;
+
+            // Logged here, and only here. The provider's own error text can name
+            // the Google project the key belongs to and sometimes the key's own
+            // prefix, so it goes to the gateway's log where an operator can read
+            // it -- never to the caller, who gets the classification instead.
+            log.LogError(
+                "Upstream provider refused a turn for model {Model}: {Status}. Provider said: {Body}",
+                model, failureStatus, providerBody);
+
+            var (kind, message) = ProviderFailures.Describe(ProviderFailures.StatusCode(failureStatus));
+            return Problem(502, kind, message);
         }
 
         (inputTokens, thoughtTokens, outputTokens) = report;
@@ -1021,9 +1116,12 @@ static async Task StreamTurnAsync(
     using var response = await http.SendAsync(upstream, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
     if (!response.IsSuccessStatusCode)
     {
-        onStatus($"provider_{(int)response.StatusCode}");
+        var upstreamStatus = (int)response.StatusCode;
+        onStatus($"provider_{upstreamStatus}");
+
+        var (kind, message) = ProviderFailures.Describe(upstreamStatus);
         await WriteFrameAsync(context, new AssistStreamFrame(
-            "error", Kind: "provider", Message: "The AI provider refused the request."), cancellationToken);
+            "error", Kind: kind, Message: message), cancellationToken);
         await WriteFrameAsync(context, new AssistStreamFrame("done"), cancellationToken);
         return;
     }
@@ -1116,7 +1214,11 @@ static async Task<(string? Text, (int Input, int Thought, int Output) Usage, str
 
     if (!response.IsSuccessStatusCode)
     {
-        return (null, (0, 0, 0), $"provider_{(int)response.StatusCode}");
+        // The status travels in the failure string so the caller can classify
+        // it, and the body travels with it so the caller can log the reason.
+        // Both used to be discarded here, which is why the one sentence that
+        // reached the user could not say anything.
+        return (null, (0, 0, 0), $"provider_{(int)response.StatusCode}|{ProviderFailures.Truncate(raw, 600)}");
     }
 
     using var document = JsonDocument.Parse(raw);

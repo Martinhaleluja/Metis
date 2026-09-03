@@ -223,9 +223,26 @@ public sealed class SupabaseAuthClient(HttpClient http)
             return null;
         }
 
-        var userId = root.TryGetProperty("user", out var user) && user.TryGetProperty("id", out var id)
+        var hasUser = root.TryGetProperty("user", out var user);
+        var userId = hasUser && user.TryGetProperty("id", out var id)
             ? id.GetString()
             : null;
+
+        // The address was in this response all along and was thrown away, so
+        // Account.Email was empty for every signed-in user and the account panel
+        // printed the literal word "Signed in" where the address belongs. The
+        // website, reading the same Supabase session through its own SDK, showed
+        // the real one -- which is what made the two look like different
+        // accounts when they were the same one.
+        var email = hasUser && user.TryGetProperty("email", out var address)
+            ? address.GetString() ?? string.Empty
+            : string.Empty;
+
+        // Supabase records confirmation as an instant, not a flag: the field is
+        // present and null until the address is confirmed.
+        var emailVerified = hasUser
+            && user.TryGetProperty("email_confirmed_at", out var confirmed)
+            && confirmed.ValueKind is not JsonValueKind.Null;
 
         // Supabase reports the lifetime as seconds from now rather than as an
         // instant. An hour is its own default and the safe assumption when the
@@ -244,7 +261,13 @@ public sealed class SupabaseAuthClient(HttpClient http)
             refresh.GetString(),
             userId is null
                 ? null
-                : new MetisAccount(userId, UserRole.User, PlanTier.Free, MetisEnvironment.Production),
+                : new MetisAccount(
+                    userId,
+                    UserRole.User,
+                    PlanTier.Free,
+                    MetisEnvironment.Production,
+                    EmailVerified: emailVerified,
+                    Email: email),
             Reachable: true,
             AccessTokenExpiresUtc: DateTimeOffset.UtcNow + lifetime);
     }

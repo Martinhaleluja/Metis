@@ -644,11 +644,18 @@ public partial class NotchSettings : UserControl
     /// nothing depends on it — the runtime asks again every fifteen minutes, and
     /// again whenever this page is opened.
     /// </summary>
-    private void OpenAccountPage()
+    private async void OpenAccountPage()
     {
+        // Asks the gateway for a one-time sign-in first, so the browser lands as
+        // the same account the app is signed in to rather than as whoever used
+        // this browser last. Falls back to the plain address by itself.
+        var url = _runtime is null
+            ? AccountPageUrl
+            : await _runtime.ResolveAccountPageUrlAsync();
+
         try
         {
-            Process.Start(new ProcessStartInfo(AccountPageUrl) { UseShellExecute = true });
+            Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
         }
         catch (Exception exception)
         {

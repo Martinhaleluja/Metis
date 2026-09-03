@@ -390,6 +390,18 @@ public sealed class MetisGatewayReasoningProvider : IReasoningProvider, IDisposa
                 message ?? "Metis's included AI is unavailable right now. Your own API key still works.",
                 (int)status),
 
+            // The gateway reached the model and the model said no. Which "no" it
+            // was arrives in the body's kind, and it matters: a spent Google
+            // quota is temporary, a rejected key is a fault on Metis's side that
+            // the user's own key can work around, and a withdrawn model is
+            // neither. All four used to arrive as one sentence with no
+            // information in it.
+            HttpStatusCode.BadGateway => ReasoningProviderSupport.Error(
+                ProviderId,
+                KindFor(kind),
+                message ?? "Metis's AI provider refused the request. Try again shortly.",
+                (int)status),
+
             _ => ReasoningProviderSupport.Error(
                 ProviderId,
                 ReasoningProviderErrorKind.ServiceUnavailable,
@@ -434,6 +446,25 @@ public sealed class MetisGatewayReasoningProvider : IReasoningProvider, IDisposa
         "quota" => ReasoningProviderErrorKind.QuotaOrRateLimit,
         "degraded" => ReasoningProviderErrorKind.ServiceUnavailable,
         "provider" => ReasoningProviderErrorKind.ServiceUnavailable,
+
+        // The four ways the model itself can refuse, as the gateway classifies
+        // them. All map to ServiceUnavailable rather than to a plan or quota
+        // kind, and that distinction is load-bearing: a plan refusal must never
+        // fall back to the user's own key, because Metis running out of its own
+        // allowance is not a reason to start spending someone else's money. A
+        // provider fault is the opposite case -- Metis's key being rejected, or
+        // Google being down, is exactly when the user's own key should be
+        // allowed to answer instead.
+        "provider_key" => ReasoningProviderErrorKind.ServiceUnavailable,
+        "provider_model" => ReasoningProviderErrorKind.ServiceUnavailable,
+        "provider_down" => ReasoningProviderErrorKind.ServiceUnavailable,
+        "provider_request" => ReasoningProviderErrorKind.InvalidRequest,
+
+        // Busy is a rate limit on Metis's key, not on the user's allowance. It
+        // is temporary and the right response is to wait, so it is named as
+        // such rather than being reported as a service that is unavailable.
+        "provider_busy" => ReasoningProviderErrorKind.QuotaOrRateLimit,
+
         _ => ReasoningProviderErrorKind.Unknown
     };
 
