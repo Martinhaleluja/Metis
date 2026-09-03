@@ -541,7 +541,10 @@ public partial class App : System.Windows.Application
                 // at start-up has to carry it forward or the plan the user is
                 // paying for silently does nothing until they sign in again.
                 _runtime.SetSession(result.AccessToken, result.AccessTokenExpiresUtc);
-                _runtime.SignIn(account ?? result.Account);
+                // The row decides the plan; the session supplies the address. Merged,
+        // because LoadAccountAsync reads only role, plan and email_verified, so
+        // preferring it outright threw the address away on every sign-in.
+        _runtime.SignIn((account ?? result.Account).WithIdentityFrom(result.Account));
 
                 // A plan cached on a previous run, so someone who is offline is
                 // shown what they bought rather than the free plan. Refreshed

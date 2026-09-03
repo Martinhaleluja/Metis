@@ -220,7 +220,10 @@ public partial class NotchAuth : UserControl
             Entitlements.ParseEnvironment(_runtime!.Settings.MetisEnvironment));
 
         _runtime.SetSession(result.AccessToken, result.AccessTokenExpiresUtc);
-        _runtime.SignIn(account ?? result.Account);
+        // The row decides the plan; the session supplies the address. Merged,
+        // because LoadAccountAsync reads only role, plan and email_verified, so
+        // preferring it outright threw the address away on every sign-in.
+        _runtime.SignIn((account ?? result.Account).WithIdentityFrom(result.Account));
 
         // What the plan actually includes comes from the gateway rather than
         // from anything this panel decides. Not awaited: signing in must not

@@ -430,17 +430,25 @@ public sealed class MetisRuntime : IDisposable
         Account = account with { Email = email, DisplayName = name, Avatar = avatar, Plan = plan };
         AccountChanged?.Invoke(this, Account);
 
-        // Written down, not merely held. Settings.UserEmail was read on every
-        // sign-in and written by nothing anywhere in the repository, so it was
-        // permanently empty and the fallback above could never do anything. The
-        // profile now persists with the session that produced it, which is what
-        // makes the sign-out below able to tell whose it was.
-        if (!string.Equals(Settings.UserEmail, email, StringComparison.Ordinal))
-        {
-            _ = SaveSettingsAsync(Settings with { UserEmail = email }, null, null);
-        }
+        // Deliberately not written to settings.json.
+        //
+        // It was, briefly, and it did not survive: SaveSettingsAsync assigns
+        // Settings only after its file write completes, so the sign-in
+        // aftermath -- which saves again a few milliseconds later from a
+        // snapshot taken before that assignment -- put the empty value straight
+        // back. That race is real and general, but the address does not need to
+        // win it: WithIdentityFrom now carries it from the session on every
+        // sign-in path, startup refresh included, so Account.Email is populated
+        // without a file being involved at all. A cached copy could only ever
+        // be staler than the session it came from.
 
-        _log.Info($"Signed in as {Account.Role} on the {Account.Plan} plan.");
+        // Says whether an address came with the session, never what it is. The
+        // address being silently absent is precisely the fault this line exists
+        // to make visible, and it went unnoticed for a long time because
+        // nothing ever mentioned it either way.
+        _log.Info(
+            $"Signed in as {Account.Role} on the {Account.Plan} plan " +
+            $"(address {(string.IsNullOrWhiteSpace(Account.Email) ? "absent" : "present")}).");
         SetStatus($"Signed in — {Account.Plan} plan");
     }
 

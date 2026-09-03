@@ -171,6 +171,29 @@ public sealed record MetisAccount(
     string Avatar = "🦊")
 {
     /// <summary>
+    /// This account's authority over what was bought, carrying the identity
+    /// from the session that proved who is asking.
+    ///
+    /// Two different requests answer two different halves of "who is this".
+    /// The account_status row is the only authority on role, plan and whether
+    /// the address is confirmed; the sign-in response is the only place the
+    /// address itself appears. The row was winning outright, so the address was
+    /// dropped on every sign-in and Account.Email was empty for everybody --
+    /// which is why the account panel printed "Signed in" where an address
+    /// belongs while the website, reading the same session, showed the real
+    /// one, and the two looked like different accounts.
+    /// </summary>
+    public MetisAccount WithIdentityFrom(MetisAccount? session) =>
+        session is null
+            ? this
+            : this with
+            {
+                Email = string.IsNullOrWhiteSpace(Email) ? session.Email : Email,
+                DisplayName = string.IsNullOrWhiteSpace(DisplayName) ? session.DisplayName : DisplayName,
+                Avatar = string.IsNullOrWhiteSpace(Avatar) ? session.Avatar : Avatar
+            };
+
+    /// <summary>
     /// Nobody signed in. Signed-out Metis still runs, so this has to be a real
     /// value rather than a null that every caller has to remember to handle.
     /// </summary>
