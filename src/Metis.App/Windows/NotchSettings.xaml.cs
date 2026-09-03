@@ -1034,6 +1034,32 @@ public partial class NotchSettings : UserControl
     // ============================= Companion =============================
 
     private string _companionColour = "Sapphire";
+    private string _companionCharacter = CompanionShapes.DefaultName;
+
+    /// <summary>
+    /// A character as the picker needs it: the geometry already parsed.
+    ///
+    /// The catalogue stores each form as path-mark-up text because it is shared
+    /// with code that has no WPF in it. Parsing here rather than binding the
+    /// string straight to <c>Path.Data</c> keeps that conversion somewhere it
+    /// can fail loudly, instead of silently rendering nothing.
+    /// </summary>
+    private sealed record CompanionCharacterItem(
+        string Name,
+        string Description,
+        System.Windows.Media.Geometry Figure)
+    {
+        /// <summary>
+        /// What a screen reader says when it reaches this tile.
+        ///
+        /// The button's content is a silhouette, so without this the only thing
+        /// to read out is the record's compiler-generated field dump -- which
+        /// would include the parsed path geometry. The name and the sentence
+        /// beneath it are what a sighted user is choosing between, so they are
+        /// what gets read.
+        /// </summary>
+        public override string ToString() => $"{Name}. {Description}";
+    }
 
     private void RefreshCompanion()
     {
@@ -1054,12 +1080,21 @@ public partial class NotchSettings : UserControl
 
             CompanionColours.ItemsSource = CompanionPalette.All;
 
+            _companionCharacter = CompanionShapes.Normalize(settings.CompanionShape);
+            CompanionCharacters.ItemsSource = CompanionShapes.All
+                .Select(shape => new CompanionCharacterItem(
+                    shape.Name,
+                    shape.Description,
+                    System.Windows.Media.Geometry.Parse(shape.Geometry)))
+                .ToList();
+
             // After layout, not now. An ItemsControl generates its containers
             // during the arrange that follows this method, so walking the visual
             // tree here finds no buttons at all and the ring around the chosen
             // colour is simply never drawn — which looks exactly like a picker
             // that does not respond to being clicked.
             Dispatcher.InvokeAsync(HighlightCompanionColour, DispatcherPriority.Loaded);
+            Dispatcher.InvokeAsync(HighlightCompanionCharacter, DispatcherPriority.Loaded);
 
             SaveStatus.Text = string.Empty;
         }
@@ -1123,6 +1158,28 @@ public partial class NotchSettings : UserControl
 
         _companionColour = name;
         HighlightCompanionColour();
+    }
+
+    private void HighlightCompanionCharacter()
+    {
+        foreach (var button in Descendants<Button>(CompanionCharacters))
+        {
+            var isSelected = button.Tag as string == _companionCharacter;
+            button.BorderBrush = isSelected
+                ? (System.Windows.Media.Brush)FindResource("AccentBrush")
+                : (System.Windows.Media.Brush)FindResource("NotchChipEdgeBrush");
+            button.BorderThickness = new Thickness(isSelected ? 2.5 : 1.5);
+        }
+
+        CompanionCharacterName.Text = CompanionShapes.Resolve(_companionCharacter).Description;
+    }
+
+    private void CompanionCharacter_OnClick(object sender, RoutedEventArgs e)
+    {
+        if (sender is not Button { Tag: string name }) return;
+
+        _companionCharacter = name;
+        HighlightCompanionCharacter();
     }
 
     private static IEnumerable<T> Descendants<T>(DependencyObject root)
@@ -1471,6 +1528,7 @@ public partial class NotchSettings : UserControl
 
                 CompanionAlwaysVisible = _section == "Companion" ? CompanionAlwaysCheck.IsChecked == true : current.CompanionAlwaysVisible,
                 CompanionColor = _section == "Companion" ? _companionColour : current.CompanionColor,
+                CompanionShape = _section == "Companion" ? _companionCharacter : current.CompanionShape,
                 CompanionSize = _section == "Companion" ? (int)CompanionSizeSlider.Value : current.CompanionSize,
                 CursorDistance = _section == "Companion" ? (int)CursorDistanceSlider.Value : current.CursorDistance,
 

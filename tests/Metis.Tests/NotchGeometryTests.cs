@@ -133,4 +133,73 @@ public sealed class NotchGeometryTests
     [InlineData(300, 200)]
     public void A_real_height_change_is(double from, double to) =>
         Assert.True(NotchGeometry.WorthAnimating(from, to));
+
+    // ------------------------------- Width ----------------------------------
+
+    /// <summary>
+    /// The horizontal axis had no rule at all until now. Every width in the
+    /// notch was a constant picked against one monitor, and the host window's
+    /// width came from a chain of per-page tests that simply omitted first run —
+    /// so the 640-point welcome wizard was drawn inside a 560-point window and
+    /// lost forty points off each side. That is the "most UI elements are cut
+    /// out" report, and it is only fixable by deriving the window from the same
+    /// number the page is given.
+    /// </summary>
+    [Theory]
+    [InlineData(1920, 640)]
+    [InlineData(2560, 640)]
+    [InlineData(1366, 640)]
+    public void A_page_that_fits_gets_the_width_it_asked_for(double screen, double wanted) =>
+        Assert.Equal(wanted, NotchGeometry.BodyWidth(wanted, screen));
+
+    /// <summary>
+    /// A page too wide for the screen is narrowed, not clipped. A narrow panel
+    /// still reads; one whose right edge is past the monitor does not.
+    /// </summary>
+    [Theory]
+    [InlineData(700, 640)]
+    [InlineData(1920, 4000)]
+    [InlineData(1024, 1200)]
+    public void A_page_wider_than_the_screen_is_brought_back_onto_it(double screen, double wanted)
+    {
+        var width = NotchGeometry.BodyWidth(wanted, screen);
+
+        Assert.True(width < wanted, $"{wanted} should not have survived a {screen}-wide screen.");
+        Assert.True(NotchGeometry.WindowWidth(width, screen) <= screen);
+    }
+
+    /// <summary>
+    /// The window is always at least as wide as the body it contains. A WPF
+    /// window clips its content rather than scrolling it, so a window narrower
+    /// than its body loses the difference silently.
+    /// </summary>
+    [Theory]
+    [InlineData(1920)]
+    [InlineData(1366)]
+    [InlineData(1024)]
+    [InlineData(800)]
+    public void The_window_always_contains_the_body(double screen)
+    {
+        foreach (var wanted in new double[] { 104, 200, 430, 540, 640, 900, 4000 })
+        {
+            var body = NotchGeometry.BodyWidth(wanted, screen);
+            var window = NotchGeometry.WindowWidth(body, screen);
+
+            Assert.True(
+                window >= body,
+                $"A {body}-wide body needs at least that much window, got {window} on a {screen}-wide screen.");
+            Assert.True(window <= screen, $"The window ran off a {screen}-wide screen at {window}.");
+        }
+    }
+
+    /// <summary>
+    /// The resting pill is the floor. Nothing may make the notch narrower than
+    /// the thing the user grabs to pull it down.
+    /// </summary>
+    [Theory]
+    [InlineData(0)]
+    [InlineData(40)]
+    [InlineData(-100)]
+    public void The_notch_never_narrows_past_the_resting_pill(double wanted) =>
+        Assert.Equal(NotchGeometry.TuckedWidth, NotchGeometry.BodyWidth(wanted, 1920));
 }

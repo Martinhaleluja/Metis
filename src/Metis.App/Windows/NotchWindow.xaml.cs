@@ -136,6 +136,25 @@ public partial class NotchWindow : Window
     /// <summary>The height the body is currently animating towards.</summary>
     private double _bodyHeightTarget = ExpandedHeight;
 
+    /// <summary>
+    /// The width the body is currently animating towards.
+    ///
+    /// The counterpart to <see cref="_bodyHeightTarget"/>, and new: the notch
+    /// tracked what it was growing to vertically and not horizontally, which is
+    /// why the window's width had to be guessed from a chain of per-page tests
+    /// instead of simply being asked.
+    /// </summary>
+    private double _bodyWidthTarget = TuckedWidth;
+
+    /// <summary>
+    /// Pulls the host window in after the body has finished narrowing.
+    ///
+    /// One timer, restarted rather than replaced, because the notch re-measures
+    /// on hover, on leave and on every page change: a fresh timer per call would
+    /// leave a queue of them all trying to resize the same window at once.
+    /// </summary>
+    private readonly DispatcherTimer _widthSettle = new();
+
     /// <summary>Raised when the user pulls the notch down or clicks it.</summary>
     public event EventHandler? OpenRequested;
 
@@ -282,7 +301,7 @@ public partial class NotchWindow : Window
         var target = ChatTargetHeight();
         GrowWindowFor(target);
 
-        Animate(NotchBody, WidthProperty, ChatWidth, Shape,
+        AnimateBodyWidth(ChatWidth, Shape,
             new BackEase { Amplitude = 0.16, EasingMode = EasingMode.EaseOut });
         AnimateBodyHeight(target);
         Animate(NotchDrop, TranslateTransform.YProperty, 0, Shape,
@@ -449,7 +468,7 @@ public partial class NotchWindow : Window
         var target = AuthTargetHeight();
         GrowWindowFor(target);
 
-        Animate(NotchBody, WidthProperty, AuthWidth, Shape,
+        AnimateBodyWidth(AuthWidth, Shape,
             new BackEase { Amplitude = 0.16, EasingMode = EasingMode.EaseOut });
         AnimateBodyHeight(target);
         Animate(NotchDrop, TranslateTransform.YProperty, 0, Shape,
@@ -492,7 +511,7 @@ public partial class NotchWindow : Window
         // Back to the resting width as well as the resting height. The chat
         // never has to do this because it closes to the same width it opened
         // from; the auth panel does not.
-        Animate(NotchBody, WidthProperty, TuckedWidth, Shape,
+        AnimateBodyWidth(TuckedWidth, Shape,
             new CubicEase { EasingMode = EasingMode.EaseOut });
         AnimateBodyHeight(ExpandedHeight);
         Tuck();
@@ -673,7 +692,7 @@ public partial class NotchWindow : Window
         var target = AgentDrawerTargetHeight();
         GrowWindowFor(target);
 
-        Animate(NotchBody, WidthProperty, AgentDrawerWidth, Shape,
+        AnimateBodyWidth(AgentDrawerWidth, Shape,
             new BackEase { Amplitude = 0.16, EasingMode = EasingMode.EaseOut });
         AnimateBodyHeight(target);
         Animate(NotchDrop, TranslateTransform.YProperty, 0, Shape,
@@ -749,7 +768,7 @@ public partial class NotchWindow : Window
         var target = SettingsTargetHeight();
         GrowWindowFor(target);
 
-        Animate(NotchBody, WidthProperty, SettingsWidth, Shape,
+        AnimateBodyWidth(SettingsWidth, Shape,
             new BackEase { Amplitude = 0.16, EasingMode = EasingMode.EaseOut });
         AnimateBodyHeight(target);
         Animate(NotchDrop, TranslateTransform.YProperty, 0, Shape,
@@ -809,7 +828,7 @@ public partial class NotchWindow : Window
         var target = WelcomeTargetHeight();
         GrowWindowFor(target);
 
-        Animate(NotchBody, WidthProperty, WelcomeWidth, Shape,
+        AnimateBodyWidth(WelcomeWidth, Shape,
             new BackEase { Amplitude = 0.16, EasingMode = EasingMode.EaseOut });
         AnimateBodyHeight(target);
         Animate(NotchDrop, TranslateTransform.YProperty, 0, Shape,
@@ -922,7 +941,7 @@ public partial class NotchWindow : Window
 
         SettingsHost.BeginAnimation(OpacityProperty, fade);
 
-        Animate(NotchBody, WidthProperty, TuckedWidth, Shape,
+        AnimateBodyWidth(TuckedWidth, Shape,
             new CubicEase { EasingMode = EasingMode.EaseOut });
         AnimateBodyHeight(ExpandedHeight);
         Tuck();
@@ -1034,7 +1053,7 @@ public partial class NotchWindow : Window
 
         AgentDrawerHost.BeginAnimation(OpacityProperty, fade);
 
-        Animate(NotchBody, WidthProperty, TuckedWidth, Shape,
+        AnimateBodyWidth(TuckedWidth, Shape,
             new CubicEase { EasingMode = EasingMode.EaseOut });
         AnimateBodyHeight(ExpandedHeight);
         Tuck();
@@ -1163,7 +1182,7 @@ public partial class NotchWindow : Window
         var target = SpawnAgentTargetHeight();
         GrowWindowFor(target);
 
-        Animate(NotchBody, WidthProperty, SpawnAgentWidth, Shape,
+        AnimateBodyWidth(SpawnAgentWidth, Shape,
             new BackEase { Amplitude = 0.16, EasingMode = EasingMode.EaseOut });
         AnimateBodyHeight(target);
         Animate(NotchDrop, TranslateTransform.YProperty, 0, Shape,
@@ -1208,7 +1227,7 @@ public partial class NotchWindow : Window
 
         SpawnAgentHost.BeginAnimation(OpacityProperty, fade);
 
-        Animate(NotchBody, WidthProperty, TuckedWidth, Shape,
+        AnimateBodyWidth(TuckedWidth, Shape,
             new CubicEase { EasingMode = EasingMode.EaseOut });
         AnimateBodyHeight(ExpandedHeight);
         Tuck();
@@ -1359,6 +1378,51 @@ public partial class NotchWindow : Window
     }
 
     /// <summary>
+    /// The single way the notch's width ever changes.
+    ///
+    /// Every page used to animate <c>NotchBody.Width</c> to its own constant and
+    /// separately hope the host window had been made wide enough by a chain of
+    /// tests elsewhere. First run was missing from that chain, so its wizard was
+    /// drawn forty pixels wider than the window containing it and lost the
+    /// difference off both sides. Widening the window here, from the same number
+    /// the body is given, removes the opportunity for the two to disagree.
+    ///
+    /// The width is clamped to the screen for the same reason the height is: a
+    /// page narrowed to fit still reads, and one whose right edge is past the
+    /// monitor does not.
+    /// </summary>
+    private void AnimateBodyWidth(
+        double to,
+        Duration duration,
+        IEasingFunction? easing,
+        double beginAfter = 0)
+    {
+        var target = NotchGeometry.BodyWidth(to, SystemParameters.PrimaryScreenWidth);
+        var wasWider = target < _bodyWidthTarget;
+        _bodyWidthTarget = target;
+
+        if (!wasWider)
+        {
+            // Growing: widen the window first. A WPF window clips its content
+            // rather than scrolling it, so anything past the edge while the body
+            // is still growing is simply not drawn.
+            PositionOverTopEdge();
+            Animate(NotchBody, WidthProperty, target, duration, easing, beginAfter);
+            return;
+        }
+
+        // Narrowing: the body is still wide for the length of the animation, so
+        // the window has to stay wide with it and come in afterwards. Pulling it
+        // in now would cut the motion off at the new edge.
+        Animate(NotchBody, WidthProperty, target, duration, easing, beginAfter);
+
+        _widthSettle.Stop();
+        _widthSettle.Interval = duration.TimeSpan
+            + TimeSpan.FromMilliseconds(beginAfter + 120);
+        _widthSettle.Start();
+    }
+
+    /// <summary>
     /// Makes the host window big enough before the notch grows into it. A
     /// window cannot clip a little and show the rest: content past its edge is
     /// simply gone, so this always runs ahead of the animation.
@@ -1390,10 +1454,11 @@ public partial class NotchWindow : Window
             {
                 settle.Stop();
                 Height = Math.Max(PillWindowHeight, _bodyHeightTarget + WindowSlack);
-                if (!IsChatOpen)
-                {
-                    PositionOverTopEdge();
-                }
+
+                // Width too. It used to be left at whatever the widest page had
+                // needed, which kept an invisible sheet across the top of the
+                // screen after the notch had folded away.
+                PositionOverTopEdge();
             }
             catch
             {
@@ -1452,7 +1517,7 @@ public partial class NotchWindow : Window
 
         // Wide enough for six controls, and it stays fully out so the tools are
         // reachable without hunting for the notch.
-        Animate(NotchBody, WidthProperty, ToolbarWidth, Shape, new BackEase { Amplitude = 0.2, EasingMode = EasingMode.EaseOut });
+        AnimateBodyWidth(ToolbarWidth, Shape, new BackEase { Amplitude = 0.2, EasingMode = EasingMode.EaseOut });
         AnimateBodyHeight(ExpandedHeight);
         Animate(NotchDrop, TranslateTransform.YProperty, 0, Shape, new CubicEase { EasingMode = EasingMode.EaseOut });
 
@@ -1822,6 +1887,20 @@ public partial class NotchWindow : Window
     {
         InitializeComponent();
 
+        _widthSettle.Tick += (_, _) =>
+        {
+            try
+            {
+                _widthSettle.Stop();
+                PositionOverTopEdge();
+            }
+            catch
+            {
+                // Resizing can throw while the window is closing. A notch that
+                // is slightly too wide is not worth taking the app down for.
+            }
+        };
+
         _retractTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(2.2) };
         _retractTimer.Tick += (_, _) =>
         {
@@ -1933,7 +2012,7 @@ public partial class NotchWindow : Window
         var maxBound = Math.Max(minBound, Width - 24);
         var target = Math.Clamp(NotchContent.DesiredSize.Width + HorizontalPadding, minBound, maxBound);
 
-        Animate(NotchBody, WidthProperty, target, Shape, new BackEase { Amplitude = 0.22, EasingMode = EasingMode.EaseOut });
+        AnimateBodyWidth(target, Shape, new BackEase { Amplitude = 0.22, EasingMode = EasingMode.EaseOut });
         AnimateBodyHeight(ExpandedHeight);
         Animate(NotchDrop, TranslateTransform.YProperty, 0, Shape, new CubicEase { EasingMode = EasingMode.EaseOut });
         Animate(NotchContent, OpacityProperty, 1, Fade, null, beginAfter: _isShown ? 0 : 120);
@@ -1965,7 +2044,7 @@ public partial class NotchWindow : Window
 
         Animate(NotchContent, OpacityProperty, 0, Fade, null);
         Animate(Grabber, OpacityProperty, 1, Fade, null, beginAfter: 120);
-        Animate(NotchBody, WidthProperty, TuckedWidth, Shape,
+        AnimateBodyWidth(TuckedWidth, Shape,
             new CubicEase { EasingMode = EasingMode.EaseInOut }, beginAfter: 100);
         Animate(NotchDrop, TranslateTransform.YProperty, _hovered ? -8 : -TuckedHiddenAmount, Shape,
             new CubicEase { EasingMode = EasingMode.EaseInOut }, beginAfter: 100);
@@ -1992,7 +2071,7 @@ public partial class NotchWindow : Window
             // Peek further out on hover so the notch invites the pull and displays buttons/dots
             var activeCount = _runtime?.AgentTasks?.GetActiveTasks().Count ?? 0;
             var hoverWidth = activeCount > 0 ? 250 : 200;
-            Animate(NotchBody, WidthProperty, hoverWidth, Shape, new CubicEase { EasingMode = EasingMode.EaseOut });
+            AnimateBodyWidth(hoverWidth, Shape, new CubicEase { EasingMode = EasingMode.EaseOut });
             Animate(NotchDrop, TranslateTransform.YProperty, -4, Shape, new CubicEase { EasingMode = EasingMode.EaseOut });
         }
     }
@@ -2235,12 +2314,12 @@ public partial class NotchWindow : Window
         // runtime, so this is now good manners rather than a workaround — but a
         // window no bigger than it needs to be is still the right shape for
         // something that lives permanently on top of everything else.
-        Width = Math.Min(
-            IsSettingsOpen ? SettingsWidth + WindowSlack
-            : IsChatOpen ? ChatWindowWidth
-            : IsAuthOpen ? AuthWindowWidth
-            : PillWindowWidth,
-            primary);
+        // Derived from the width the body is actually going to, rather than
+        // from a chain of per-page tests. The chain omitted first run, so the
+        // 640px welcome wizard was drawn inside a 560px window and lost forty
+        // pixels off each side -- the "most UI elements are cut out" report.
+        // There is no chain left to forget a page from now.
+        Width = NotchGeometry.WindowWidth(_bodyWidthTarget, primary);
         Left = origin.X + ((primary - Width) / 2);
         Top = origin.Y;
     }

@@ -50,10 +50,14 @@ public sealed record CompanionShapeOption(
 /// </summary>
 public static class CompanionShapes
 {
-    // A pointer by default: Metis teaches by pointing things out, and a cursor
-    // reads as a second hand on the screen guiding you, the way a person would.
-    // The blob is still there for anyone who prefers it.
-    public const string DefaultName = "Cursor";
+    // The blob by default. The cursor was the default on the argument that a
+    // second pointer reads as a hand guiding you, but in use it does the
+    // opposite: a shape identical to the thing the user is already moving is
+    // read as their own cursor having gone wrong, and the companion stops
+    // registering as a character at all. The blob is unmistakably Metis, which
+    // is what a companion has to be before it can point at anything. The
+    // pointer is still there for anyone who prefers it.
+    public const string DefaultName = "Blob";
 
     public static IReadOnlyList<CompanionShapeOption> All { get; } =
     [

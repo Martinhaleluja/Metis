@@ -512,6 +512,14 @@ public partial class CompanionWindow : Window
         ApplyCompanionShape(CompanionShapes.Resolve(settings.CompanionShape));
         CompanionHost.Width = settings.CompanionSize;
         CompanionHost.Height = settings.CompanionSize;
+
+        // Appearance was applied here and presence was not, so "keep the
+        // companion on screen all the time" did nothing until something else
+        // happened to change the assistant's state -- which, on an idle machine,
+        // could be a long time. Saving a setting and watching nothing happen
+        // reads as a switch that does not work, and the user cannot tell the
+        // difference between a slow setting and a broken one.
+        ApplyPresence(immediately: true);
     }
 
     /// <summary>

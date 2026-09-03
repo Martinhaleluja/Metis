@@ -136,6 +136,63 @@ public static class NotchGeometry
     }
 
     /// <summary>
+    /// The narrowest the notch ever is: the resting pill.
+    /// </summary>
+    public const double TuckedWidth = 104;
+
+    /// <summary>
+    /// The gap between the body and the host window on the horizontal axis.
+    ///
+    /// Smaller than <see cref="WindowSlack"/> because there is no drop shadow
+    /// to clear at the sides, only the one-pixel border and the rounded corner.
+    /// </summary>
+    public const double HorizontalSlack = 24;
+
+    /// <summary>
+    /// How much of the usable width the notch may take.
+    ///
+    /// Higher than the vertical share because width is not what covers the
+    /// thing being asked about — a panel that reaches most of the way across a
+    /// narrow screen is still a strip hanging from the top edge, while one held
+    /// to four fifths of a 1024-wide laptop has to wrap its text twice as often
+    /// for no benefit.
+    /// </summary>
+    public const double WidthShare = 0.92;
+
+    /// <summary>
+    /// The widest the body may be on a screen this wide.
+    ///
+    /// The horizontal axis had no rule of any kind before this. Every width in
+    /// the notch was a constant chosen against one monitor — 640 for settings,
+    /// 640 for first run, 560 for the window that was supposed to contain it —
+    /// and the window's width was picked from a chain of per-page tests that
+    /// simply omitted first run, so the wizard rendered forty pixels wider than
+    /// the window drawing it and lost that much off each side. A measured rule
+    /// removes the chain, and with it the possibility of forgetting a page.
+    /// </summary>
+    public static double MaxBodyWidth(double workAreaWidth) =>
+        Math.Max(TuckedWidth, (workAreaWidth * WidthShare) - HorizontalSlack);
+
+    /// <summary>
+    /// How wide the body should be for a page that wants
+    /// <paramref name="desiredWidth"/>.
+    ///
+    /// Never narrower than the resting pill, never wider than the screen
+    /// allows. A page asking for more than fits is narrowed rather than
+    /// clipped, because a panel that is too narrow still reads, and one whose
+    /// right-hand edge is off the screen does not.
+    /// </summary>
+    public static double BodyWidth(double desiredWidth, double workAreaWidth) =>
+        Math.Clamp(desiredWidth, TuckedWidth, MaxBodyWidth(workAreaWidth));
+
+    /// <summary>
+    /// How wide the host window must be to contain a body of this width,
+    /// never wider than the screen it sits on.
+    /// </summary>
+    public static double WindowWidth(double bodyWidth, double workAreaWidth) =>
+        Math.Min(bodyWidth + HorizontalSlack, workAreaWidth);
+
+    /// <summary>
     /// How tall the host window must be to contain a body of this height,
     /// never taller than the screen it sits on.
     /// </summary>

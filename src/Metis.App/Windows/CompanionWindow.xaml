@@ -22,7 +22,13 @@
                           RenderTransformOrigin="0.5,0.5"
                           Data="M34,8 C42,-1 56,-1 64,7 C72,15 72,27 66,35 C72,43 72,55 64,63 C56,71 44,71 35,65 C27,71 15,71 7,63 C-1,55 -1,43 5,35 C-1,27 -1,15 7,7 C15,-1 27,-1 34,8 Z">
                         <Path.Fill>
-            <SolidColorBrush x:Name="CompanionFill" Color="#CAEEFF" />
+                            <!-- Sky, the palette's own default. It was #CAEEFF,
+                                 which is in no palette at all, so the very first
+                                 frame drawn was a colour the user could never
+                                 choose. ApplySettings overwrites this a moment
+                                 later either way; the point is that the moment
+                                 before it does should already be right. -->
+                            <SolidColorBrush x:Name="CompanionFill" Color="#8ED8FF" />
                         </Path.Fill>
                         <!-- The flight transforms are separate from the state
                              transforms on purpose. Speaking, thinking, and

@@ -84,5 +84,47 @@ Source: "..\PRIVACY.md"; DestDir: "{app}"; Flags: ignoreversion
 Name: "{autoprograms}\{#AppName}"; Filename: "{app}\{#AppExeName}"; WorkingDir: "{app}"; Comment: "Learn the digital world by doing — Metis teaches while you work"; IconFilename: "{app}\{#AppExeName}"
 Name: "{autodesktop}\{#AppName}"; Filename: "{app}\{#AppExeName}"; WorkingDir: "{app}"; Tasks: desktopicon; Comment: "Learn the digital world by doing — Metis teaches while you work"; IconFilename: "{app}\{#AppExeName}"
 
+[Registry]
+; Metis writes this itself when 'start Metis when I sign in' is ticked, so the
+; installer must not create it -- but it must take it away again. Left behind,
+; it relaunches an executable that is no longer installed, and on a reinstall
+; it silently resurrects a preference the user was never asked about.
+Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueName: "Metis"; ValueType: none; Flags: dontcreatekey uninsdeletevalue
+
 [Run]
 Filename: "{app}\{#AppExeName}"; Description: "Launch {#AppName}"; WorkingDir: "{app}"; Flags: nowait postinstall skipifsilent
+
+[Code]
+{ Uninstalling used to leave every trace of Metis behind: the settings file
+  under %LOCALAPPDATA%\Metis, the diagnostic log, and the saved sign-in in
+  Windows Credential Manager. None of that lives under {app}, so none of it was
+  ever removed -- which meant a reinstall was not a fresh install. It came back
+  already onboarded, already signed in as whoever used the machine last, and
+  therefore never showed the first-run wizard at all.
+
+  Deleting it silently would be worse than leaving it, because someone
+  uninstalling to fix a problem usually wants their settings to survive. So the
+  uninstaller asks, and defaults to keeping them. }
+procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
+var
+  DataDir: String;
+  ResultCode: Integer;
+begin
+  if CurUninstallStep <> usPostUninstall then
+    Exit;
+
+  if MsgBox('Also remove your Metis settings, diagnostic log and saved sign-in?'
+            + #13#10#13#10
+            + 'Choose No to keep them, so reinstalling Metis picks up where you left off.',
+            mbConfirmation, MB_YESNO or MB_DEFBUTTON2) <> IDYES then
+    Exit;
+
+  DataDir := ExpandConstant('{localappdata}\Metis');
+  if DirExists(DataDir) then
+    DelTree(DataDir, True, True, True);
+
+  { The refresh token is in Credential Manager rather than in a file, so it
+    outlives the folder above and would sign the next install in as this user. }
+  Exec(ExpandConstant('{cmd}'), '/c cmdkey /delete:Metis/Supabase/RefreshToken',
+       '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+end;

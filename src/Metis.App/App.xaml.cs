@@ -14,11 +14,9 @@ namespace Metis.App;
 
 public partial class App : System.Windows.Application
 {
-    private Mutex? _singleInstance;
-    private bool _ownsSingleInstance;
+    private SingleInstance? _singleInstance;
     private MetisRuntime? _runtime;
     private CompanionWindow? _companionWindow;
-    private PreferencesWindow? _preferencesWindow;
     private GuidanceOverlayWindow? _overlayWindow;
     private TraceOverlayWindow? _traceWindow;
     private NotchWindow? _notchWindow;
@@ -95,11 +93,14 @@ public partial class App : System.Windows.Application
             }
         };
 
-        _singleInstance = new Mutex(true, "Local\\Metis.Desktop.Companion", out var isFirstInstance);
-        _ownsSingleInstance = isFirstInstance;
-        if (!isFirstInstance)
+        // Opening Metis while Metis is open is a request to see it, not a
+        // mistake to be corrected. If a copy is already running this hands the
+        // launch to it and exits; if that copy is wedged and cannot answer,
+        // SingleInstance says so and we start anyway rather than leaving the
+        // user with a program that refuses to open.
+        _singleInstance = SingleInstance.Claim();
+        if (!_singleInstance.ShouldStart)
         {
-            System.Windows.MessageBox.Show("Metis is already running in the notification area.", "Metis");
             Quit();
             return;
         }
@@ -132,7 +133,6 @@ public partial class App : System.Windows.Application
             _themeService.Changed += (_, _) => RepaintTrayMenu();
 
             _companionWindow = new CompanionWindow(_runtime);
-            _preferencesWindow = new PreferencesWindow(_runtime, _themeService, ShowChat);
             _overlayWindow = new GuidanceOverlayWindow();
             _notchWindow = new NotchWindow { DebugLog = message => _runtime.Log.Info(message) };
             _traceWindow = new TraceOverlayWindow();
@@ -141,7 +141,6 @@ public partial class App : System.Windows.Application
             // the chat, which is open for the whole of a turn and was being sent
             // to the model inside the very picture it was being asked about.
             _companionWindow.KeepOutOfScreenCaptures(_runtime.Log);
-            _preferencesWindow.KeepOutOfScreenCaptures(_runtime.Log);
             _overlayWindow.KeepOutOfScreenCaptures(_runtime.Log);
             _notchWindow.KeepOutOfScreenCaptures(_runtime.Log);
             _traceWindow.KeepOutOfScreenCaptures(_runtime.Log);
@@ -283,9 +282,17 @@ public partial class App : System.Windows.Application
             _topmostGuard.Start();
             _notchWindow.KeepOnTop = () => _topmostGuard?.Reassert();
 
-            if (e.Args.Contains("--background", StringComparer.OrdinalIgnoreCase))
+            // A later launch — the shortcut, the Start menu — arrives here
+            // rather than as a second process. Marshalled onto the UI thread
+            // because the listener answers on one of its own.
+            _singleInstance.ListenForOtherLaunches(
+                () => Dispatcher.InvokeAsync(RevealAndShowChat));
+
+            if (_singleInstance.TookOverFromUnresponsive)
             {
-                return;
+                _runtime.Log.Info(
+                    "Started alongside an earlier Metis that held the single-instance lock " +
+                    "but never answered. The earlier process is wedged and should be ended.");
             }
 
             // --setup and --onboarding open their window regardless of
@@ -298,15 +305,29 @@ public partial class App : System.Windows.Application
             _notchWindow.Auth.SignedIn += (_, _) => AfterSignIn();
             _notchWindow.Auth.Finished += (_, _) => FinishFirstRun();
 
+            // --background is the launch Windows makes at login, from the Run
+            // key StartupRegistration writes. It used to return several lines
+            // above this point, which quietly made it the launch that skips
+            // sign-in and skips onboarding entirely — so anyone who had ever
+            // ticked "start Metis when I sign in" met a Metis that had never
+            // introduced itself, and whose only other launch said it was
+            // already running. Staying out of the way is one thing; never
+            // showing the user the first thing they are meant to see is
+            // another, so a genuine first run overrides the quiet.
+            var background = e.Args.Contains("--background", StringComparer.OrdinalIgnoreCase);
+            var firstRun = OnboardingVersions.ShouldShow(
+                _runtime.Settings.OnboardingCompleted,
+                _runtime.Settings.OnboardingVersion);
+
             // Everything below this line assumes there is someone to show Metis
             // to. StartFirstRunAsync decides whether that is true, and opens the
             // rest of the startup sequence itself once it is.
-            if (await HoldForFirstRunAsync(e.Args))
+            if ((!background || firstRun) && await HoldForFirstRunAsync(e.Args))
             {
                 return;
             }
 
-            ContinueStartup(e.Args);
+            ContinueStartup(e.Args, background);
         }
         catch (Exception exception)
         {
@@ -630,12 +651,44 @@ public partial class App : System.Windows.Application
     }
 
     /// <summary>
+    /// Brings Metis forward because a second launch asked for it — the Start
+    /// menu, the desktop shortcut, or the taskbar. Whatever page the notch is
+    /// already showing wins: someone part way through onboarding who clicks the
+    /// shortcut wants the window they cannot find, not the chat on top of it.
+    /// </summary>
+    private void RevealAndShowChat()
+    {
+        RevealMetis();
+        _topmostGuard?.Reassert();
+
+        if (_notchWindow is null ||
+            _notchWindow.IsWelcomeOpen ||
+            _notchWindow.IsAuthOpen ||
+            _notchWindow.IsSettingsOpen ||
+            _notchWindow.IsChatOpen)
+        {
+            _notchWindow?.Activate();
+            return;
+        }
+
+        ShowChat();
+    }
+
+    /// <summary>
     /// The branch that used to sit directly in OnStartup, now reachable either
     /// immediately or after the first run finishes.
     /// </summary>
-    private void ContinueStartup(string[] args)
+    /// <param name="background">
+    /// A login launch. It suppresses the surfaces that assume someone is
+    /// watching — the chat and the release notes — but not onboarding, which
+    /// is the one thing a first launch must not skip.
+    /// </param>
+    private void ContinueStartup(string[] args, bool background = false)
     {
-        ShowWhatsNewIfUpdated();
+        if (!background)
+        {
+            ShowWhatsNewIfUpdated();
+        }
 
         if (args.Contains("--onboarding", StringComparer.OrdinalIgnoreCase))
         {
@@ -657,7 +710,7 @@ public partial class App : System.Windows.Application
             // once, because onboarding explains things that have since changed.
             ShowOnboarding();
         }
-        else
+        else if (!background)
         {
             ShowChat();
         }
@@ -958,7 +1011,6 @@ public partial class App : System.Windows.Application
             return;
         }
 
-        _preferencesWindow?.Hide();
         _notchWindow.OpenWelcome();
     }
 
@@ -980,9 +1032,6 @@ public partial class App : System.Windows.Application
             return;
         }
 
-        // Preferences is no longer anchored under the notch, so it does not
-        // compete for the slot and only needs hiding.
-        _preferencesWindow?.Hide();
         _notchWindow.OpenChat();
     }
 
@@ -999,7 +1048,6 @@ public partial class App : System.Windows.Application
         _themeService?.Dispose();
         _topmostGuard?.Dispose();
 
-        _preferencesWindow?.AllowClose();
         _overlayWindow?.AllowClose();
         _traceWindow?.AllowClose();
         _notchWindow?.AllowClose();
@@ -1012,10 +1060,6 @@ public partial class App : System.Windows.Application
         _trayIcon?.Dispose();
         _trayDrawingIcon?.Dispose();
         _runtime?.Dispose();
-        if (_ownsSingleInstance)
-        {
-            _singleInstance?.ReleaseMutex();
-        }
         _singleInstance?.Dispose();
 
         // Last, so anything the shutdown above throws still gets reported.

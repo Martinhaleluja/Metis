@@ -1,7 +1,7 @@
 <UserControl x:Class="Metis.App.Windows.NotchSettings"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-             Width="640" Background="Transparent"
+             Background="Transparent"
              Focusable="False">
     <UserControl.Resources>
 
@@ -70,6 +70,35 @@
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsKeyboardFocused" Value="True">
                                 <Setter TargetName="Dot" Property="BorderBrush"
+                                        Value="{DynamicResource NotchTextBrush}" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- A companion form. Bigger than a colour swatch because the thing
+             being chosen is a shape, and a shape has to be large enough to be
+             recognised before it can be picked. -->
+        <Style x:Key="ShapeButton" TargetType="Button">
+            <Setter Property="Width" Value="62" />
+            <Setter Property="Height" Value="62" />
+            <Setter Property="Margin" Value="0,0,10,0" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="BorderBrush" Value="{DynamicResource NotchChipEdgeBrush}" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Tile" CornerRadius="14" BorderThickness="1.5"
+                                Background="{DynamicResource NotchChipBrush}"
+                                BorderBrush="{TemplateBinding BorderBrush}">
+                            <ContentPresenter HorizontalAlignment="Center"
+                                              VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsKeyboardFocused" Value="True">
+                                <Setter TargetName="Tile" Property="BorderBrush"
                                         Value="{DynamicResource NotchTextBrush}" />
                             </Trigger>
                         </ControlTemplate.Triggers>
@@ -264,8 +293,19 @@
 
             <Border Height="1" Background="{DynamicResource NotchHairlineBrush}" Margin="0,0,0,12" />
 
-            <!-- Scrollable Content Host -->
-            <ScrollViewer x:Name="SettingsScroll" Style="{StaticResource SettingScroller}" MaxHeight="520" Margin="0,0,-4,0" Padding="0,0,4,0">
+            <!-- Content host, deliberately NOT a ScrollViewer.
+                 It was one, with MaxHeight="520" on it: the last surviving copy
+                 of the hard-coded 520 that NotchGeometry was written to remove.
+                 It capped every settings page at 520 points no matter how tall
+                 the monitor was, and because it also reported 520 as its desired
+                 height, the shell's own "measure again in the space available"
+                 logic could never see that there was more to show.
+
+                 It also nested a second scroller inside PageScroll, which the
+                 comment on that element forbids in as many words: two
+                 scrollbars down the same edge, the inner one capturing the
+                 wheel. The shell scrolls; a page does not. -->
+            <Grid>
                 <StackPanel>
                     <!-- ============================= Menu ============================= -->
                     <StackPanel x:Name="MenuPage">
@@ -785,6 +825,37 @@
                             </StackPanel>
                         </Border>
 
+                        <!-- Which character the companion is.
+                             Both forms have existed since the companion did, and
+                             the only picker for them lived in a window the
+                             application builds and never shows, so in the
+                             shipping app the choice could not be made at all,
+                             and everyone had whichever one was the default. -->
+                        <Border Style="{StaticResource SettingCard}">
+                            <StackPanel>
+                                <TextBlock Text="CHARACTER" Style="{StaticResource SettingLabel}" />
+                                <ItemsControl x:Name="CompanionCharacters" Margin="0,10,0,0">
+                                    <ItemsControl.ItemsPanel>
+                                        <ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate>
+                                    </ItemsControl.ItemsPanel>
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <Button Style="{StaticResource ShapeButton}" Tag="{Binding Name}"
+                                                    AutomationProperties.Name="{Binding Name}"
+                                                    AutomationProperties.HelpText="{Binding Description}"
+                                                    Click="CompanionCharacter_OnClick">
+                                                <Path Data="{Binding Figure}" Stretch="Uniform"
+                                                      Width="28" Height="28"
+                                                      Fill="{DynamicResource NotchTextBrush}" />
+                                            </Button>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                                <TextBlock x:Name="CompanionCharacterName" Style="{StaticResource SettingBody}"
+                                           Margin="0,10,0,0" />
+                            </StackPanel>
+                        </Border>
+
                         <Border Style="{StaticResource SettingCard}">
                             <StackPanel>
                                 <TextBlock Text="COLOUR" Style="{StaticResource SettingLabel}" />
@@ -1020,7 +1091,7 @@
                         </Border>
                     </StackPanel>
                 </StackPanel>
-            </ScrollViewer>
+            </Grid>
 
             <!-- Saving Row -->
             <Grid x:Name="SaveRow" Margin="0,10,0,0" Visibility="Collapsed">
