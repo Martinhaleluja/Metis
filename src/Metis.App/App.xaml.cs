@@ -2,6 +2,7 @@ using System.IO;
 using System.Threading;
 using System.Windows;
 using Metis.App.Runtime;
+using Metis.App.Services;
 using Metis.App.Windows;
 using Metis.App.Branding;
 using Metis.App.Theme;
@@ -26,9 +27,17 @@ public partial class App : System.Windows.Application
     private ThemeService? _themeService;
     private TopmostGuard? _topmostGuard;
 
+    /// <summary>The Sentry handle, or null on every build with no DSN configured.</summary>
+    private IDisposable? _crashReporting;
+
     protected override async void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
+
+        // Before the handlers below, so a crash during startup is still
+        // reported. Returns null and does nothing at all unless METIS_SENTRY_DSN
+        // is set, which it is on no shipped build — see CrashReporting.
+        _crashReporting = CrashReporting.Start(AppVersion.Current);
 
         // Catch exceptions that escape from background Task threads (including fire-and-forget tasks
         // that are not awaited). Without this the process silently terminates on any unhandled exception
@@ -43,6 +52,11 @@ public partial class App : System.Windows.Application
                 {
                     _runtime.Log.Error("Unhandled AppDomain exception", ex ?? new Exception(args.ExceptionObject?.ToString()));
                 }
+
+                if (ex is not null)
+                {
+                    CrashReporting.Capture(ex, "appdomain");
+                }
             }
             catch
             {
@@ -56,6 +70,7 @@ public partial class App : System.Windows.Application
             {
                 args.SetObserved();
                 _runtime?.Log.Error("Unobserved Task exception caught and suppressed", args.Exception);
+                CrashReporting.Capture(args.Exception, "task");
             }
             catch
             {
@@ -68,6 +83,10 @@ public partial class App : System.Windows.Application
             try
             {
                 _runtime?.Log.Error("Unhandled WPF Dispatcher exception caught", args.Exception);
+                CrashReporting.Capture(args.Exception, "dispatcher");
+
+                // Still handled, so the user's session survives. Reporting is
+                // an addition to that recovery, not a replacement for it.
                 args.Handled = true;
             }
             catch
@@ -916,6 +935,12 @@ public partial class App : System.Windows.Application
             _singleInstance?.ReleaseMutex();
         }
         _singleInstance?.Dispose();
+
+        // Last, so anything the shutdown above throws still gets reported.
+        // Disposing the handle is what flushes a queued event; without it a
+        // crash on the way out is collected and then thrown away.
+        _crashReporting?.Dispose();
+
         base.OnExit(e);
     }
 }
