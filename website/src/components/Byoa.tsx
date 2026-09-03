@@ -113,10 +113,10 @@ export function Byoa() {
               </div>
 
               <div className="flex justify-end gap-2 border-t border-line bg-surface-sunken px-4 py-3">
-                <a href="#pricing" className="press rounded-lg border border-line bg-surface px-3 py-1.5 text-[13px] text-[11px] no-underline">
+                <a href="#pricing" className="btn press text-[11px] no-underline">
                   Back to plans
                 </a>
-                <a href="#faq" className="press rounded-lg border border-line bg-surface px-3 py-1.5 text-[13px] text-[11px] no-underline">
+                <a href="#faq" className="btn press text-[11px] no-underline">
                   Read the FAQ &gt;
                 </a>
               </div>

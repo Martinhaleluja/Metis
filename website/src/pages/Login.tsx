@@ -124,7 +124,7 @@ export function Login() {
         </div>
 
         <div className="flex items-center gap-2">
-          <button type="submit" disabled={busy} className="press rounded-lg border border-line bg-surface px-3 py-1.5 text-[13px] press px-6 py-1.5">
+          <button type="submit" disabled={busy} className="btn press px-6 py-1.5">
             {busy ? "Working…" : mode === "in" ? "Sign in" : "Create account"}
           </button>
           <button
@@ -133,7 +133,7 @@ export function Login() {
               setMode(mode === "in" ? "up" : "in");
               setError(null);
             }}
-            className="press rounded-lg border border-line bg-surface px-3 py-1.5 text-[13px] press px-4 py-1.5"
+            className="btn press px-4 py-1.5"
           >
             {mode === "in" ? "I need an account" : "I already have one"}
           </button>

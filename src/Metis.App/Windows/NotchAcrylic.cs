@@ -139,7 +139,7 @@ internal static class NotchAcrylic
     /// notch spends a good part of its life mid-animation and glass that keeps
     /// the old shape while the panel grows is worse than no glass at all.
     /// </summary>
-    public static void ShapeTo(Window window, Rect bounds, double cornerRadius)
+    public static void ShapeTo(Window window, Rect bounds, double cornerRadius, bool flatTop = true)
     {
         ArgumentNullException.ThrowIfNull(window);
 
@@ -163,7 +163,10 @@ internal static class NotchAcrylic
         var bottom = (int)Math.Ceiling(bounds.Bottom * scaleY);
         var radius = (int)Math.Round(cornerRadius * 2 * scaleX);
 
-        var region = CreateRoundRectRgn(left, top, right + 1, bottom + 1, radius, radius);
+        // When flatTop is true, the region starts above the top edge so the top corners
+        // remain completely flush with the display bezel, matching CornerRadius="0,0,r,r".
+        var rgnTop = flatTop ? top - radius : top;
+        var region = CreateRoundRectRgn(left, rgnTop, right + 1, bottom + 1, radius, radius);
         if (region == nint.Zero)
         {
             return;

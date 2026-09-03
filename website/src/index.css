@@ -176,6 +176,29 @@ body {
   box-shadow: var(--shadow-card);
 }
 
+/* A secondary button. This replaced .win95-button, which was a class, so
+   expanding it inline at every call site left each one fighting the size
+   utilities that followed it. It stays a class for the same reason it was one. */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background-color: var(--surface);
+  color: var(--ink);
+  font-weight: 600;
+  padding: 0.5rem 1rem;
+  text-decoration: none;
+  transition: background-color 120ms ease-out, border-color 120ms ease-out;
+}
+
+.btn:hover {
+  background-color: var(--surface-sunken);
+  border-color: var(--ink-muted);
+}
+
 /* A panel's heading strip. This is where a Win95 title bar used to be — navy
    gradient, white bold text, and a pair of fake minimise/close boxes that did
    nothing and were announced to screen readers as loose punctuation. What a

@@ -107,7 +107,7 @@ export function Capabilities() {
                           {feat.shortcut.map((key) => (
                             <kbd
                               key={key}
-                              className="press rounded-lg border border-line bg-surface px-3 py-1.5 text-[13px] text-[10px] !py-0.5 !px-2 !cursor-default"
+                              className="btn press text-[10px] !py-0.5 !px-2 !cursor-default"
                             >
                               {key}
                             </kbd>

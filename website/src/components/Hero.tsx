@@ -62,7 +62,7 @@ export function Hero({
         {/* Status badge */}
         <motion.div {...rise(0)} className="mb-5">
           <span
-            className="inline-flex items-center gap-2 press rounded-lg border border-line bg-surface px-3 py-1.5 text-[13px] !cursor-default !py-1.5 !px-5 text-[12px]"
+            className="inline-flex items-center gap-2 btn press !cursor-default !py-1.5 !px-5 text-[12px]"
           >
             <span className="w-2 h-2 rounded-full bg-[#00c800] shadow-[0_0_4px_#00c800]" />
             Now accepting waitlist signups

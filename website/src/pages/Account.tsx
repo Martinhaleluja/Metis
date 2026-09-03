@@ -188,7 +188,7 @@ export function Account() {
                         setShowAvatarPicker(false);
                         fileInputRef.current?.click();
                       }}
-                      className="press rounded-lg border border-line bg-surface px-3 py-1.5 text-[13px] press w-full py-1.5 text-[11.5px] font-bold text-center flex items-center justify-center gap-1.5"
+                      className="btn press w-full py-1.5 text-[11.5px] font-bold text-center flex items-center justify-center gap-1.5"
                     >
                       <span>📁</span> Upload Photo...
                     </button>
@@ -223,7 +223,7 @@ export function Account() {
                       <button
                         type="button"
                         onClick={handleSaveName}
-                        className="press rounded-lg border border-line bg-surface px-3 py-1.5 text-[13px] press px-2 py-0.5 text-[11px]"
+                        className="btn press px-2 py-0.5 text-[11px]"
                       >
                         Save
                       </button>
@@ -278,7 +278,7 @@ export function Account() {
               <button
                 type="button"
                 onClick={() => void signOut(navigate)}
-                className="press rounded-lg border border-line bg-surface px-3 py-1.5 text-[13px] press px-4 py-1.5 text-[11.5px]"
+                className="btn press px-4 py-1.5 text-[11.5px]"
               >
                 Sign out
               </button>
@@ -318,10 +318,10 @@ export function Account() {
                 </span>
               </div>
               <a
-                href="https://sandbox.polar.sh/purchases"
+                href="https://polar.sh/purchases"
                 target="_blank"
                 rel="noreferrer"
-                className="press rounded-lg border border-line bg-surface px-3 py-1.5 text-[13px] press px-3 py-1 text-[11px] font-bold text-ink"
+                className="btn press px-3 py-1 text-[11px] font-bold text-ink"
               >
                 Manage Billing &amp; Invoices ↗
               </a>
@@ -382,7 +382,7 @@ export function Account() {
                     <button
                       type="button"
                       disabled
-                      className="press rounded-lg border border-line bg-surface px-3 py-1.5 text-[13px] mt-4 w-full py-1.5 text-[11.5px] font-bold opacity-60"
+                      className="btn press mt-4 w-full py-1.5 text-[11.5px] font-bold opacity-60"
                     >
                       ✓ Your Current Plan
                     </button>
@@ -390,7 +390,7 @@ export function Account() {
                     <button
                       type="button"
                       disabled
-                      className="press rounded-lg border border-line bg-surface px-3 py-1.5 text-[13px] mt-4 w-full py-1.5 text-[11.5px] font-bold opacity-50"
+                      className="btn press mt-4 w-full py-1.5 text-[11.5px] font-bold opacity-50"
                     >
                       Included Tier
                     </button>
@@ -399,7 +399,7 @@ export function Account() {
                       type="button"
                       disabled={isCheckingOut}
                       onClick={() => void handleStartCheckout(option.id as PaidPlanId)}
-                      className="press rounded-lg border border-line bg-surface px-3 py-1.5 text-[13px] press mt-4 w-full py-1.5 text-[11.5px] font-bold text-accent"
+                      className="btn press mt-4 w-full py-1.5 text-[11.5px] font-bold text-accent"
                     >
                       {isCheckingOut ? "Opening checkout…" : `Upgrade to ${option.name}`}
                     </button>
@@ -423,7 +423,7 @@ export function Account() {
                       type="button"
                       disabled={opt.id === currentPlanId || switchingPlan}
                       onClick={() => void handleSelectPlan(opt.id)}
-                      className="press rounded-lg border border-line bg-surface px-3 py-1.5 text-[13px] press px-2.5 py-1 text-[10.5px]"
+                      className="btn press px-2.5 py-1 text-[10.5px]"
                     >
                       {switchingPlan ? "…" : `Set ${opt.name}`}
                     </button>
@@ -691,7 +691,7 @@ function Connections({
                 type="button"
                 disabled={busy}
                 onClick={() => void disconnect(connection.provider)}
-                className="press rounded-lg border border-line bg-surface px-3 py-1.5 text-[13px] press px-3 py-1 text-[11px]"
+                className="btn press px-3 py-1 text-[11px]"
               >
                 Disconnect
               </button>
@@ -729,7 +729,7 @@ function Connections({
           />
         </label>
 
-        <button type="submit" disabled={busy} className="press rounded-lg border border-line bg-surface px-3 py-1.5 text-[13px] press px-5 py-1.5">
+        <button type="submit" disabled={busy} className="btn press px-5 py-1.5">
           {busy ? "Testing…" : "Connect"}
         </button>
       </form>

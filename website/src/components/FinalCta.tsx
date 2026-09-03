@@ -67,14 +67,14 @@ export function FinalCta({
             {/* Wizard footer */}
             <div className="bg-surface-sunken border-t border-line px-4 py-3 flex justify-end gap-2">
               <span
-                className="press rounded-lg border border-line bg-surface px-3 py-1.5 text-[13px] text-[11px] opacity-50 !cursor-default"
+                className="btn press text-[11px] opacity-50 !cursor-default"
                 aria-hidden="true"
               >
                 &lt; Back
               </span>
               <a
                 href="#join"
-                className="press rounded-lg border border-line bg-surface px-3 py-1.5 text-[13px] text-[11px] no-underline"
+                className="btn press text-[11px] no-underline"
               >
                 Next &gt;
               </a>
