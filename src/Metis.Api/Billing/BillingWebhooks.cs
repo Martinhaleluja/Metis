@@ -109,17 +109,12 @@ internal static class WebhookCrypto
     {
         if (metadata.ValueKind == JsonValueKind.Object)
         {
-            foreach (var name in new[] { "plan", "plan_id", "metis_plan" })
+            foreach (var prop in metadata.EnumerateObject())
             {
-                if (metadata.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.String)
+                var cleanName = prop.Name.Trim().ToLowerInvariant();
+                if (cleanName is "plan" or "plan_id" or "metis_plan" && prop.Value.ValueKind == JsonValueKind.String)
                 {
-                    var raw = value.GetString();
-                    // Accepts both the bare and the prefixed form — "pro" and
-                    // "metis_pro" — because the two processors' product metadata
-                    // conventions differ and the specification names both. The
-                    // retired middle-plan name still reads through
-                    // Entitlements.ParsePlan, so a product created before the
-                    // rename does not silently grant Free.
+                    var raw = prop.Value.GetString();
                     var trimmed = raw?.Replace("metis_", string.Empty, StringComparison.OrdinalIgnoreCase);
                     var parsed = Entitlements.ParsePlan(trimmed);
                     if (parsed != PlanTier.Free)
@@ -186,12 +181,19 @@ public sealed class PolarWebhookVerifier(string? secret) : IBillingWebhookVerifi
             return false;
         }
 
-        // Polar's secret is base64, optionally prefixed "whsec_".
+        // Polar's secret is base64, optionally prefixed "whsec_". Standard Webhooks (Svix)
+        // strips trailing '=' padding characters, so restore padding if needed.
         var material = secret.StartsWith("whsec_", StringComparison.Ordinal) ? secret[6..] : secret;
+        var padded = (material.Length % 4) switch
+        {
+            2 => material + "==",
+            3 => material + "=",
+            _ => material
+        };
         byte[] key;
         try
         {
-            key = Convert.FromBase64String(material);
+            key = Convert.FromBase64String(padded);
         }
         catch (FormatException)
         {
@@ -246,6 +248,30 @@ public sealed class PolarWebhookVerifier(string? secret) : IBillingWebhookVerifi
         }
 
         var metadata = data.TryGetProperty("metadata", out var meta) ? meta : default;
+        var plan = WebhookCrypto.PlanFromMetadata(metadata);
+        if (plan == PlanTier.Free && data.TryGetProperty("product", out var product))
+        {
+            var productMeta = product.TryGetProperty("metadata", out var pMeta) ? pMeta : default;
+            plan = WebhookCrypto.PlanFromMetadata(productMeta);
+        }
+        if (plan == PlanTier.Free)
+        {
+            var productId = WebhookCrypto.StringOrNull(data, "product_id")
+                ?? (data.TryGetProperty("product", out var prod) ? WebhookCrypto.StringOrNull(prod, "id") : null);
+            if (!string.IsNullOrEmpty(productId))
+            {
+                var proId = Environment.GetEnvironmentVariable("POLAR_PRODUCT_PRO");
+                var maxId = Environment.GetEnvironmentVariable("POLAR_PRODUCT_MAX");
+                if (string.Equals(productId, maxId, StringComparison.OrdinalIgnoreCase))
+                {
+                    plan = PlanTier.Max;
+                }
+                else if (string.Equals(productId, proId, StringComparison.OrdinalIgnoreCase))
+                {
+                    plan = PlanTier.Pro;
+                }
+            }
+        }
 
         return new BillingEvent(
             "polar",
@@ -256,7 +282,7 @@ public sealed class PolarWebhookVerifier(string? secret) : IBillingWebhookVerifi
                 : WebhookCrypto.StringOrNull(data, "customer_id"),
             WebhookCrypto.StringOrNull(data, "id"),
             ReadMetisUserId(data, metadata),
-            WebhookCrypto.PlanFromMetadata(metadata),
+            plan,
             WebhookCrypto.StringOrNull(data, "status") ?? "unknown",
             WebhookCrypto.DateOrNull(data, "current_period_end"),
             data.TryGetProperty("cancel_at_period_end", out var cancel)
