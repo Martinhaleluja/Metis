@@ -192,17 +192,16 @@ public sealed class JsonMemoryStore : IMemoryService, IDisposable
 
         try
         {
-            await using var stream = new FileStream(
-                MemoryPath,
-                FileMode.Open,
-                FileAccess.Read,
-                FileShare.Read,
-                4096,
-                FileOptions.Asynchronous | FileOptions.SequentialScan);
-            var document = await JsonSerializer
-                .DeserializeAsync<MemoryDocument>(stream, _jsonOptions, cancellationToken)
-                .ConfigureAwait(false);
-            return document ?? new MemoryDocument();
+            var stored = await File.ReadAllBytesAsync(MemoryPath, cancellationToken).ConfigureAwait(false);
+            var text = LocalVault.Unprotect(stored);
+            if (text is null)
+            {
+                // Encrypted for a different Windows account. Starting fresh is
+                // the only option, and is better than refusing to start.
+                return new MemoryDocument();
+            }
+
+            return JsonSerializer.Deserialize<MemoryDocument>(text, _jsonOptions) ?? new MemoryDocument();
         }
         catch (JsonException)
         {
@@ -219,18 +218,13 @@ public sealed class JsonMemoryStore : IMemoryService, IDisposable
         Directory.CreateDirectory(directory);
         var temporaryPath = MemoryPath + ".tmp";
 
-        await using (var stream = new FileStream(
-            temporaryPath,
-            FileMode.Create,
-            FileAccess.Write,
-            FileShare.None,
-            4096,
-            FileOptions.Asynchronous | FileOptions.WriteThrough))
-        {
-            await JsonSerializer.SerializeAsync(stream, document, _jsonOptions, cancellationToken)
-                .ConfigureAwait(false);
-            await stream.FlushAsync(cancellationToken).ConfigureAwait(false);
-        }
+        // Encrypted to this Windows account. What Metis remembers is a record of
+        // which applications the user is learning and how well they are getting
+        // on, which is nobody else's business — including anything else running
+        // on the same machine.
+        var json = JsonSerializer.Serialize(document, _jsonOptions);
+        await File.WriteAllBytesAsync(temporaryPath, LocalVault.Protect(json), cancellationToken)
+            .ConfigureAwait(false);
 
         File.Move(temporaryPath, MemoryPath, true);
     }

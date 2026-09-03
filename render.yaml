@@ -8,23 +8,37 @@
 # Staging and production are two services in one file. That is the whole of the
 # environment separation: same image, different secrets, and neither can reach
 # the other's database.
+#
+# The website is no longer here. It moved to Vercel, which is a better fit for a
+# single-page app with client routing than a static bucket is, and its config
+# now lives in website/vercel.json. Whatever hosts it, its two VITE_ variables
+# are browser-visible by design and end up inside the JavaScript bundle.
 
 services:
   - type: web
-    name: metis-api-staging
+    name: metis-gateway
     runtime: docker
     dockerfilePath: ./src/Metis.Api/Dockerfile
     dockerContext: .
     plan: free
     region: frankfurt
-    branch: main
+    branch: feat/launch-website
     healthCheckPath: /health
     envVars:
       - key: METIS_ENV
-        value: staging
-      # Render routes to port 10000 by default.
+        value: production
+      # Render routes to port 10000 by default. The Dockerfile says the same
+      # number; the blueprint's value wins at runtime, so a mismatch between the
+      # two is silent until someone runs the image by hand.
       - key: ASPNETCORE_URLS
         value: http://0.0.0.0:10000
+
+      # Which browsers may call this service. The gateway spends money, so it
+      # never allows any origin — an empty list means only the desktop app,
+      # which is not subject to CORS, can reach it.
+      - key: ALLOWED_ORIGINS
+        sync: false
+
       # sync: false means Render prompts for the value and keeps it out of this
       # file. Every one of these is a secret and none belongs in the repository.
       - key: SUPABASE_URL
@@ -34,44 +48,70 @@ services:
       - key: GOOGLE_API_KEY
         sync: false
 
-  # Deliberately not deployed yet: suspended so it exists, holds its own
-  # secrets, and cannot be reached until there is something to sell. Remove
-  # `suspended` when you are ready for it.
-  - type: web
-    name: metis-api-prod
-    runtime: docker
-    dockerfilePath: ./src/Metis.Api/Dockerfile
-    dockerContext: .
-    plan: free
-    region: frankfurt
-    branch: main
-    healthCheckPath: /health
-    suspended: 'yes'
-    envVars:
-      - key: METIS_ENV
-        value: production
-      - key: ASPNETCORE_URLS
-        value: http://0.0.0.0:10000
-      - key: SUPABASE_URL
-        sync: false
-      - key: SUPABASE_SERVICE_KEY
-        sync: false
-      - key: GOOGLE_API_KEY
+      # The private half of the key that signs entitlement snapshots, as base64
+      # PKCS#8. Without it /v1/me still answers, but unsigned — so a desktop
+      # client will not trust a cached plan while it is offline. Generate a pair
+      # with EntitlementSigner.GenerateKeyPair and put the public half in
+      # MetisBackend.EntitlementPublicKey.
+      - key: METIS_ENTITLEMENT_SIGNING_KEY
         sync: false
 
-  # The launch site. A static bundle, so there is no runtime and nothing to
-  # keep warm. Unlike the gateway's secrets above, these two are browser-visible
-  # by design and end up inside the JavaScript bundle; they are `sync: false`
-  # only so staging and production can point at different Supabase projects.
-  - type: web
-    name: metis-site
-    runtime: static
-    rootDir: website
-    buildCommand: npm ci && npm run build
-    staticPublishPath: dist
-    branch: main
-    envVars:
-      - key: VITE_SUPABASE_URL
+      # Optional. Setting one of these is all it takes to start serving that
+      # provider on Metis's account; until then it is refused with a reason
+      # rather than silently missing.
+      - key: ANTHROPIC_API_KEY
         sync: false
-      - key: VITE_SUPABASE_PUBLISHABLE_KEY
+      - key: OPENAI_API_KEY
         sync: false
+      - key: MISTRAL_API_KEY
+        sync: false
+      - key: OPENROUTER_API_KEY
+        sync: false
+
+      # Webhook signing secrets. Both verifiers ship, and both are inert until
+      # their secret is set — so choosing a payment processor is a matter of
+      # filling one of these in. See docs/BILLING_SETUP.md.
+      - key: POLAR_WEBHOOK_SECRET
+        sync: false
+      - key: STRIPE_WEBHOOK_SECRET
+        sync: false
+
+      # Taking payment, as opposed to being told about one. The webhook secret
+      # above lets the gateway *receive* a subscription; these let it *start*
+      # one, which is what POST /v1/checkout does. All five are optional: without
+      # the token, or without the product id for the plan being bought, that
+      # endpoint answers 404 and nothing else about the service changes. A
+      # deployment with none of them set is a gateway that serves AI and sells
+      # nothing, which is what staging should be until it deliberately is not.
+      - key: POLAR_ACCESS_TOKEN
+        sync: false
+      # "sandbox" for Polar's test environment; anything else is the real one,
+      # with real cards. Set it explicitly on staging rather than relying on the
+      # default, which is production.
+      - key: POLAR_SERVER
+        sync: false
+      - key: POLAR_PRODUCT_PRO
+        sync: false
+      - key: POLAR_PRODUCT_MAX
+        sync: false
+      # Where a customer is returned once they have paid. Read from here rather
+      # than from the request, because a redirect the caller chooses is an open
+      # redirect next to a payment form.
+      - key: METIS_SITE_URL
+        sync: false
+
+# One service, not two.
+#
+# There used to be a staging pair here, pinned to `main` and with the second
+# suspended. Both were wrong in a way that would have been very quiet: `main`
+# still carries an older four-file gateway that builds, boots and answers
+# /health with a 200 -- but has no webhook route, no checkout and no cost
+# protection. Deploying it would have looked completely healthy while silently
+# never applying a payment.
+#
+# The branch is therefore the one that actually holds the gateway. Move it back
+# to `main` the day that branch is merged, and not before.
+#
+# The name matters too: it is the hostname, and it is compiled into the desktop
+# app at MetisBackend.DefaultGatewayUrl. Renaming this service without changing
+# that constant orphans every installed copy of Metis.

@@ -14,7 +14,18 @@ public sealed record AuthResult(
     string? AccessToken = null,
     string? RefreshToken = null,
     MetisAccount? Account = null,
-    bool Reachable = true)
+    bool Reachable = true,
+
+    /// <summary>
+    /// When the access token stops working, in UTC.
+    ///
+    /// This used to be discarded, because the access token itself was used once
+    /// to read the account and then thrown away. The gateway needs it on every
+    /// managed turn, so the client now holds it — and holding a bearer token
+    /// without knowing when it dies means sending dead ones and blaming the
+    /// server for refusing them.
+    /// </summary>
+    DateTimeOffset AccessTokenExpiresUtc = default)
 {
     public static AuthResult Failed(string message) => new(false, message);
 
@@ -216,6 +227,15 @@ public sealed class SupabaseAuthClient(HttpClient http)
             ? id.GetString()
             : null;
 
+        // Supabase reports the lifetime as seconds from now rather than as an
+        // instant. An hour is its own default and the safe assumption when the
+        // field is missing: guessing short costs one unnecessary refresh, while
+        // guessing long costs the user a failed turn.
+        var lifetime = root.TryGetProperty("expires_in", out var expires)
+                       && expires.ValueKind == JsonValueKind.Number
+            ? TimeSpan.FromSeconds(expires.GetInt32())
+            : TimeSpan.FromHours(1);
+
         _ = supabaseUrl;
         return new AuthResult(
             true,
@@ -224,7 +244,9 @@ public sealed class SupabaseAuthClient(HttpClient http)
             refresh.GetString(),
             userId is null
                 ? null
-                : new MetisAccount(userId, UserRole.User, PlanTier.Free, MetisEnvironment.Production));
+                : new MetisAccount(userId, UserRole.User, PlanTier.Free, MetisEnvironment.Production),
+            Reachable: true,
+            AccessTokenExpiresUtc: DateTimeOffset.UtcNow + lifetime);
     }
 
     /// <summary>

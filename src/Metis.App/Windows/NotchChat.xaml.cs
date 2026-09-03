@@ -1,10 +1,15 @@
 using System.Collections.ObjectModel;
+using System.ComponentModel;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
+using System.Windows.Threading;
+using System.Windows.Media.Animation;
 using Metis.App.Runtime;
+using Metis.Core.Agents;
 using Metis.Core.Models;
+using Metis.Core.Services;
 
 // WPF and Windows Forms are both enabled, so these names are ambiguous under
 // implicit usings. Everything in this window is WPF.
@@ -14,6 +19,30 @@ using Brush = System.Windows.Media.Brush;
 using Brushes = System.Windows.Media.Brushes;
 
 namespace Metis.App.Windows;
+
+public sealed record AgentDotItem(string TaskId, Brush DotBrush, string Tooltip)
+{
+    /// <summary>The tooltip, which is already the sentence describing the dot.</summary>
+    public override string ToString() => Tooltip;
+}
+
+public static class AgentColors
+{
+    private static readonly string[] Palette =
+    [
+        "#0A7CFF", // Electric Blue
+        "#30D158", // Vibrant Green
+        "#BF5AF2", // Purple
+        "#FF9F0A", // Amber Orange
+        "#FF375F", // Vivid Coral
+        "#5E5CE6", // Indigo
+        "#64D2FF", // Cyan
+        "#FFD60A"  // Yellow
+    ];
+
+    public static Brush GetBrush(int index) =>
+        (Brush)new SolidColorBrush((Color)ColorConverter.ConvertFromString(Palette[Math.Abs(index) % Palette.Length]));
+}
 
 /// <summary>
 /// The whole of Metis's chat, laid out to live inside the notch. There is no
@@ -32,11 +61,30 @@ public partial class NotchChat : System.Windows.Controls.UserControl
     private UpdateCheck? _availableUpdate;
     private bool _sending;
 
+    /// <summary>The reply currently being written into, if one is arriving.</summary>
+    private ChatBubble? _streamingBubble;
+
+    /// <summary>
+    /// Grows the notch to fit a reply as it arrives. Ticking a few times a
+    /// second is enough to look continuous and costs one measure per tick,
+    /// rather than one per fragment of text.
+    /// </summary>
+    private readonly DispatcherTimer _streamGrowth = new()
+    {
+        Interval = TimeSpan.FromMilliseconds(140)
+    };
+
     /// <summary>Raised when the user asks for the chat to be put away.</summary>
     public event EventHandler? CloseRequested;
 
     /// <summary>Raised when the user asks for the setup window.</summary>
     public event EventHandler? SetupRequested;
+
+    /// <summary>Raised when the user clicks Spawn Agent.</summary>
+    public event EventHandler? SpawnAgentRequested;
+
+    /// <summary>Raised when the user clicks the active agent dots.</summary>
+    public event EventHandler? AgentDrawerRequested;
 
     /// <summary>
     /// Raised whenever the content changes size — a message arriving, the
@@ -50,6 +98,11 @@ public partial class NotchChat : System.Windows.Controls.UserControl
     {
         InitializeComponent();
         MessagesList.ItemsSource = _messages;
+        _streamGrowth.Tick += (_, _) =>
+        {
+            RaiseSizeChanged();
+            ScrollToLatest();
+        };
     }
 
     /// <summary>
@@ -63,18 +116,73 @@ public partial class NotchChat : System.Windows.Controls.UserControl
         _runtime = runtime;
 
         runtime.MessageAdded += Runtime_OnMessageAdded;
+        runtime.ResponseStreamStarted += Runtime_OnResponseStreamStarted;
+        runtime.ResponseTextDelta += Runtime_OnResponseTextDelta;
         runtime.StatusChanged += Runtime_OnStatusChanged;
         runtime.AudioLevelChanged += Runtime_OnAudioLevelChanged;
         runtime.State.Changed += Runtime_OnStateChanged;
-        runtime.ChatsChanged += (_, _) => Dispatcher.Invoke(RefreshModelChip);
+        runtime.ChatsChanged += (_, _) => Dispatcher.InvokeAsync(RefreshModelChip);
 
         // The model list depends on which provider is selected, so it is rebuilt
         // whenever settings change rather than only once. Usage is re-read at
         // the same time, which keeps the counts from going stale.
-        runtime.SettingsChanged += (_, _) => Dispatcher.Invoke(RefreshModelChip);
+        runtime.SettingsChanged += (_, _) => Dispatcher.InvokeAsync(RefreshModelChip);
+
+        if (runtime.AgentTasks is not null)
+        {
+            runtime.AgentTasks.TaskCreated += (_, task) => Dispatcher.InvokeAsync(() =>
+            {
+                RefreshAgentDots();
+                _messages.Add(new ChatBubble("Metis", $"⚡ Agent [{task.Id}] started: \"{task.Goal}\" in the background."));
+                RaiseSizeChanged();
+            });
+
+            runtime.AgentTasks.TaskCompleted += (_, task) => Dispatcher.InvokeAsync(() =>
+            {
+                RefreshAgentDots();
+                var summary = string.IsNullOrWhiteSpace(task.ResultSummary) ? "Task completed successfully." : task.ResultSummary;
+                _messages.Add(new ChatBubble("Metis", $"✅ Agent [{task.Id}] finished!\n\nGoal: \"{task.Goal}\"\n\nResult: {summary}"));
+                RaiseSizeChanged();
+            });
+
+            runtime.AgentTasks.TaskUpdated += (_, _) => Dispatcher.InvokeAsync(RefreshAgentDots);
+
+            runtime.AgentTasks.TaskFailed += (_, task) => Dispatcher.InvokeAsync(() =>
+            {
+                RefreshAgentDots();
+                _messages.Add(new ChatBubble("Problem", $"❌ Agent [{task.Id}] failed: {task.ErrorMessage ?? "Unknown error"}\n\nClick 'Spawn Agent' or type /spawn {task.Goal} to retry."));
+                RaiseSizeChanged();
+            });
+
+            runtime.AgentTasks.TaskCancelled += (_, task) => Dispatcher.InvokeAsync(() =>
+            {
+                RefreshAgentDots();
+                _messages.Add(new ChatBubble("Metis", $"⏹ Agent [{task.Id}] was cancelled."));
+                RaiseSizeChanged();
+            });
+
+            RefreshAgentDots();
+        }
 
         StatusText.Text = runtime.CurrentStatus;
-        Greet("I'm ready. Ask me about your screen, or tell me what to do.");
+
+        // "I'm ready" has to be true when it is said. Metis with no key, no
+        // account and no local model is not ready, and greeting someone that way
+        // means their first question fails after they have already trusted the
+        // greeting. Say what is actually needed instead.
+        Greet(runtime.CanAnswer(out var reason)
+            ? "I'm ready. Ask me about your screen, or tell me what to do."
+            : reason);
+
+        // A refusal with nothing to click is a wall. This is raised whenever a
+        // question could not be answered for want of setup, and it repeats the
+        // sentence in the transcript beside the question that prompted it.
+        runtime.SetupRequired += (_, message) => Dispatcher.Invoke(() =>
+        {
+            StatusText.Text = message;
+            RaiseSizeChanged();
+        });
+
         RefreshModelChip();
     }
 
@@ -138,6 +246,39 @@ public partial class NotchChat : System.Windows.Controls.UserControl
         RaiseSizeChanged();
     }
 
+    /// <summary>
+    /// Raised when the user asks to see their plan, so the shell can open
+    /// Preferences on the account page. The panel does not open windows itself
+    /// — it is a control inside the notch and knows nothing about the rest of
+    /// the application.
+    /// </summary>
+    public event EventHandler? PlanRequested;
+
+    /// <summary>
+    /// Shows the plan banner, or hides it.
+    ///
+    /// Called when a turn is refused for a reason that is about the account
+    /// rather than about the request: the month's included AI is spent, or the
+    /// plan does not cover what was asked for. Both are ordinary states rather
+    /// than faults, which is why they get their own quiet banner instead of the
+    /// error surface.
+    /// </summary>
+    public void ShowPlanNotice(string title, string subtitle, string action = "See plans")
+    {
+        PlanBannerTitle.Text = title;
+        PlanBannerSubtitle.Text = subtitle;
+        PlanBannerActionLabel.Text = action;
+        PlanBanner.Visibility = Visibility.Visible;
+    }
+
+    public void HidePlanNotice() => PlanBanner.Visibility = Visibility.Collapsed;
+
+    private void PlanBannerButton_OnClick(object sender, MouseButtonEventArgs e)
+    {
+        HidePlanNotice();
+        PlanRequested?.Invoke(this, EventArgs.Empty);
+    }
+
     private async void UpdateButton_OnClick(object sender, MouseButtonEventArgs e)
     {
         e.Handled = true;
@@ -152,15 +293,24 @@ public partial class NotchChat : System.Windows.Controls.UserControl
         }
 
         UpdateActionLabel.Text = "Updating…";
-        UpdateSubtitle.Text = "Downloading update and restarting Metis…";
+        UpdateSubtitle.Text = "Starting the download…";
         UpdateButton.IsEnabled = false;
         UpdateButton.Opacity = 0.6;
+        ShowUpdateRail();
         RaiseSizeChanged();
 
         var updater = new UpdateService(_runtime.Log);
-        var started = await updater.DownloadAndRunAsync(_availableUpdate);
+
+        // Marshalled back onto the interface thread by Progress<T>, which
+        // captures the synchronisation context it was constructed on. The
+        // download reports from a worker thread, so building this anywhere but
+        // here would put a cross-thread write on every one of these controls.
+        var progress = new Progress<UpdateProgress>(ReportUpdateProgress);
+
+        var started = await updater.DownloadAndRunAsync(_availableUpdate, progress);
         if (!started)
         {
+            HideUpdateRail();
             UpdateActionLabel.Text = "Retry";
             UpdateSubtitle.Text = "Update download failed. Check your internet connection or retry.";
             UpdateButton.IsEnabled = true;
@@ -169,31 +319,157 @@ public partial class NotchChat : System.Windows.Controls.UserControl
         }
     }
 
+    /// <summary>
+    /// The download, said out loud.
+    ///
+    /// Metis used to dim the button and then say nothing for however long the
+    /// installer took — no bytes, no percentage, no sign of life — on a
+    /// download that is tens of megabytes over whatever connection the user
+    /// happens to have. The one thing worse than a slow update is a slow update
+    /// that looks like a hang, because the person cancels it and tries again.
+    ///
+    /// The verify phase is reported for the same reason: hashing the installer
+    /// happens after the bar would have reached the end, so without a caption
+    /// for it the progress finishes and then Metis appears to freeze.
+    /// </summary>
+    private void ReportUpdateProgress(UpdateProgress progress)
+    {
+        UpdateSubtitle.Text = progress.Caption;
+
+        if (progress.Phase == UpdatePhase.Failed)
+        {
+            HideUpdateRail();
+            return;
+        }
+
+        var fraction = progress.Fraction;
+        if (fraction is null)
+        {
+            // No Content-Length, so there is no honest percentage to draw. The
+            // sweep says "still working" without claiming to know how far.
+            RunRailSweep();
+            return;
+        }
+
+        UpdateRailSweep.Visibility = Visibility.Collapsed;
+        UpdateRailSweep.BeginAnimation(TranslateTransform.XProperty, null);
+        UpdateRailFill.Visibility = Visibility.Visible;
+
+        // Verifying and restarting are drawn as a full bar rather than a
+        // rewound one: the download really is finished by then, and a bar that
+        // dropped back to nothing would read as a failure.
+        var share = progress.Phase == UpdatePhase.Downloading ? fraction.Value : 1d;
+        UpdateRailFill.Width = Math.Max(0, UpdateRail.ActualWidth * share);
+    }
+
+    private void ShowUpdateRail()
+    {
+        UpdateRail.Visibility = Visibility.Visible;
+        UpdateRailFill.Width = 0;
+        UpdateRailFill.Visibility = Visibility.Visible;
+        RunRailSweep();
+    }
+
+    private void HideUpdateRail()
+    {
+        UpdateRailSweep.BeginAnimation(TranslateTransform.XProperty, null);
+        UpdateRailSweep.Visibility = Visibility.Collapsed;
+        UpdateRail.Visibility = Visibility.Collapsed;
+    }
+
+    /// <summary>
+    /// The indeterminate state: one segment crossing the rail, repeating.
+    ///
+    /// This is the single case where a looping animation is the right answer
+    /// rather than a distraction — it is a loading indicator, and it stops the
+    /// moment the first byte count arrives or the update ends. Skipped entirely
+    /// when the user has asked for less motion, where the caption is doing the
+    /// work anyway.
+    /// </summary>
+    private void RunRailSweep()
+    {
+        if (MotionTuning.Reduced || UpdateRail.Visibility != Visibility.Visible)
+        {
+            return;
+        }
+
+        if (UpdateRailSweep.Visibility == Visibility.Visible)
+        {
+            return;
+        }
+
+        UpdateRailFill.Visibility = Visibility.Collapsed;
+        UpdateRailSweep.Visibility = Visibility.Visible;
+
+        var width = Math.Max(UpdateRail.ActualWidth, 120);
+        UpdateRailSweep.Width = width * 0.28;
+        UpdateRailSweep.BeginAnimation(
+            TranslateTransform.XProperty,
+            new DoubleAnimation(-UpdateRailSweep.Width, width, TimeSpan.FromMilliseconds(1150))
+            {
+                RepeatBehavior = RepeatBehavior.Forever
+            });
+    }
+
     // ============================ Sending ============================
 
     private async void Send_OnClick(object sender, MouseButtonEventArgs e)
     {
-        e.Handled = true;
-        await SendAsync();
+        try
+        {
+            e.Handled = true;
+            await SendAsync();
+        }
+        catch (Exception ex)
+        {
+            _runtime?.Log.Error("Unhandled exception in Send_OnClick", ex);
+        }
     }
 
     private async void PromptBox_OnPreviewKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
     {
-        // Enter sends and Shift+Enter breaks the line, which is the convention
-        // every chat box follows. PreviewKeyDown rather than KeyDown so the
-        // TextBox never gets the chance to insert the newline first.
-        if (e.Key == Key.Enter && Keyboard.Modifiers == ModifierKeys.None)
+        try
         {
-            e.Handled = true;
-            await SendAsync();
+            // Enter sends and Shift+Enter breaks the line, which is the convention
+            // every chat box follows. PreviewKeyDown rather than KeyDown so the
+            // TextBox never gets the chance to insert the newline first.
+            if (e.Key == Key.Enter && Keyboard.Modifiers == ModifierKeys.None)
+            {
+                e.Handled = true;
+                await SendAsync();
+                return;
+            }
+
+            if (e.Key == Key.Escape)
+            {
+                e.Handled = true;
+                CloseRequested?.Invoke(this, EventArgs.Empty);
+            }
+        }
+        catch (Exception ex)
+        {
+            _runtime?.Log.Error("Unhandled exception in PromptBox_OnPreviewKeyDown", ex);
+        }
+    }
+
+    /// <summary>
+    /// Asks a question the user did not type — a starter chip on first run.
+    ///
+    /// It goes through the prompt box and the ordinary send rather than calling
+    /// the runtime directly, so the question appears in the transcript exactly
+    /// as a typed one would. A first answer that arrives with no visible
+    /// question above it reads as Metis talking to itself.
+    /// </summary>
+    public async Task AskNowAsync(string question)
+    {
+        if (string.IsNullOrWhiteSpace(question))
+        {
             return;
         }
 
-        if (e.Key == Key.Escape)
-        {
-            e.Handled = true;
-            CloseRequested?.Invoke(this, EventArgs.Empty);
-        }
+        PromptBox.Text = question;
+        UpdatePlaceholder();
+        await SendAsync();
     }
 
     private async Task SendAsync()
@@ -211,11 +487,25 @@ public partial class NotchChat : System.Windows.Controls.UserControl
 
         PromptBox.Clear();
         UpdatePlaceholder();
-        _sending = true;
-        SendButton.Opacity = 0.45;
+
         try
         {
+            // The spawn intercept that used to sit here is gone. It caught the
+            // prompt before the runtime ever saw it, which meant the typed path
+            // and the voice path disagreed about what counted as a request for
+            // an agent, it only ever started one however many were asked for,
+            // and it could never follow "spawn an agent" with "to do what?".
+            // The runtime handles all of it now, in one place.
+
+            _sending = true;
+            SendButton.Opacity = 0.45;
             await _runtime.AskTextAsync(prompt);
+        }
+        catch (Exception exception)
+        {
+            _runtime.Log.Error("Failed to send message", exception);
+            _messages.Add(new ChatBubble("Problem", $"Failed to send message: {exception.Message}"));
+            RaiseSizeChanged();
         }
         finally
         {
@@ -223,6 +513,34 @@ public partial class NotchChat : System.Windows.Controls.UserControl
             SendButton.Opacity = 1;
             FocusComposer();
         }
+    }
+
+    private void SpawnAgentChip_OnClick(object sender, MouseButtonEventArgs e)
+    {
+        e.Handled = true;
+        SpawnAgentRequested?.Invoke(this, EventArgs.Empty);
+    }
+
+    private void AgentDots_OnClick(object sender, MouseButtonEventArgs e)
+    {
+        e.Handled = true;
+        AgentDrawerRequested?.Invoke(this, EventArgs.Empty);
+    }
+
+    public void RefreshAgentDots()
+    {
+        if (_runtime?.AgentTasks is null) return;
+
+        var active = _runtime.AgentTasks.GetActiveTasks();
+        var dots = new List<AgentDotItem>();
+        for (var i = 0; i < active.Count; i++)
+        {
+            var task = active[i];
+            dots.Add(new AgentDotItem(task.Id, AgentColors.GetBrush(i), $"{task.Id}: {task.Goal} ({task.Status})"));
+        }
+
+        AgentDotsControl.ItemsSource = dots;
+        AgentDotsControl.Visibility = dots.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
     }
 
     /// <summary>
@@ -241,7 +559,7 @@ public partial class NotchChat : System.Windows.Controls.UserControl
 
     // ========================= Runtime events =========================
 
-    private void Runtime_OnMessageAdded(object? sender, AssistantMessage message) => Dispatcher.Invoke(() =>
+    private void Runtime_OnMessageAdded(object? sender, AssistantMessage message) => Dispatcher.InvokeAsync(() =>
     {
         var author = message.Role switch
         {
@@ -250,19 +568,56 @@ public partial class NotchChat : System.Windows.Controls.UserControl
             _ => "Metis"
         };
 
+        // The reply may already be on screen, written a fragment at a time. If
+        // so this is the same answer arriving complete — the parsed text, which
+        // can differ slightly from the raw stream — so it replaces what was
+        // shown rather than being added underneath it.
+        _streamGrowth.Stop();
+        if (_streamingBubble is { } streaming && message.Role == AssistantRole.Metis)
+        {
+            streaming.Text = message.Text;
+            _streamingBubble = null;
+            RaiseSizeChanged();
+            ScrollToLatest();
+            RefreshModelChip();
+            return;
+        }
+
+        _streamingBubble = null;
         _messages.Add(new ChatBubble(author, message.Text));
         RaiseSizeChanged();
         ScrollToLatest();
         RefreshModelChip();
     });
 
+    private void Runtime_OnResponseStreamStarted(object? sender, EventArgs e) => Dispatcher.InvokeAsync(() =>
+    {
+        _streamingBubble = new ChatBubble("Metis", string.Empty);
+        _messages.Add(_streamingBubble);
+        RaiseSizeChanged();
+        ScrollToLatest();
+        _streamGrowth.Start();
+    });
+
+    /// <summary>
+    /// Appends the next piece of a reply that is still being written.
+    ///
+    /// Deliberately does not resize or scroll here. Fragments arrive many times
+    /// a second and <see cref="MeasureDesiredHeight"/> measures the whole
+    /// transcript, so doing that per fragment would lay the conversation out
+    /// again for every few characters of it. The binding redraws the text on
+    /// its own; a timer keeps the notch's height following along.
+    /// </summary>
+    private void Runtime_OnResponseTextDelta(object? sender, string delta) =>
+        Dispatcher.InvokeAsync(() => _streamingBubble?.Append(delta));
+
     private void Runtime_OnStatusChanged(object? sender, string status) =>
-        Dispatcher.Invoke(() => StatusText.Text = status);
+        Dispatcher.InvokeAsync(() => StatusText.Text = status);
 
     private void Runtime_OnAudioLevelChanged(object? sender, float level) =>
         Dispatcher.BeginInvoke(() => VoiceLevel.Value = Math.Clamp(level, 0, 1));
 
-    private void Runtime_OnStateChanged(object? sender, AssistantState state) => Dispatcher.Invoke(() =>
+    private void Runtime_OnStateChanged(object? sender, AssistantState state) => Dispatcher.InvokeAsync(() =>
     {
         VoiceLevel.Visibility = state == AssistantState.Listening ? Visibility.Visible : Visibility.Hidden;
 
@@ -520,11 +875,66 @@ public partial class NotchChat : System.Windows.Controls.UserControl
         System.Windows.Media.Brush TierBrush,
         string Detail,
         string Usage,
-        Visibility TickVisibility);
+        Visibility TickVisibility)
+    {
+        public override string ToString() => $"{DisplayName}, {TierLabel}. {Detail}";
+    }
 
     /// <summary>One earlier conversation, as the history menu shows it.</summary>
-    private sealed record HistoryRow(string Id, string Title, string Subtitle, Visibility TickVisibility);
+    private sealed record HistoryRow(string Id, string Title, string Subtitle, Visibility TickVisibility)
+    {
+        public override string ToString() => $"{Title}. {Subtitle}";
+    }
 }
 
-/// <summary>One line of the conversation as it is drawn.</summary>
-public sealed record ChatBubble(string Author, string Text);
+/// <summary>
+/// One line of the conversation as it is drawn.
+///
+/// A class rather than the record this used to be, because a reply is now put
+/// on screen while it is still being written: the bubble is created empty and
+/// filled in as the words arrive, which needs a property the binding can watch
+/// change rather than a new immutable value each time.
+/// </summary>
+public sealed class ChatBubble : INotifyPropertyChanged
+{
+    private string _text;
+
+    public ChatBubble(string author, string text)
+    {
+        Author = author;
+        _text = text;
+    }
+
+    public event PropertyChangedEventHandler? PropertyChanged;
+
+    public string Author { get; }
+
+    public string Text
+    {
+        get => _text;
+        set
+        {
+            if (_text == value)
+            {
+                return;
+            }
+
+            _text = value;
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Text)));
+        }
+    }
+
+    public void Append(string fragment) => Text = _text + fragment;
+
+    /// <summary>
+    /// What a screen reader announces for this message.
+    ///
+    /// An ItemsControl hands its data item to UI Automation as the name of each
+    /// generated container, and the default here was the type name: a
+    /// conversation read out as "Metis.App.Windows.ChatBubble" three times over,
+    /// with the actual words of the answer reachable only as unattributed text
+    /// beneath it. Author first, because in a transcript who is speaking is the
+    /// part that stops making sense when it is missing.
+    /// </summary>
+    public override string ToString() => $"{Author}: {Text}";
+}

@@ -32,6 +32,17 @@ public sealed record GeminiRequest(
     string? ChatRecall = null,
 
     /// <summary>
+    /// The last few exchanges of the conversation happening right now, verbatim.
+    ///
+    /// Distinct from <see cref="ChatRecall"/>, which digests older sessions and
+    /// only refreshes when the subject changes. This is the immediate thread,
+    /// and without it a follow-up cannot be understood at all: "tidy my
+    /// downloads" is an answer to "what should the agent do?" or an ordinary
+    /// question, and nothing in the request said which.
+    /// </summary>
+    string? RecentTurns = null,
+
+    /// <summary>
     /// An area the user circled on screen. When present the answer must concern
     /// that region specifically, and the screenshot is cropped to it.
     /// </summary>
@@ -47,9 +58,34 @@ public sealed record GeminiRequest(
     /// <summary>
     /// The user's configured preferred display name.
     /// </summary>
-    string? UserName = null);
+    string? UserName = null,
 
-public sealed record GeminiResponse(string Text, string Model, AssistantPlan? Plan = null);
+    /// <summary>
+    /// How many parts of the screenshot were painted out before it was sent,
+    /// because the application or the user marked them private.
+    ///
+    /// The model has to be told. A black rectangle it was not warned about is
+    /// something it will describe as though it were really there — a dark
+    /// panel, a video, an empty pane — and a confident wrong answer about
+    /// withheld content is worse than no answer at all.
+    /// </summary>
+    int WithheldScreenRegions = 0);
+
+/// <summary>
+/// What a turn cost the model, when it says.
+///
+/// <paramref name="ThoughtTokens"/> is the one worth watching: thinking
+/// produces no text, so every one of those tokens is time the user spends
+/// looking at an empty panel. It is the difference between a reply that starts
+/// arriving in a second and one that appears all at once six seconds later.
+/// </summary>
+public sealed record ModelUsageReport(int PromptTokens, int ThoughtTokens, int OutputTokens);
+
+public sealed record GeminiResponse(
+    string Text,
+    string Model,
+    AssistantPlan? Plan = null,
+    ModelUsageReport? Usage = null);
 
 public sealed record OpenAiResponse(
     string Text,
@@ -75,4 +111,33 @@ public sealed record SpeechAudio(
     int SampleRate,
     int Channels,
     int BitsPerSample,
-    string MimeType);
+    string MimeType)
+{
+    public byte[] ToWavBytes()
+    {
+        var dataLength = PcmData.Length;
+        var bytesPerSample = Math.Max(1, BitsPerSample / 8);
+        var effectiveChannels = Math.Max(1, Channels);
+        var effectiveSampleRate = Math.Max(1, SampleRate);
+        var blockAlign = (short)(effectiveChannels * bytesPerSample);
+        var byteRate = effectiveSampleRate * blockAlign;
+        var wave = new byte[44 + dataLength];
+
+        System.Text.Encoding.ASCII.GetBytes("RIFF").CopyTo(wave, 0);
+        System.Buffers.Binary.BinaryPrimitives.WriteInt32LittleEndian(wave.AsSpan(4), 36 + dataLength);
+        System.Text.Encoding.ASCII.GetBytes("WAVE").CopyTo(wave, 8);
+        System.Text.Encoding.ASCII.GetBytes("fmt ").CopyTo(wave, 12);
+        System.Buffers.Binary.BinaryPrimitives.WriteInt32LittleEndian(wave.AsSpan(16), 16);
+        System.Buffers.Binary.BinaryPrimitives.WriteInt16LittleEndian(wave.AsSpan(20), 1); // PCM
+        System.Buffers.Binary.BinaryPrimitives.WriteInt16LittleEndian(wave.AsSpan(22), (short)effectiveChannels);
+        System.Buffers.Binary.BinaryPrimitives.WriteInt32LittleEndian(wave.AsSpan(24), effectiveSampleRate);
+        System.Buffers.Binary.BinaryPrimitives.WriteInt32LittleEndian(wave.AsSpan(28), byteRate);
+        System.Buffers.Binary.BinaryPrimitives.WriteInt16LittleEndian(wave.AsSpan(32), blockAlign);
+        System.Buffers.Binary.BinaryPrimitives.WriteInt16LittleEndian(wave.AsSpan(34), (short)BitsPerSample);
+        System.Text.Encoding.ASCII.GetBytes("data").CopyTo(wave, 36);
+        System.Buffers.Binary.BinaryPrimitives.WriteInt32LittleEndian(wave.AsSpan(40), dataLength);
+        PcmData.CopyTo(wave, 44);
+
+        return wave;
+    }
+}

@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <IsPackable>false</IsPackable>
     <IsTestProject>true</IsTestProject>
@@ -22,8 +22,8 @@
     <ProjectReference Include="..\..\src\Metis.Windows\Metis.Windows.csproj" />
   </ItemGroup>
   <ItemGroup>
-    <None Include="..\..\src\Metis.App\Windows\SetupWindow.xaml"
-          Link="Fixtures\SetupWindow.xaml"
+    <None Include="..\..\src\Metis.App\Windows\PreferencesWindow.xaml"
+          Link="Fixtures\PreferencesWindow.xaml"
           CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\..\src\Metis.App\Theme\Tokens.Light.xaml"
           Link="Fixtures\Tokens.Light.xaml"
@@ -33,6 +33,34 @@
           CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\..\src\Metis.App\Theme\Controls.xaml"
           Link="Fixtures\Controls.xaml"
+          CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\src\Metis.App\Windows\NotchChat.xaml"
+          Link="Fixtures\NotchChat.xaml"
+          CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\src\Metis.App\Windows\NotchWindow.xaml"
+          Link="Fixtures\NotchWindow.xaml"
+          CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\src\Metis.App\Windows\NotchAgentDrawer.xaml"
+          Link="Fixtures\NotchAgentDrawer.xaml"
+          CopyToOutputDirectory="PreserveNewest" />
+    <!-- The two newest surfaces, and the two that carry the account and the
+         first run. They were the only notch pages the markup tests could not
+         see, which is exactly backwards: a missing resource key has shipped
+         from here before, and these are the pages a new user meets first. -->
+    <None Include="..\..\src\Metis.App\Windows\NotchSettings.xaml"
+          Link="Fixtures\NotchSettings.xaml"
+          CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\src\Metis.App\Windows\NotchWelcome.xaml"
+          Link="Fixtures\NotchWelcome.xaml"
+          CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\src\Metis.App\Windows\NotchSpawnAgentPanel.xaml"
+          Link="Fixtures\NotchSpawnAgentPanel.xaml"
+          CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\src\Metis.App\Windows\SpawnAgentDialog.xaml"
+          Link="Fixtures\SpawnAgentDialog.xaml"
+          CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\src\Metis.App\Windows\NotchAuth.xaml"
+          Link="Fixtures\NotchAuth.xaml"
           CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

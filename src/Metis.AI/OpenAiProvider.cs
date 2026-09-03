@@ -21,10 +21,7 @@ public sealed class OpenAiProvider : IOpenAiProvider, IDisposable
     public OpenAiProvider(HttpClient? httpClient = null)
     {
         _ownsClient = httpClient is null;
-        _httpClient = httpClient ?? new HttpClient
-        {
-            Timeout = TimeSpan.FromSeconds(75)
-        };
+        _httpClient = httpClient ?? MetisHttp.CreateClient(TimeSpan.FromSeconds(75));
     }
 
     public async Task<OpenAiResponse> GenerateAsync(
@@ -32,6 +29,7 @@ public sealed class OpenAiProvider : IOpenAiProvider, IDisposable
         string model,
         string transcriptionModel,
         GeminiRequest request,
+        IProgress<string>? onTextDelta = null,
         CancellationToken cancellationToken = default)
     {
         ThrowIfDisposed();
@@ -84,18 +82,46 @@ public sealed class OpenAiProvider : IOpenAiProvider, IDisposable
                     strict = true,
                     schema = ReasoningProviderSupport.AssistantPlanJsonSchema
                 }
-            }
+            },
+            stream = onTextDelta is not null
         }, SerializerOptions);
 
         using var httpRequest = CreateJsonRequest(HttpMethod.Post, "responses", apiKey, payload);
         using var response = await SendAsync(httpRequest, cancellationToken).ConfigureAwait(false);
-        var body = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
-        if (!response.IsSuccessStatusCode)
+
+        string rawResponse;
+        if (onTextDelta is null)
         {
-            throw CreateApiException(response.StatusCode, body, model);
+            var body = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+            if (!response.IsSuccessStatusCode)
+            {
+                throw CreateApiException(response.StatusCode, body, model);
+            }
+
+            rawResponse = ReadResponseText(body);
+        }
+        else
+        {
+            if (!response.IsSuccessStatusCode)
+            {
+                var errorBody = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+                throw CreateApiException(response.StatusCode, errorBody, model);
+            }
+
+            var answer = new StreamingPlanText(onTextDelta);
+            await ReasoningProviderSupport.ReadEventStreamAsync(
+                response,
+                element =>
+                {
+                    if (ReasoningProviderSupport.ReadString(element, "type") == "response.output_text.delta")
+                    {
+                        answer.Append(ReasoningProviderSupport.ReadString(element, "delta"));
+                    }
+                },
+                cancellationToken).ConfigureAwait(false);
+            rawResponse = answer.Raw;
         }
 
-        var rawResponse = ReadResponseText(body);
         var safetyContext = string.IsNullOrWhiteSpace(transcript)
             ? request.Prompt
             : $"{request.Prompt}\n{transcript}";
@@ -151,6 +177,7 @@ public sealed class OpenAiProvider : IOpenAiProvider, IDisposable
                 new GeminiRequest(
                     "This is a Metis connection diagnostic. Inspect the attached one-pixel image and reply with exactly the word OK.",
                     DiagnosticPng),
+                onTextDelta: null,
                 cancellationToken).ConfigureAwait(false);
             stopwatch.Stop();
             return new ProviderTestResult(
@@ -166,6 +193,38 @@ public sealed class OpenAiProvider : IOpenAiProvider, IDisposable
         }
     }
 
+    public static readonly HashSet<string> ValidOpenAiVoices = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "alloy", "echo", "fable", "onyx", "nova", "shimmer", "ash", "coral", "sage", "verse", "ballad"
+    };
+
+    public static string NormalizeVoice(string? voiceName)
+    {
+        if (string.IsNullOrWhiteSpace(voiceName))
+        {
+            return "alloy";
+        }
+
+        var trimmed = voiceName.Trim();
+        return ValidOpenAiVoices.TryGetValue(trimmed, out var match) ? match.ToLowerInvariant() : "alloy";
+    }
+
+    public static string NormalizeSpeechModel(string? model)
+    {
+        if (string.IsNullOrWhiteSpace(model) || model.Equals("auto", StringComparison.OrdinalIgnoreCase))
+        {
+            return "tts-1";
+        }
+
+        var trimmed = model.Trim();
+        if (trimmed.StartsWith("models/", StringComparison.OrdinalIgnoreCase))
+        {
+            trimmed = trimmed["models/".Length..];
+        }
+
+        return trimmed;
+    }
+
     public async Task<SpeechAudio?> SynthesizeSpeechAsync(
         string apiKey,
         string model,
@@ -175,31 +234,34 @@ public sealed class OpenAiProvider : IOpenAiProvider, IDisposable
     {
         ThrowIfDisposed();
         ValidateKey(apiKey);
-        ValidateModel(model);
         if (string.IsNullOrWhiteSpace(text))
         {
             return null;
         }
 
+        var normalizedModel = NormalizeSpeechModel(model);
+        var normalizedVoice = NormalizeVoice(voiceName);
+
         var payload = JsonSerializer.Serialize(new
         {
-            model = model.Trim(),
+            model = normalizedModel,
             input = Shorten(text.Trim(), 4000),
-            voice = string.IsNullOrWhiteSpace(voiceName) ? "alloy" : voiceName.Trim().ToLowerInvariant(),
+            voice = normalizedVoice,
             response_format = "pcm"
         }, SerializerOptions);
+
         using var request = CreateJsonRequest(HttpMethod.Post, "audio/speech", apiKey, payload);
         using var response = await SendAsync(request, cancellationToken).ConfigureAwait(false);
         if (!response.IsSuccessStatusCode)
         {
             var body = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
-            throw CreateApiException(response.StatusCode, body, model);
+            throw CreateApiException(response.StatusCode, body, normalizedModel);
         }
 
         var bytes = await response.Content.ReadAsByteArrayAsync(cancellationToken).ConfigureAwait(false);
         return bytes.Length == 0
             ? null
-            : new SpeechAudio(bytes, 24000, 1, 16, "audio/pcm;rate=24000");
+            : AudioPayloadParser.Parse(bytes, "audio/pcm;rate=24000");
     }
 
     private async Task<string> TranscribeAsync(

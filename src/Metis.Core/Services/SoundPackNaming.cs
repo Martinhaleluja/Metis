@@ -29,6 +29,19 @@ public static class SoundPackNaming
             return MetisSound.Error;
         }
 
+        // Tested before "complete" and "stop", both of which appear in phrases
+        // like "allowance used up" and "plan complete" that mean something else
+        // entirely.
+        if (name.Contains("limit") || name.Contains("allowance") || name.Contains("quota"))
+        {
+            return MetisSound.LimitReached;
+        }
+
+        if (name.Contains("plan") || name.Contains("upgrade") || name.Contains("subscri"))
+        {
+            return MetisSound.PlanChanged;
+        }
+
         if (name.Contains("inspect"))
         {
             return IsReleaseWord(name) ? MetisSound.InspectReleased : MetisSound.InspectPressed;

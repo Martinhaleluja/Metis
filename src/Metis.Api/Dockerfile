@@ -15,9 +15,11 @@ FROM mcr.microsoft.com/dotnet/aspnet:8.0
 WORKDIR /app
 COPY --from=build /app .
 
-# Fly sets PORT; Kestrel is told to listen on it rather than its default.
-ENV ASPNETCORE_URLS=http://0.0.0.0:8080
-EXPOSE 8080
+# Kestrel is told which port to listen on rather than using its default. This
+# must agree with ASPNETCORE_URLS in render.yaml: the blueprint's value wins at
+# runtime, so a mismatch here is silent until someone runs the image by hand.
+ENV ASPNETCORE_URLS=http://0.0.0.0:10000
+EXPOSE 10000
 
 # Runs as a non-root user. A gateway holding provider keys is the last process
 # that should be root in its own container.

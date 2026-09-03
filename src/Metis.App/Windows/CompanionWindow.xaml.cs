@@ -47,6 +47,29 @@ public partial class CompanionWindow : Window
 
     private readonly DispatcherTimer _bubbleHideTimer;
     private readonly DispatcherTimer _errorResetTimer;
+
+    /// <summary>
+    /// How long the companion waits at rest before leaving.
+    ///
+    /// A turn is not one state, it is a run of them — thinking, then speaking,
+    /// then idle, with brief returns to idle in between — and leaving the
+    /// instant the runtime reports rest made the companion flicker in and out
+    /// three times for a single question. Waiting a beat means one arrival and
+    /// one departure per turn, which is the whole point of it not being there
+    /// the rest of the time.
+    /// </summary>
+    private static readonly TimeSpan DepartureLinger = TimeSpan.FromMilliseconds(900);
+
+    private readonly DispatcherTimer _departureTimer = new() { Interval = DepartureLinger };
+
+    /// <summary>
+    /// Whether the companion is allowed on screen at all yet.
+    ///
+    /// The application shows this window once, when first run is over, and that
+    /// first <c>Show</c> is the permission — not a decision about whether Metis
+    /// currently has anything to say. Everything after it is decided here.
+    /// </summary>
+    private bool _presenceAllowed;
     private readonly DoubleAnimation _spinnerAnimation;
     private string _pendingSpeech = string.Empty;
     private List<int> _wordEnds = [];
@@ -120,12 +143,12 @@ public partial class CompanionWindow : Window
         InitializeComponent();
         _runtime = runtime;
         ApplySettings(runtime.Settings);
-        runtime.SettingsChanged += (_, settings) => Dispatcher.Invoke(() => ApplySettings(settings));
+        runtime.SettingsChanged += (_, settings) => Dispatcher.InvokeAsync(() => ApplySettings(settings));
         runtime.State.Changed += RuntimeState_OnChanged;
         runtime.AudioLevelChanged += Runtime_OnAudioLevelChanged;
         runtime.CompanionResponseStarted += Runtime_OnCompanionResponseStarted;
         runtime.CompanionGuidanceRequested += Runtime_OnCompanionGuidanceRequested;
-        runtime.CompanionDemoRequested += (_, demo) => Dispatcher.Invoke(() => _ = PlayDemoAsync(demo));
+        runtime.CompanionDemoRequested += (_, demo) => Dispatcher.InvokeAsync(() => _ = PlayDemoAsync(demo));
 
         _spinnerAnimation = new DoubleAnimation(0, 360, TimeSpan.FromSeconds(0.75))
         {
@@ -136,8 +159,57 @@ public partial class CompanionWindow : Window
         {
             Interval = TimeSpan.FromMilliseconds(16)
         };
-        _followTimer.Tick += (_, _) => Tick();
-        _followTimer.Start();
+        _followTimer.Tick += (_, _) =>
+        {
+            try
+            {
+                Tick();
+            }
+            catch
+            {
+                // Protect render/motion tick loop from unhandled crashes
+            }
+        };
+
+        // Sixty times a second, at render priority, for as long as Metis is
+        // running — this used to start here and never stop, so a hidden
+        // companion still woke the UI thread on every frame and competed with
+        // whatever the user was actually doing. It now runs only while there is
+        // something on screen to move, which is most of the time no longer.
+        IsVisibleChanged += (_, _) =>
+        {
+            if (IsVisible)
+            {
+                _followTimer.Start();
+                OnShown();
+            }
+            else
+            {
+                _followTimer.Stop();
+                _departureTimer.Stop();
+
+                // Forgetting where it stood is what stops the next arrival
+                // gliding in from wherever the pointer happened to be a
+                // conversation ago. It appears beside the cursor instead.
+                _positionInitialized = false;
+            }
+        };
+
+        _departureTimer.Tick += (_, _) =>
+        {
+            try
+            {
+                _departureTimer.Stop();
+                if (!ShouldBePresent())
+                {
+                    Hide();
+                }
+            }
+            catch
+            {
+                // Protect the departure timer
+            }
+        };
 
         _bubbleTimer = new DispatcherTimer
         {
@@ -154,23 +226,38 @@ public partial class CompanionWindow : Window
         _bubbleHideTimer = new DispatcherTimer { Interval = TransientDisplay };
         _bubbleHideTimer.Tick += (_, _) =>
         {
-            _bubbleHideTimer.Stop();
-            HideSpeech();
+            try
+            {
+                _bubbleHideTimer.Stop();
+                HideSpeech();
+            }
+            catch
+            {
+                // Protect speech hide timer
+            }
         };
 
         _errorResetTimer = new DispatcherTimer { Interval = TransientDisplay };
         _errorResetTimer.Tick += (_, _) =>
         {
-            _errorResetTimer.Stop();
-            RestoreRestingAppearance();
+            try
+            {
+                _errorResetTimer.Stop();
+                RestoreRestingAppearance();
+            }
+            catch
+            {
+                // Protect error reset timer
+            }
         };
 
         // Subscribed after the timers exist, because ending a lesson stops the
         // guidance hold and sends the companion home — both of which reach for
         // state this constructor has only just finished building.
-        runtime.CompanionDetachRequested += (_, detached) => Dispatcher.Invoke(() =>
+        runtime.CompanionDetachRequested += (_, detached) => Dispatcher.InvokeAsync(() =>
         {
             _teachingDetached = detached;
+            ApplyPresence();
             if (!detached)
             {
                 // The lesson is over, so the companion flies back to the user's
@@ -194,10 +281,219 @@ public partial class CompanionWindow : Window
         };
     }
 
+    /// <summary>
+    /// Whether the companion has any business being on screen right now.
+    ///
+    /// <see cref="CompanionPresence"/> answers for the assistant's state; the
+    /// three clauses after it are the things that outlive a state. A flight, a
+    /// demonstration and a bubble the user is still reading all have to finish
+    /// in front of them — a companion that vanished mid-swoop, or took its own
+    /// answer away with it, would read as a fault rather than as tact.
+    /// </summary>
+    private bool ShouldBePresent() =>
+        CompanionPresence.ShouldBeVisible(
+            _runtime.State.Current,
+            _runtime.Settings.CompanionAlwaysVisible,
+            _teachingDetached)
+        || _demoActive
+        || _motion != CompanionMotion.FollowingCursor
+        || SpeechBubble.Visibility == Visibility.Visible;
+
+    /// <summary>
+    /// Brings the companion in, or starts its countdown to leaving.
+    ///
+    /// Arrival is immediate and departure is not, deliberately: being late to
+    /// appear costs the user the beginning of whatever Metis was about to show
+    /// them, while being slow to leave costs nothing but a second of company.
+    /// </summary>
+    /// <param name="immediately">
+    /// Skips the linger. Used once, when the application first shows the window
+    /// and Metis has nothing to say, so the companion is never seen arriving
+    /// only to leave again.
+    /// </param>
+    private void ApplyPresence(bool immediately = false)
+    {
+        if (!_presenceAllowed)
+        {
+            // First run is still in progress. Metis does not stand next to
+            // anyone's cursor before they have agreed to it being there.
+            return;
+        }
+
+        if (ShouldBePresent())
+        {
+            _departureTimer.Stop();
+            if (!IsVisible)
+            {
+                Show();
+            }
+
+            return;
+        }
+
+        _departureTimer.Stop();
+        if (!IsVisible)
+        {
+            return;
+        }
+
+        if (immediately)
+        {
+            Hide();
+            return;
+        }
+
+        _departureTimer.Start();
+    }
+
+    /// <summary>
+    /// Settles the companion the moment it becomes visible: beside the cursor
+    /// rather than wherever it last stood, and with an entrance.
+    /// </summary>
+    private void OnShown()
+    {
+        if (!_presenceAllowed)
+        {
+            _presenceAllowed = true;
+
+            // The application's own first Show, which says only that first run
+            // is over. Whether Metis has anything to say is a separate question
+            // and is asked here, at Loaded priority — after layout and before
+            // the first paint, so an idle companion is never seen for a frame.
+            Dispatcher.InvokeAsync(
+                () =>
+                {
+                    ApplyPresence(immediately: true);
+                    if (IsVisible)
+                    {
+                        PlayArrival();
+                    }
+                },
+                DispatcherPriority.Loaded);
+            return;
+        }
+
+        if (_motion == CompanionMotion.FollowingCursor && !_teachingDetached && !_demoActive)
+        {
+            FollowCursor();
+        }
+
+        PlayArrival();
+    }
+
+    /// <summary>
+    /// The duration and easing tokens, by name.
+    ///
+    /// Foundations.xaml exists because this application once had nine different
+    /// fade lengths that nobody had chosen, so a literal here would be a small
+    /// step back towards that. The fallbacks are for the designer and for a
+    /// window built before the application's resources are loaded, where a
+    /// missing key would otherwise mean no animation at all.
+    /// </summary>
+    private Duration ThemeDuration(string key, double fallbackSeconds) =>
+        TryFindResource(key) is Duration duration
+            ? duration
+            : new Duration(TimeSpan.FromSeconds(fallbackSeconds));
+
+    private IEasingFunction ThemeEase(string key, IEasingFunction fallback) =>
+        TryFindResource(key) as IEasingFunction ?? fallback;
+
+    /// <summary>
+    /// The entrance: one turn, settling upright, as the companion appears.
+    ///
+    /// Skipped rather than shortened when motion is reduced. A spin compressed
+    /// into sixty milliseconds is still a spin, and someone who asked for less
+    /// movement asked for none of this one. Nothing here repeats either: the
+    /// companion reacts to arriving and then holds perfectly still, because a
+    /// sprite that fidgets while idle is something to look at instead of
+    /// something to look past.
+    /// </summary>
+    private void PlayArrival()
+    {
+        ArrivalSpin.BeginAnimation(System.Windows.Media.RotateTransform.AngleProperty, null);
+        ReactionScale.BeginAnimation(System.Windows.Media.ScaleTransform.ScaleXProperty, null);
+        ReactionScale.BeginAnimation(System.Windows.Media.ScaleTransform.ScaleYProperty, null);
+        RootPanel.BeginAnimation(OpacityProperty, null);
+        ArrivalSpin.Angle = 0;
+        ReactionScale.ScaleX = 1;
+        ReactionScale.ScaleY = 1;
+        RootPanel.Opacity = 1;
+
+        if (MotionTuning.Reduced)
+        {
+            return;
+        }
+
+        var settle = ThemeEase(
+            "EmphasisEase",
+            new BackEase { EasingMode = EasingMode.EaseOut, Amplitude = 0.18 });
+        var entrance = ThemeDuration("DurationEntrance", 0.24);
+
+        // Every one of these stops rather than holds, so the transforms go back
+        // to being plain properties the moment the entrance is over and the
+        // next reaction is not animating on top of a held value.
+        ArrivalSpin.BeginAnimation(
+            System.Windows.Media.RotateTransform.AngleProperty,
+            new DoubleAnimation(-150, 0, entrance)
+            {
+                EasingFunction = settle,
+                FillBehavior = FillBehavior.Stop
+            });
+
+        var grow = new DoubleAnimation(0.55, 1, entrance)
+        {
+            EasingFunction = settle,
+            FillBehavior = FillBehavior.Stop
+        };
+        ReactionScale.BeginAnimation(System.Windows.Media.ScaleTransform.ScaleXProperty, grow);
+        ReactionScale.BeginAnimation(System.Windows.Media.ScaleTransform.ScaleYProperty, grow.Clone());
+
+        RootPanel.BeginAnimation(
+            OpacityProperty,
+            new DoubleAnimation(0, 1, ThemeDuration("DurationFade", 0.16))
+            {
+                FillBehavior = FillBehavior.Stop
+            });
+    }
+
+    /// <summary>
+    /// The landing: a short squash as the companion touches down at the end of
+    /// a flight, which is what makes the arc read as having arrived somewhere
+    /// rather than having stopped moving.
+    /// </summary>
+    private void PlayLanding()
+    {
+        if (MotionTuning.Reduced)
+        {
+            return;
+        }
+
+        var micro = ThemeDuration("DurationMicro", 0.10);
+        var ease = ThemeEase("StandardEase", new CubicEase { EasingMode = EasingMode.EaseOut });
+
+        ReactionScale.BeginAnimation(
+            System.Windows.Media.ScaleTransform.ScaleYProperty,
+            new DoubleAnimation(0.86, micro)
+            {
+                AutoReverse = true,
+                EasingFunction = ease,
+                FillBehavior = FillBehavior.Stop
+            });
+        ReactionScale.BeginAnimation(
+            System.Windows.Media.ScaleTransform.ScaleXProperty,
+            new DoubleAnimation(1.12, micro)
+            {
+                AutoReverse = true,
+                EasingFunction = ease,
+                FillBehavior = FillBehavior.Stop
+            });
+    }
+
     public void AllowClose()
     {
         _allowClose = true;
         _followTimer.Stop();
+        _departureTimer.Stop();
         _bubbleTimer.Stop();
         _bubbleHideTimer.Stop();
         _errorResetTimer.Stop();
@@ -254,7 +550,7 @@ public partial class CompanionWindow : Window
         return brush;
     }
 
-    private void RuntimeState_OnChanged(object? sender, AssistantState state) => Dispatcher.Invoke(() =>
+    private void RuntimeState_OnChanged(object? sender, AssistantState state) => Dispatcher.InvokeAsync(() =>
     {
         WavePanel.Visibility = state == AssistantState.Listening ? Visibility.Visible : Visibility.Collapsed;
         ThinkingRing.Visibility = state == AssistantState.Thinking ? Visibility.Visible : Visibility.Collapsed;
@@ -285,7 +581,7 @@ public partial class CompanionWindow : Window
     });
 
     private void Runtime_OnCompanionResponseStarted(object? sender, CompanionResponse response) =>
-        Dispatcher.Invoke(() =>
+        Dispatcher.InvokeAsync(() =>
         {
             if (response.ShowBubble && !string.IsNullOrWhiteSpace(response.Text))
             {
@@ -298,7 +594,7 @@ public partial class CompanionWindow : Window
         });
 
     private void Runtime_OnCompanionGuidanceRequested(object? sender, CompanionGuidance guidance) =>
-        Dispatcher.Invoke(() =>
+        Dispatcher.InvokeAsync(() =>
         {
             _guidanceScreenX = guidance.ScreenX;
             _guidanceScreenY = guidance.ScreenY;
@@ -325,19 +621,26 @@ public partial class CompanionWindow : Window
     /// </summary>
     private void GuidanceTimer_OnTick(object? sender, EventArgs e)
     {
-        _guidanceTimer.Stop();
-        HideSpeech();
-
-        if (_teachingDetached)
+        try
         {
-            // Mid-lesson the companion stays beside the control the learner is
-            // working on. Flying home between steps would pull their eye back
-            // to the pointer and away from the thing they are meant to be
-            // looking at.
-            return;
-        }
+            _guidanceTimer.Stop();
+            HideSpeech();
 
-        BeginReturnFlight();
+            if (_teachingDetached)
+            {
+                // Mid-lesson the companion stays beside the control the learner is
+                // working on. Flying home between steps would pull their eye back
+                // to the pointer and away from the thing they are meant to be
+                // looking at.
+                return;
+            }
+
+            BeginReturnFlight();
+        }
+        catch
+        {
+            // Protect timer handler
+        }
     }
 
     private void BeginReturnFlight()
@@ -433,6 +736,12 @@ public partial class CompanionWindow : Window
         }
 
         _motion = CompanionMotion.PointingAtTarget;
+
+        // Touchdown. Only on the outbound leg: the companion flies out to the
+        // thing it is explaining and stops there, which is the moment worth
+        // marking. The return leg ends by handing the screen back, and a squash
+        // on the way out of the user's attention is a squash for nobody.
+        PlayLanding();
 
         // The label lands with the companion rather than travelling with it.
         if (_pendingGuidanceCue is { } cue)
@@ -696,11 +1005,34 @@ public partial class CompanionWindow : Window
 
         // Paced per word rather than per character: words arriving together is
         // how speech lands, and it stays readable while it fills in.
-        var perWord = speechDuration is { TotalMilliseconds: > 0 } duration && _wordEnds.Count > 0
-            ? duration.TotalMilliseconds / _wordEnds.Count
-            : 240d;
-        _bubbleTimer.Interval = TimeSpan.FromMilliseconds(Math.Clamp(perWord, 90d, 520d));
+        //
+        // Only when there is speech to keep pace with. Without audio this used
+        // to fall back to a fixed 240ms per word, which meant a sixty-word
+        // answer that had already arrived in full took another fourteen seconds
+        // to finish appearing — the app deliberately withholding text it was
+        // holding. Silent replies now land at once.
+        if (speechDuration is not { TotalMilliseconds: > 0 } duration || _wordEnds.Count == 0)
+        {
+            RevealEverythingNow();
+            return;
+        }
+
+        _bubbleTimer.Interval = TimeSpan.FromMilliseconds(
+            Math.Clamp(duration.TotalMilliseconds / _wordEnds.Count, 90d, 520d));
         _bubbleTimer.Start();
+    }
+
+    /// <summary>
+    /// Shows the whole pending line immediately and starts its reading
+    /// countdown, as if the word-by-word reveal had just finished.
+    /// </summary>
+    private void RevealEverythingNow()
+    {
+        _bubbleTimer.Stop();
+        SpeechText.Text = _pendingSpeech;
+        _revealedWords = _wordEnds.Count;
+        _bubbleHideTimer.Stop();
+        _bubbleHideTimer.Start();
     }
 
     /// <summary>
@@ -737,19 +1069,33 @@ public partial class CompanionWindow : Window
 
     private void BubbleTimer_OnTick(object? sender, EventArgs e)
     {
-        if (_revealedWords >= _wordEnds.Count)
+        try
+        {
+            if (_revealedWords >= _wordEnds.Count)
+            {
+                _bubbleTimer.Stop();
+
+                // The countdown starts when the last word lands, not when writing
+                // began, so a long answer still gets its full reading time.
+                _bubbleHideTimer.Stop();
+                _bubbleHideTimer.Start();
+                return;
+            }
+
+            if (_revealedWords < _wordEnds.Count && _wordEnds[_revealedWords] <= _pendingSpeech.Length)
+            {
+                SpeechText.Text = _pendingSpeech[.._wordEnds[_revealedWords]];
+                _revealedWords++;
+            }
+            else
+            {
+                _bubbleTimer.Stop();
+            }
+        }
+        catch
         {
             _bubbleTimer.Stop();
-
-            // The countdown starts when the last word lands, not when writing
-            // began, so a long answer still gets its full reading time.
-            _bubbleHideTimer.Stop();
-            _bubbleHideTimer.Start();
-            return;
         }
-
-        SpeechText.Text = _pendingSpeech[.._wordEnds[_revealedWords]];
-        _revealedWords++;
     }
 
     /// <summary>

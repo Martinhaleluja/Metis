@@ -1,7 +1,10 @@
-[CmdletBinding()]
+﻿[CmdletBinding()]
 param(
+    # Defaulted from Directory.Build.props rather than repeated here, so the
+    # installer and an ordinary build can never disagree about what version
+    # this is. Pass -Version to override for a one-off build.
     [ValidatePattern('^\d+\.\d+\.\d+$')]
-    [string]$Version = '1.0.0',
+    [string]$Version = ([xml](Get-Content (Join-Path $PSScriptRoot '..\Directory.Build.props'))).Project.PropertyGroup.Version,
     [ValidateSet('Debug', 'Release')]
     [string]$Configuration = 'Release',
     [switch]$SkipTests,
@@ -258,3 +261,12 @@ if (-not (Test-Path -LiteralPath $setupPath)) {
 
 $setup = Get-Item -LiteralPath $setupPath
 Write-Host "Created $($setup.FullName) ($([Math]::Round($setup.Length / 1MB, 1)) MiB)"
+
+# Metis downloads this file and runs it without asking, so the release has to
+# say which file it meant. UpdateService reads this line out of the release
+# notes and refuses to run an installer that does not match it.
+$hash = (Get-FileHash -LiteralPath $setupPath -Algorithm SHA256).Hash.ToLowerInvariant()
+Set-Content -LiteralPath "$setupPath.sha256" -Value $hash -Encoding ascii
+Write-Host ''
+Write-Host 'Paste this line into the GitHub release notes:'
+Write-Host "SHA-256: $hash"

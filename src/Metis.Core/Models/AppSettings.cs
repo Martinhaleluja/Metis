@@ -13,7 +13,7 @@ public sealed record AppSettings
 
     public string AiProvider { get; init; } = "Gemini";
     public string ReasoningModel { get; init; } = "gemini-3.5-flash";
-    public string SpeechModel { get; init; } = "gemini-2.0-flash";
+    public string SpeechModel { get; init; } = "gemini-2.5-flash-preview-tts";
     public string VoiceName { get; init; } = "Kore";
     public string OpenAiReasoningModel { get; init; } = "gpt-5-mini";
     public string OpenAiTranscriptionModel { get; init; } = "gpt-4o-mini-transcribe";
@@ -57,6 +57,29 @@ public sealed record AppSettings
     public bool SpeechEnabled { get; init; } = true;
     public bool StartWithWindows { get; init; }
     public bool CaptureActiveWindow { get; init; } = true;
+
+    /// <summary>
+    /// Applications Metis must never photograph, one per line, matched against
+    /// the process name or the window title.
+    ///
+    /// Windows already lets a program mark its own windows as not-for-capture,
+    /// and Metis honours that. This is for everything else: the accounting
+    /// package, the medical record, the group chat — ordinary software that is
+    /// none of a cloud model's business.
+    ///
+    /// Held as text rather than a list because settings are compared by value
+    /// to decide whether anything changed, and two lists with the same contents
+    /// are not equal to one another. A list here would make every settings
+    /// document look different from every other one.
+    /// </summary>
+    public string ExcludedApplications { get; init; } = string.Empty;
+
+    /// <summary>The same list, split into entries. Not stored.</summary>
+    [System.Text.Json.Serialization.JsonIgnore]
+    public IReadOnlyList<string> ExcludedApplicationList =>
+        [.. ExcludedApplications
+            .Split([(char)13, (char)10], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Distinct(StringComparer.OrdinalIgnoreCase)];
     public bool FullDesktopControl { get; init; } = true;
     public string? PreferredMicrophoneId { get; init; }
 
@@ -67,10 +90,30 @@ public sealed record AppSettings
     public bool ContextShortcutsEnabled { get; init; } = true;
 
     /// <summary>
+    /// Enables direct voice-to-agent shortcut chords (Ctrl+Shift+A / Ctrl+Alt+A).
+    /// </summary>
+    public bool DirectAgentShortcutsEnabled { get; init; } = true;
+
+    /// <summary>
     /// The display name the user prefers Metis to address them by.
     /// Empty string means Metis will not use a specific name unless configured.
     /// </summary>
     public string UserName { get; init; } = string.Empty;
+
+    /// <summary>
+    /// The profile avatar or emoji the user selected for their account.
+    /// </summary>
+    public string UserAvatar { get; init; } = "🦊";
+
+    /// <summary>
+    /// User profile email cached for display.
+    /// </summary>
+    public string UserEmail { get; init; } = string.Empty;
+
+    /// <summary>
+    /// Selected test plan tier (e.g. "Free", "Plus", "Pro").
+    /// </summary>
+    public string TestPlanTier { get; init; } = string.Empty;
 
     /// <summary>
     /// The word that starts a request while Ctrl+Space listening is on. Kept
@@ -79,17 +122,14 @@ public sealed record AppSettings
     /// </summary>
     public string WakeWord { get; init; } = "Metis";
 
-    /// <summary>
-    /// Whether Metis may move the real Windows pointer.
-    ///
-    /// Off by default. Metis works through the accessibility tree and window
-    /// messages instead, which leaves the cursor where the user left it and the
-    /// keyboard focus where they were typing — so they can carry on with
-    /// something else while it works. Moving the pointer is the fallback for
-    /// the applications that refuse both, and it takes the machine over while
-    /// it happens.
-    /// </summary>
-    public bool MoveRealCursor { get; init; }
+    // MoveRealCursor was declared here, described at length as the fallback for
+    // applications that refuse the accessibility tree, and read by nothing at
+    // all: no UI offered it, no service consulted it, no test pinned it. It is
+    // gone rather than wired up, because Metis is a learning instrument and does
+    // not drive the machine — the real Windows pointer is read and never moved,
+    // which is the promise CursorService keeps by exposing no way to move it.
+    // A flag that describes a capability the product deliberately does not have
+    // is worse than no flag: the next person to read it plans around it.
 
     /// <summary>
     /// Which Metis deployment this copy talks to. Read from settings rather
@@ -115,6 +155,19 @@ public sealed record AppSettings
     public string SupabaseAnonKey { get; init; } = string.Empty;
 
     /// <summary>
+    /// The Metis AI gateway, which answers turns on Metis's own provider key.
+    /// Empty means use the one compiled into the build, exactly as with
+    /// <see cref="SupabaseUrl"/>.
+    ///
+    /// Note what is deliberately absent from this whole file: there is no plan,
+    /// tier or entitlement field anywhere in settings.json. What an account has
+    /// bought comes from the server, signed, and is cached in Windows Credential
+    /// Manager rather than here — so there is nothing in this file a person
+    /// could edit to give themselves a plan they did not buy.
+    /// </summary>
+    public string MetisGatewayUrl { get; init; } = string.Empty;
+
+    /// <summary>
     /// When this copy last held a session the backend agreed to. It is what
     /// bounds the offline grace period, so someone who signed in yesterday and
     /// is now on a train still gets in, while a machine abandoned for a month
@@ -131,6 +184,28 @@ public sealed record AppSettings
     /// a prompt rather than an interruption.
     /// </summary>
     public bool AutomaticUpdates { get; init; } = true;
+
+    /// <summary>
+    /// The version whose changes have already been shown to this user.
+    ///
+    /// Empty on a fresh install, which is deliberate: someone installing Metis
+    /// for the first time is being introduced to all of it at once and does not
+    /// need a list of what changed since a version they never ran. The notes
+    /// appear when this differs from the running build and is not empty.
+    /// </summary>
+    public string LastSeenVersion { get; init; } = string.Empty;
+
+    /// <summary>
+    /// Whether a walkthrough waits to see the learner do each step.
+    ///
+    /// On, Metis checks the screen before moving on, and nudges once if what
+    /// the step said would happen has not. Off, it reads the whole walkthrough
+    /// straight through on a timer, which is what it always used to do and is
+    /// still the right behaviour for someone who wants to listen once and act
+    /// afterwards. Either way it never blocks: a step whose outcome cannot be
+    /// read from the screen advances on the timer regardless of this setting.
+    /// </summary>
+    public bool LessonWaitsForLearner { get; init; } = true;
 
     /// <summary>
     /// Lets Metis draw temporary highlights, arrows, and numbered steps over
@@ -158,6 +233,29 @@ public sealed record AppSettings
     public string SoundPackPath { get; init; } = "sound effects";
 
     /// <summary>
+    /// Autonomous Agent safety/autonomy policy:
+    /// "AskApproval" (Recommended: ask on high-risk actions),
+    /// "Strict" (ask on all tool executions),
+    /// "FullAutonomy" (auto-approve low/medium risk actions).
+    /// </summary>
+    public string AgentAutonomyMode { get; init; } = "AskApproval";
+
+    /// <summary>
+    /// Whether background agents send native Windows desktop toast notifications on start, approval, finish, and failure.
+    /// </summary>
+    public bool AgentWindowsNotificationsEnabled { get; init; } = true;
+
+    /// <summary>
+    /// Maximum turns/steps an autonomous agent may take on a task before completing.
+    /// </summary>
+    public int AgentMaxTurns { get; init; } = 30;
+
+    /// <summary>
+    /// Maximum timeout in seconds for a single tool execution before timing out.
+    /// </summary>
+    public int AgentTimeoutSeconds { get; init; } = 45;
+
+    /// <summary>
     /// The companion's resting colour, by name from the shared palette. Only
     /// the resting colour is a preference: the listening, thinking, and error
     /// colours carry meaning and stay fixed.
@@ -170,6 +268,22 @@ public sealed record AppSettings
     /// what Metis is able to do.
     /// </summary>
     public string CompanionShape { get; init; } = CompanionShapes.DefaultName;
+
+    /// <summary>
+    /// Keeps the companion on screen even when Metis has nothing to say.
+    ///
+    /// Off by default, which is the change: the companion used to trail the
+    /// cursor from the end of first run until shutdown, so the most visible
+    /// thing about Metis was a shape following the pointer through work it had
+    /// no part in. It now arrives when Metis is listening, thinking, speaking,
+    /// pointing or teaching, and leaves when that is over.
+    ///
+    /// This is on by preference rather than removed outright because a person
+    /// who likes the company should be able to keep it, and because the ability
+    /// to pin it visible is what makes the absent case debuggable. See
+    /// <see cref="CompanionPresence"/> for the rule itself.
+    /// </summary>
+    public bool CompanionAlwaysVisible { get; init; }
 
     /// <summary>
     /// Folder of markdown skills the user has written about their software.
@@ -221,9 +335,14 @@ public sealed record AppSettings
     public string ThemePreference { get; init; } = "System";
 
     /// <summary>
-    /// Shortens the companion's flight, the notch unfurl, and the window
-    /// transitions for users who find the motion distracting or who get
-    /// motion sickness from it.
+    /// Turns off the interface's motion for people who find it distracting or
+    /// who get motion sickness from it.
+    ///
+    /// Off, not shortened. This comment used to say "shortens", which was wrong
+    /// twice over: nothing read the setting at all, and shortening would have
+    /// been the wrong answer anyway — a sixty-millisecond slide is still a
+    /// slide. See <c>MotionTuning</c>, which reconciles this with the Windows
+    /// "Show animations" switch; either one asking for less is enough.
     /// </summary>
     public bool ReduceMotion { get; init; }
 
@@ -232,7 +351,7 @@ public sealed record AppSettings
         SettingsVersion = SettingsVersion < 1 ? 1 : SettingsVersion,
         AiProvider = NormalizeProvider(AiProvider),
         ReasoningModel = NormalizeModel(ReasoningModel, "gemini-3.5-flash"),
-        SpeechModel = NormalizeSpeechModel(SpeechModel, "gemini-2.0-flash"),
+        SpeechModel = NormalizeSpeechModel(SpeechModel, "gemini-2.5-flash-preview-tts"),
         VoiceName = string.IsNullOrWhiteSpace(VoiceName) ? "Kore" : VoiceName.Trim(),
         OpenAiReasoningModel = NormalizeModel(OpenAiReasoningModel, "gpt-5-mini"),
         OpenAiTranscriptionModel = NormalizeModel(OpenAiTranscriptionModel, "gpt-4o-mini-transcribe"),
@@ -294,6 +413,7 @@ public sealed record AppSettings
         "openclaw" or "open claw" or "open-claw" => "OpenClaw",
         "openrouter" or "open router" or "open-router" => "OpenRouter",
         "ollama" => "Ollama",
+        "metis" or "metis gateway" => "Metis",
         "automatic" or "auto" => "Automatic",
         _ => "Gemini"
     };
@@ -308,7 +428,6 @@ public sealed record AppSettings
     private static string NormalizeTextToSpeechProvider(string? value) => value?.Trim().ToLowerInvariant() switch
     {
         "elevenlabs" or "eleven labs" or "eleven-labs" => "ElevenLabs",
-        "windows" or "windows voice" or "system" => "Windows",
         "piper" => "Piper",
         "chatterbox" or "chatterbox-nano" or "chatterbox nano" => "Chatterbox-Nano",
         _ => "Native"
@@ -339,15 +458,59 @@ public sealed record AppSettings
             : model;
     }
 
+    /// <summary>
+    /// Keeps the saved speech model to one that can actually speak.
+    ///
+    /// This test used to run the other way round: any model with "preview-tts"
+    /// in its name was thrown away and replaced by the fallback, which was a
+    /// text model. So the only models capable of speech were precisely the ones
+    /// rejected, and a user who picked the right one had it overwritten with a
+    /// wrong one on the next save.
+    ///
+    /// Keeping the rule here as well as in the provider is deliberate. The
+    /// provider protects the request; this protects what is written back to
+    /// settings.json, so a dead model does not persist across restarts.
+    /// </summary>
     private static string NormalizeSpeechModel(string? value, string fallback)
     {
         var model = NormalizeModel(value, fallback);
-        if (model.Contains("preview-tts", StringComparison.OrdinalIgnoreCase) ||
-            model.Equals("auto", StringComparison.OrdinalIgnoreCase))
+
+        return model.Contains("tts", StringComparison.OrdinalIgnoreCase)
+            ? model
+            : fallback;
+    }
+}
+
+/// <summary>
+/// Whether the companion belongs on screen at this moment.
+///
+/// Kept as one pure function, and kept out of the window, because the rule is
+/// the whole feature and a rule that can only be exercised by launching a
+/// desktop is a rule nobody checks. The window still decides *how* it comes and
+/// goes; this decides whether it should be there at all.
+///
+/// The states are split into work and rest rather than listed one by one on
+/// purpose. Every state except idle and paused is Metis doing something the
+/// user is meant to watch — listening, thinking, speaking, or reporting how it
+/// went — so a state added later is present by default, which is the safer of
+/// the two mistakes: a companion that lingers is untidy, one that is missing
+/// while Metis is talking looks broken.
+/// </summary>
+public static class CompanionPresence
+{
+    /// <summary>
+    /// <paramref name="teaching"/> is the lesson flag, not a state: a lesson
+    /// spends most of its time between marks with the runtime idle, and the
+    /// companion has to stay beside the control the learner is working on for
+    /// all of it rather than blinking out between steps.
+    /// </summary>
+    public static bool ShouldBeVisible(AssistantState state, bool alwaysVisible, bool teaching)
+    {
+        if (alwaysVisible || teaching)
         {
-            return fallback;
+            return true;
         }
 
-        return model;
+        return state is not (AssistantState.Idle or AssistantState.Paused);
     }
 }

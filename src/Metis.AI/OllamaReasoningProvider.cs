@@ -33,7 +33,7 @@ public sealed class OllamaReasoningProvider : IReasoningProvider, IDisposable
             "/api",
             ProviderId);
         _ownsClient = httpClient is null;
-        _httpClient = httpClient ?? new HttpClient { Timeout = TimeSpan.FromSeconds(120) };
+        _httpClient = httpClient ?? MetisHttp.CreateClient(TimeSpan.FromSeconds(120));
         _contextTokens = Math.Clamp(contextTokens, 2048, 4096);
         _enableThinking = enableThinking;
     }
@@ -55,6 +55,7 @@ public sealed class OllamaReasoningProvider : IReasoningProvider, IDisposable
         string? credential,
         string model,
         GeminiRequest request,
+        IProgress<string>? onTextDelta = null,
         CancellationToken cancellationToken = default)
     {
         ThrowIfDisposed();
@@ -86,11 +87,12 @@ public sealed class OllamaReasoningProvider : IReasoningProvider, IDisposable
             messages.Add(new { role = "user", content = prompt });
         }
 
-        var (statusCode, body) = await SendChatAsync(
+        var (statusCode, body, streamedText) = await SendChatAsync(
                 credential,
                 normalizedModel,
                 messages,
                 _enableThinking,
+                onTextDelta,
                 cancellationToken)
             .ConfigureAwait(false);
 
@@ -99,11 +101,12 @@ public sealed class OllamaReasoningProvider : IReasoningProvider, IDisposable
         // user to download a separate thinking variant.
         if (_enableThinking && IsThinkingUnsupported(statusCode, body))
         {
-            (statusCode, body) = await SendChatAsync(
+            (statusCode, body, streamedText) = await SendChatAsync(
                     credential,
                     normalizedModel,
                     messages,
                     enableThinking: false,
+                    onTextDelta,
                     cancellationToken)
                 .ConfigureAwait(false);
         }
@@ -113,22 +116,30 @@ public sealed class OllamaReasoningProvider : IReasoningProvider, IDisposable
             throw CreateApiException(statusCode, body, normalizedModel, credential);
         }
 
-        var text = ReadChatText(body);
+        var text = streamedText ?? ReadChatText(body);
         return ReasoningProviderSupport.ParsePlanResponse(ProviderId, normalizedModel, text, request);
     }
 
-    private async Task<(HttpStatusCode StatusCode, string Body)> SendChatAsync(
+    /// <summary>
+    /// Sends one chat request. On a streamed success the assembled answer comes
+    /// back in the third field and <c>Body</c> is empty; on any failure the body
+    /// is the ordinary error JSON, because Ollama reports errors as a plain
+    /// response whether or not streaming was asked for. That matters: the
+    /// think=true retry above reads the error text to decide.
+    /// </summary>
+    private async Task<(HttpStatusCode StatusCode, string Body, string? StreamedText)> SendChatAsync(
         string? credential,
         string model,
         IReadOnlyCollection<object> messages,
         bool enableThinking,
+        IProgress<string>? onTextDelta,
         CancellationToken cancellationToken)
     {
         var payload = JsonSerializer.Serialize(new
         {
             model,
             messages,
-            stream = false,
+            stream = onTextDelta is not null,
             think = enableThinking,
             keep_alive = "10m",
             format = ReasoningProviderSupport.AssistantPlanJsonSchema,
@@ -148,8 +159,26 @@ public sealed class OllamaReasoningProvider : IReasoningProvider, IDisposable
                 ProviderId,
                 cancellationToken)
             .ConfigureAwait(false);
-        var body = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
-        return (response.StatusCode, body);
+
+        if (onTextDelta is null || !response.IsSuccessStatusCode)
+        {
+            var body = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+            return (response.StatusCode, body, null);
+        }
+
+        var answer = new StreamingPlanText(onTextDelta);
+        await ReasoningProviderSupport.ReadEventStreamAsync(
+            response,
+            element =>
+            {
+                if (element.TryGetProperty("message", out var message))
+                {
+                    answer.Append(ReasoningProviderSupport.ReadString(message, "content"));
+                }
+            },
+            cancellationToken).ConfigureAwait(false);
+
+        return (response.StatusCode, string.Empty, answer.Raw);
     }
 
     private static bool IsThinkingUnsupported(HttpStatusCode statusCode, string body)
@@ -226,6 +255,7 @@ public sealed class OllamaReasoningProvider : IReasoningProvider, IDisposable
                     model,
                     new GeminiRequest(
                         "This is a Metis connection diagnostic. Set spoken_text to OK with no actions."),
+                    onTextDelta: null,
                     cancellationToken)
                 .ConfigureAwait(false);
             stopwatch.Stop();

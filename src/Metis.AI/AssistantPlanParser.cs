@@ -97,6 +97,13 @@ public static class AssistantPlanParser
             var markLabel = Shorten(ReadString(annotationRoot, "label", "target"), MaxLabelLength);
 
             var steps = ReadLessonSteps(root, hasScreenshot);
+            var spawnRequests = ReadSpawnGoals(root);
+            var needsAnotherLook = ReadBoolean(root, "needs_another_look", "needsAnotherLook");
+            var lookFor = Shorten(ReadString(root, "look_for", "lookFor"), MaxLabelLength);
+            if (hasScreenshot && (markX >= 0 || (steps?.Any(s => s.HasTarget) == true)))
+            {
+                screenObserved = true;
+            }
 
             // A malformed structured response should still produce useful speech, but
             // never expose the raw JSON to Metis's speech engine or bubble.
@@ -119,7 +126,10 @@ public static class AssistantPlanParser
                 markWidth,
                 markHeight,
                 markLabel,
-                heardText);
+                heardText,
+                spawnRequests,
+                needsAnotherLook,
+                lookFor);
         }
         catch (JsonException)
         {
@@ -185,9 +195,28 @@ public static class AssistantPlanParser
     /// unterminated string still yields everything written so far, which is
     /// exactly the case that matters when a reply was cut short mid-sentence.
     /// </summary>
-    private static bool TrySalvageSpokenText(string text, out string spoken)
+    private static bool TrySalvageSpokenText(string text, out string spoken) =>
+        TryReadSpokenTextPrefix(text, out spoken, out _);
+
+    /// <summary>
+    /// The same read, told whether the value it returned is finished.
+    ///
+    /// This is what lets a reply be shown while it is still arriving: the
+    /// answer streams in as a partial JSON object, and every fragment of it
+    /// yields the sentence so far. Two rules make the result safe to append to
+    /// the screen rather than merely to salvage from wreckage.
+    ///
+    /// The value only ever grows, so what has already been shown never has to
+    /// be taken back. And a backslash escape that is still arriving stops the
+    /// read rather than being taken literally — the old salvage path would
+    /// happily emit the "u" and four hex digits of a half-written A, which
+    /// is harmless in a last-ditch rescue and quite wrong when those characters
+    /// are being typed onto the screen as they arrive.
+    /// </summary>
+    public static bool TryReadSpokenTextPrefix(string text, out string spoken, out bool complete)
     {
         spoken = string.Empty;
+        complete = false;
 
         foreach (var key in SpokenTextKeys)
         {
@@ -210,27 +239,48 @@ public static class AssistantPlanParser
 
             cursor++;
             var value = new System.Text.StringBuilder();
-            while (cursor < text.Length && text[cursor] != '"')
+            var terminated = false;
+            while (cursor < text.Length)
             {
-                if (text[cursor] != '\\' || cursor + 1 >= text.Length)
+                if (text[cursor] == '"')
+                {
+                    terminated = true;
+                    break;
+                }
+
+                if (text[cursor] != '\\')
                 {
                     value.Append(text[cursor]);
                     cursor++;
                     continue;
                 }
 
-                cursor++;
-                var escape = text[cursor];
-                if (escape == 'u' && cursor + 4 < text.Length &&
-                    ushort.TryParse(
-                        text.AsSpan(cursor + 1, 4),
-                        System.Globalization.NumberStyles.HexNumber,
-                        System.Globalization.CultureInfo.InvariantCulture,
-                        out var codePoint))
+                if (cursor + 1 >= text.Length)
                 {
-                    value.Append((char)codePoint);
-                    cursor += 5;
-                    continue;
+                    // A lone trailing backslash is an escape whose second half
+                    // has not arrived. Stop rather than emit it.
+                    break;
+                }
+
+                var escape = text[cursor + 1];
+                if (escape == 'u')
+                {
+                    if (cursor + 5 >= text.Length)
+                    {
+                        // \uXXXX still arriving.
+                        break;
+                    }
+
+                    if (ushort.TryParse(
+                            text.AsSpan(cursor + 2, 4),
+                            System.Globalization.NumberStyles.HexNumber,
+                            System.Globalization.CultureInfo.InvariantCulture,
+                            out var codePoint))
+                    {
+                        value.Append((char)codePoint);
+                        cursor += 6;
+                        continue;
+                    }
                 }
 
                 value.Append(escape switch
@@ -242,13 +292,14 @@ public static class AssistantPlanParser
                     'f' => '\f',
                     _ => escape
                 });
-                cursor++;
+                cursor += 2;
             }
 
             var candidate = value.ToString().Trim();
             if (candidate.Length > 0)
             {
                 spoken = candidate;
+                complete = terminated;
                 return true;
             }
         }
@@ -304,6 +355,61 @@ public static class AssistantPlanParser
     }
 
     private const int MaxLessonSteps = 12;
+
+    /// <summary>
+    /// How many agents one reply may ask for.
+    ///
+    /// Low on purpose. Everything spawned here is a real worker that costs
+    /// tokens and touches the machine, and a model that has misread a request
+    /// can produce a list as long as it likes. Four covers every genuine ask
+    /// seen so far and bounds the damage from one that is not.
+    /// </summary>
+    private const int MaxSpawnRequests = 4;
+
+    /// <summary>The longest goal that can be handed to an agent.</summary>
+    private const int MaxSpawnGoalLength = 600;
+
+    /// <summary>
+    /// Reads the goals the reply wants handed to background agents.
+    ///
+    /// Accepts both a list of strings and a list of objects carrying a goal,
+    /// because models produce both and the difference is not worth losing a
+    /// request over — the same forgiveness ReadLessonSteps applies to its own
+    /// alternate key names.
+    /// </summary>
+    private static IReadOnlyList<string>? ReadSpawnGoals(JsonElement root)
+    {
+        if (!TryGetProperty(root, out var array, "spawn_agents", "spawnAgents", "agents") ||
+            array.ValueKind != JsonValueKind.Array)
+        {
+            return null;
+        }
+
+        var goals = new List<string>();
+        foreach (var element in array.EnumerateArray())
+        {
+            var goal = element.ValueKind switch
+            {
+                JsonValueKind.String => element.GetString(),
+                JsonValueKind.Object => ReadString(element, "goal", "task", "instruction", "description"),
+                _ => null
+            };
+
+            goal = Shorten(goal, MaxSpawnGoalLength);
+            if (string.IsNullOrWhiteSpace(goal))
+            {
+                continue;
+            }
+
+            goals.Add(goal.Trim());
+            if (goals.Count >= MaxSpawnRequests)
+            {
+                break;
+            }
+        }
+
+        return goals.Count > 0 ? goals : null;
+    }
 
     /// <summary>
     /// Reads the steps the learner performs themselves. These are never

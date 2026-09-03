@@ -126,6 +126,55 @@ public sealed class OpenAiProviderTests
         Assert.Equal([1, 2, 3, 4], audio.PcmData);
     }
 
+    [Theory]
+    [InlineData("alloy", "alloy")]
+    [InlineData("echo", "echo")]
+    [InlineData("fable", "fable")]
+    [InlineData("onyx", "onyx")]
+    [InlineData("nova", "nova")]
+    [InlineData("shimmer", "shimmer")]
+    [InlineData("ALLOY", "alloy")]
+    [InlineData("unknown", "alloy")]
+    [InlineData(null, "alloy")]
+    public void NormalizeVoice_maps_voices_properly(string? input, string expected)
+    {
+        Assert.Equal(expected, OpenAiProvider.NormalizeVoice(input));
+    }
+
+    [Theory]
+    [InlineData("tts-1", "tts-1")]
+    [InlineData("tts-1-hd", "tts-1-hd")]
+    [InlineData("auto", "tts-1")]
+    [InlineData("", "tts-1")]
+    [InlineData(null, "tts-1")]
+    public void NormalizeSpeechModel_maps_models_properly(string? input, string expected)
+    {
+        Assert.Equal(expected, OpenAiProvider.NormalizeSpeechModel(input));
+    }
+
+    [Fact]
+    public async Task Speech_handles_tts_1_hd_and_custom_voices()
+    {
+        string? requestBody = null;
+        var handler = new StubHandler(async request =>
+        {
+            requestBody = await request.Content!.ReadAsStringAsync();
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new ByteArrayContent([5, 6, 7, 8])
+            };
+        });
+        using var provider = new OpenAiProvider(new HttpClient(handler));
+
+        var audio = await provider.SynthesizeSpeechAsync("sk-test-secret", "tts-1-hd", "Shimmer", "Testing HD");
+
+        Assert.NotNull(audio);
+        Assert.NotNull(requestBody);
+        Assert.Contains("\"model\":\"tts-1-hd\"", requestBody);
+        Assert.Contains("\"voice\":\"shimmer\"", requestBody);
+        Assert.Equal([5, 6, 7, 8], audio.PcmData);
+    }
+
     [Fact]
     public async Task Billing_or_rate_error_is_actionable_and_does_not_expose_key()
     {

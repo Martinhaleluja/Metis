@@ -1,0 +1,158 @@
+METIS END USER LICENCE AGREEMENT
+
+Copyright (c) 2026 Metis. All rights reserved.
+
+------------------------------------------------------------------------------
+DRAFT — NOT YET REVIEWED BY A LAWYER
+
+This agreement was drafted from standard templates and has not been reviewed by
+a qualified legal professional. It is a starting point, not legal advice. Metis
+captures the screen of the computer it runs on and sends it to a third-party AI
+provider, which means it processes information belonging to people who are not
+its user — anyone whose message, document or face happens to be on that screen.
+That is the part of this product most likely to attract a legal obligation, and
+it should be looked at by a lawyer familiar with the data protection law of the
+places Metis is distributed before this software is offered publicly.
+------------------------------------------------------------------------------
+
+This End User Licence Agreement ("Agreement") is a legal agreement between you
+("You") and Metis ("Licensor") for the Metis software, including its
+executables, installers, documentation and any updates ("the Software").
+
+BY INSTALLING, COPYING OR USING THE SOFTWARE YOU AGREE TO BE BOUND BY THIS
+AGREEMENT. IF YOU DO NOT AGREE, DO NOT INSTALL OR USE THE SOFTWARE.
+
+
+1. LICENCE GRANTED
+
+Licensor grants You a personal, non-exclusive, non-transferable, revocable
+licence to install and use the Software on computers You own or control, for
+Your own purposes. No other rights are granted.
+
+
+2. WHAT YOU MAY NOT DO
+
+You may not:
+
+  (a) sell, rent, lease, sublicense, distribute or otherwise make the Software
+      available to anyone else;
+  (b) reverse engineer, decompile or disassemble the Software, except to the
+      extent that applicable law expressly permits it despite this limitation;
+  (c) remove or alter any copyright, trade mark or other proprietary notice;
+  (d) use the Software to capture, process or transmit information you do not
+      have the right to capture, process or transmit; or
+  (e) use the Software in any way that breaks the law where You are.
+
+Publication of the Software's source code, if any, does not grant any licence
+beyond this Agreement. The Software is source-available, not open source.
+
+
+3. YOUR OWN AI PROVIDER ACCOUNTS
+
+The Software works by sending Your requests — which may include a picture of
+Your screen, a recording of Your voice, and a list of the controls on Your
+screen — to an artificial intelligence provider that You choose and configure,
+using credentials that You supply.
+
+You are the customer of that provider, not Licensor. You are responsible for
+Your account with them, for any charges it incurs, and for complying with their
+terms of service and acceptable use policies. Licensor is not a party to that
+relationship and has no control over what those providers do with what You send
+them.
+
+
+4. YOUR RESPONSIBILITY FOR WHAT IS ON YOUR SCREEN
+
+The Software captures the whole of Your desktop. That capture may include
+information belonging to other people.
+
+You are responsible for ensuring You have the right to capture and transmit
+whatever is on Your screen when You use the Software, including any personal
+data of others, confidential information, or material subject to an obligation
+of secrecy. The Software provides controls for withholding parts of the screen,
+and it honours the flag Windows applications use to mark their own content as
+not to be captured, but these are aids and not a guarantee. Where You are
+uncertain, do not use the Software on that screen.
+
+
+5. AUTONOMOUS AGENTS
+
+The Software includes an optional feature that runs tasks on Your behalf. Such
+a task can create, modify and delete files, run commands, and operate a web
+browser. You choose whether to start one, what to ask it to do, and how much
+latitude to give it.
+
+You are responsible for the consequences of any task You start. Do not give an
+autonomous task access to anything You are not prepared to see changed or lost.
+
+
+6. NO WARRANTY
+
+THE SOFTWARE IS PROVIDED "AS IS" AND "AS AVAILABLE", WITHOUT WARRANTY OF ANY
+KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE IMPLIED WARRANTIES
+OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, ACCURACY, AND
+NON-INFRINGEMENT.
+
+Licensor does not warrant that the Software will be uninterrupted, error-free,
+or that its output will be correct. The Software relies on artificial
+intelligence models that can be wrong, and its guidance should be treated as a
+suggestion to be checked rather than an instruction to be followed.
+
+Nothing in this Agreement excludes or limits any liability that cannot lawfully
+be excluded or limited, including liability for death or personal injury caused
+by negligence, or for fraud.
+
+
+7. LIMITATION OF LIABILITY
+
+TO THE MAXIMUM EXTENT PERMITTED BY LAW, LICENSOR SHALL NOT BE LIABLE FOR ANY
+INDIRECT, INCIDENTAL, SPECIAL, CONSEQUENTIAL OR PUNITIVE DAMAGES, OR FOR ANY
+LOSS OF PROFITS, REVENUE, DATA, GOODWILL OR BUSINESS INTERRUPTION, ARISING OUT
+OF OR RELATING TO THIS AGREEMENT OR THE SOFTWARE, WHETHER IN CONTRACT, TORT OR
+OTHERWISE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGES.
+
+TO THE MAXIMUM EXTENT PERMITTED BY LAW, LICENSOR'S TOTAL AGGREGATE LIABILITY
+ARISING OUT OF OR RELATING TO THIS AGREEMENT OR THE SOFTWARE SHALL NOT EXCEED
+THE GREATER OF (a) THE AMOUNT YOU PAID LICENSOR FOR THE SOFTWARE IN THE TWELVE
+MONTHS BEFORE THE CLAIM AROSE, OR (b) FIFTY UNITED STATES DOLLARS (USD 50).
+
+
+8. PRIVACY
+
+The Software's handling of personal data is described in PRIVACY.md, which
+accompanies the Software and forms part of this Agreement.
+
+
+9. THIRD-PARTY COMPONENTS
+
+The Software includes components licensed by others, listed in
+THIRD-PARTY-NOTICES.md. Those components are governed by their own licences,
+which take precedence over this Agreement in respect of those components.
+
+
+10. UPDATES
+
+The Software can download and install its own updates. An update is governed by
+this Agreement unless it is accompanied by different terms. You may turn
+automatic updates off in the Software's settings.
+
+
+11. TERMINATION
+
+This licence ends automatically if You breach it. On termination You must stop
+using the Software and remove it from Your computers. Sections 4, 5, 6, 7 and
+12 survive termination.
+
+
+12. GENERAL
+
+If any provision of this Agreement is held unenforceable, the rest remains in
+force. Licensor's failure to enforce a provision is not a waiver of it. This
+Agreement is the entire agreement between You and Licensor about the Software.
+
+The governing law and the courts that will hear any dispute are to be inserted
+before this Agreement is used, and should be those of the place where Licensor
+is established.
+
+
+Contact: https://github.com/Martinhaleluja/Metis

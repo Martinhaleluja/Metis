@@ -53,12 +53,49 @@ public sealed record AssistantPlan(
     /// Metis reads what was asked from these words itself. The model reports
     /// what it heard, which is a fact about the recording, and nothing more.
     /// </summary>
-    string? HeardText = null)
+    string? HeardText = null,
+
+    /// <summary>
+    /// Work the user asked to have handed to background agents, one goal per
+    /// agent.
+    ///
+    /// This is not the actions list coming back. That list was Metis quietly
+    /// working the machine while appearing to answer a question, and removing it
+    /// is what made this record honest. A spawn is the opposite kind of thing: a
+    /// separate worker the user asked for out loud, which appears in a list they
+    /// can watch, reports what it is doing, asks before anything risky, and can
+    /// be stopped. Metis still never moves the pointer. Nothing here runs until
+    /// the user has seen the goal and agreed to it.
+    /// </summary>
+    IReadOnlyList<string>? SpawnRequests = null,
+
+    /// <summary>
+    /// Set when the model could not confirm what it was being asked about and
+    /// wants one more look before committing to an answer. <see cref="LookFor"/>
+    /// names the single thing to go and find.
+    ///
+    /// This exists because the alternative is what Metis used to do: answer
+    /// anyway. One round trip, one guess, no way to say "I am not sure".
+    /// </summary>
+    bool NeedsAnotherLook = false,
+
+    /// <summary>What to go and locate before answering. Null unless <see cref="NeedsAnotherLook"/>.</summary>
+    string? LookFor = null)
 {
     public static AssistantPlan SpeechOnly(string text) => new(text, null);
 
     /// <summary>The steps for the learner to work through themselves.</summary>
     public IReadOnlyList<LessonStep> LessonSteps => Steps ?? [];
+
+    /// <summary>The goals to hand to background agents, or nothing.</summary>
+    public IReadOnlyList<string> AgentsToSpawn => SpawnRequests ?? [];
+
+    /// <summary>
+    /// True only when the model asked for another look and said what to look
+    /// for. A request to look again at nothing in particular is not actionable,
+    /// so it is treated as no request at all.
+    /// </summary>
+    public bool WantsSecondLook => NeedsAnotherLook && !string.IsNullOrWhiteSpace(LookFor);
 
     public AnnotationScope Scope => AnnotationScopes.Parse(ScopeName);
 

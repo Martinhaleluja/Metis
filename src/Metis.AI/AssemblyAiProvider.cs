@@ -21,7 +21,7 @@ public sealed class AssemblyAiProvider : IAssemblyAiProvider, IDisposable
     public AssemblyAiProvider(HttpClient? httpClient = null)
     {
         _ownsClient = httpClient is null;
-        _httpClient = httpClient ?? new HttpClient { Timeout = TimeSpan.FromSeconds(70) };
+        _httpClient = httpClient ?? MetisHttp.CreateClient(TimeSpan.FromSeconds(70));
     }
 
     public async Task<TranscriptionResult> TranscribeAsync(

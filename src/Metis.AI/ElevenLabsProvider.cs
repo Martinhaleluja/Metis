@@ -20,7 +20,7 @@ public sealed class ElevenLabsProvider : IElevenLabsProvider, IDisposable
     public ElevenLabsProvider(HttpClient? httpClient = null)
     {
         _ownsClient = httpClient is null;
-        _httpClient = httpClient ?? new HttpClient { Timeout = TimeSpan.FromSeconds(45) };
+        _httpClient = httpClient ?? MetisHttp.CreateClient(TimeSpan.FromSeconds(45));
     }
 
     public async Task<SpeechAudio?> SynthesizeSpeechAsync(
@@ -65,7 +65,7 @@ public sealed class ElevenLabsProvider : IElevenLabsProvider, IDisposable
         var bytes = await response.Content.ReadAsByteArrayAsync(cancellationToken).ConfigureAwait(false);
         return bytes.Length == 0
             ? null
-            : new SpeechAudio(bytes, 24000, 1, 16, "audio/pcm;rate=24000");
+            : AudioPayloadParser.Parse(bytes, "audio/pcm;rate=24000");
     }
 
     public async Task<IReadOnlyList<SpeechVoiceInfo>> ListVoicesAsync(

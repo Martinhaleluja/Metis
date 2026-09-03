@@ -1,21 +1,62 @@
+import { Link } from "react-router-dom";
 import { Reveal } from "./Reveal";
+
+/**
+ * Where your screen goes.
+ *
+ * This section has been rewritten twice, and the reason is worth recording.
+ *
+ * The first version said keys never leave your machine and there is no server in
+ * the middle. That was true when Metis only ran on your own API key, and it
+ * stopped being true the moment Metis started buying AI on your behalf — so it
+ * had to go.
+ *
+ * What replaced it was accurate and unreadable: a four-route table in a window
+ * titled data_flow.txt, using "gateway", "metering record", "token counts" and
+ * "%LOCALAPPDATA%", and volunteering the phrase "Metis is in the middle of that
+ * request". Every word of it was true. It was also written by an engineer for an
+ * engineer, and the sentence a worried reader would screenshot and post was one
+ * we had written about ourselves.
+ *
+ * This version says the same things in the order a person actually wants them,
+ * and in words they already know. The precise version still exists, in the
+ * privacy policy, for anyone who wants it.
+ */
+
+const answers = [
+  {
+    question: "When does Metis look at my screen?",
+    answer:
+      "Only when you ask it something. It takes one picture, answers your question, and that is the end of it. It is not watching in between, and it never records.",
+  },
+  {
+    question: "Where does that picture go?",
+    answer:
+      "To the AI that answers you. If you are using the AI included with your plan, it passes through Metis on the way — we are the ones paying for the answer, so the request comes through us. We keep a note of what it cost and nothing else: not the picture, not your question, not the answer.",
+  },
+  {
+    question: "Can I keep it off our servers entirely?",
+    answer:
+      "Yes, two ways. Connect your own AI account and your questions go straight there. Or run a model on your own computer, and nothing leaves the machine at all.",
+  },
+];
 
 const facts = [
   {
-    heading: "Keys live in Windows, not in a file",
-    body: "Every API key is a separate entry in Windows Credential Manager. Secret values are never written into settings or logs.",
+    heading: "Private windows are hidden before anything is sent",
+    body: "Banking apps, password managers and view-once photos in WhatsApp and Signal tell Windows not to record them, and Metis blacks them out of the picture. Password boxes are never read. You can add any other app to the list yourself.",
   },
   {
-    heading: "The screen is read on request",
-    body: "Metis captures the desktop for the turn you asked about. It is not watching between requests.",
+    heading: "Your conversations stay on your computer",
+    body: "What you have talked about, and what Metis has learned about your work, are encrypted on your own machine and never uploaded. One button in settings deletes all of it.",
   },
   {
-    heading: "It can run with no cloud at all",
-    body: "Point it at a vision-capable model running locally through Ollama and the whole loop stays on your machine.",
+    heading: "Keys are never stored as readable text",
+    body: "If you connect your own AI account, the key is encrypted and never sent back to your browser — not even to you. All you ever see again is the last four characters, so you can tell one from another.",
   },
   {
-    heading: "Learn mode cannot act, structurally",
-    body: "The restriction is enforced when the plan comes back, not just asked for in the prompt. A click returned in Learn is dropped.",
+    heading: "It shows you. It cannot touch anything",
+    body: "Metis draws arrows and highlights on your screen, but it cannot click, type, or move your mouse. That is built into how it works, not a rule it has been asked to follow.",
   },
 ];
 
@@ -25,28 +66,63 @@ export function Privacy() {
       <div className="mx-auto max-w-[1180px] px-5">
         <Reveal>
           <h2 className="max-w-[22ch] type-title text-ink">
-            An assistant on your desktop should be answerable to you
+            It looks at your screen. Here is exactly what that means.
           </h2>
-          <p className="mt-5 max-w-[64ch] type-body text-ink-muted">
-            Metis runs on your machine with your own provider keys. Here is what that means in
-            practice.
+          <p className="mt-5 max-w-[60ch] type-body text-ink-muted">
+            Three questions worth asking about anything that can see your desktop,
+            answered plainly.
           </p>
+        </Reveal>
+
+        <Reveal delay={0.06}>
+          <div className="mt-10 win95-window">
+            <div className="win95-titlebar">
+              <span>your_privacy.txt &mdash; Notepad</span>
+              <span className="flex h-3.5 w-4 items-center justify-center border border-white border-r-[#808080] border-b-[#808080] bg-[#c0c0c0] text-[8px] font-bold text-black">
+                &times;
+              </span>
+            </div>
+
+            <div className="bg-[#c0c0c0] p-3">
+              <div
+                className="win95-field p-5"
+                style={{ fontFamily: "var(--font-system)" }}
+              >
+                <ul className="divide-y divide-[#d4d0c8]">
+                  {answers.map((entry) => (
+                    <li key={entry.question} className="py-4 first:pt-0 last:pb-0">
+                      <h3 className="text-[13px] font-bold text-black">{entry.question}</h3>
+                      <p className="mt-1.5 max-w-[80ch] text-[12px] leading-relaxed text-[#333]">
+                        {entry.answer}
+                      </p>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+          </div>
         </Reveal>
 
         <div className="mt-12 grid gap-x-14 gap-y-10 sm:grid-cols-2">
           {facts.map((fact, index) => (
             <Reveal key={fact.heading} delay={index * 0.05}>
               <div className="border-t border-line pt-5">
-                <h3 className="type-heading text-ink">
-                  {fact.heading}
-                </h3>
-                <p className="mt-2 max-w-[46ch] type-caption text-ink-muted">
-                  {fact.body}
-                </p>
+                <h3 className="type-heading text-ink">{fact.heading}</h3>
+                <p className="mt-2 max-w-[48ch] type-caption text-ink-muted">{fact.body}</p>
               </div>
             </Reveal>
           ))}
         </div>
+
+        <Reveal delay={0.2}>
+          <p className="mt-10 type-caption text-ink-muted">
+            The longer version, with everything spelled out, is in the{" "}
+            <Link to="/legal/privacy" className="text-accent underline underline-offset-4">
+              privacy policy
+            </Link>
+            .
+          </p>
+        </Reveal>
       </div>
     </section>
   );

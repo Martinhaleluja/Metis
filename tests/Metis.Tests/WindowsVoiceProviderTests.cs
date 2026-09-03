@@ -88,9 +88,9 @@ public sealed class WindowsVoiceProviderTests
     /// reverts to a cloud voice on the next launch.
     /// </summary>
     [Theory]
-    [InlineData("Windows", "Windows")]
-    [InlineData("windows", "Windows")]
-    [InlineData("system", "Windows")]
+    [InlineData("Windows", "Native")]
+    [InlineData("windows", "Native")]
+    [InlineData("system", "Native")]
     [InlineData("Piper", "Piper")]
     [InlineData("nonsense", "Native")]
     public void The_provider_name_normalizes(string stored, string expected) =>

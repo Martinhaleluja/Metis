@@ -25,7 +25,7 @@ public sealed class ClaudeReasoningProvider : IReasoningProvider, IDisposable
     public ClaudeReasoningProvider(HttpClient? httpClient = null)
     {
         _ownsClient = httpClient is null;
-        _httpClient = httpClient ?? new HttpClient { Timeout = TimeSpan.FromSeconds(75) };
+        _httpClient = httpClient ?? MetisHttp.CreateClient(TimeSpan.FromSeconds(75));
     }
 
     public ReasoningProviderDescriptor Descriptor { get; } = new(
@@ -44,6 +44,7 @@ public sealed class ClaudeReasoningProvider : IReasoningProvider, IDisposable
         string? credential,
         string model,
         GeminiRequest request,
+        IProgress<string>? onTextDelta = null,
         CancellationToken cancellationToken = default)
     {
         ThrowIfDisposed();
@@ -71,8 +72,22 @@ public sealed class ClaudeReasoningProvider : IReasoningProvider, IDisposable
             model = normalizedModel,
             max_tokens = ReasoningProviderSupport.MaxPlanTokens,
             temperature = 0.1,
-            system = ReasoningProviderSupport.BuildSystemInstruction(request),
-            messages = new[] { new { role = "user", content } }
+
+            // Sent as a cacheable block rather than a bare string. The teaching
+            // rules are the same eight and a half kilobytes on every turn, and
+            // re-reading them from scratch each time was work the user waited
+            // for and paid for.
+            system = new[]
+            {
+                new
+                {
+                    type = "text",
+                    text = ReasoningProviderSupport.BuildSystemInstruction(request),
+                    cache_control = new { type = "ephemeral" }
+                }
+            },
+            messages = new[] { new { role = "user", content } },
+            stream = onTextDelta is not null
         }, JsonOptions);
 
         using var httpRequest = CreateRequest(HttpMethod.Post, "messages", apiKey);
@@ -83,14 +98,41 @@ public sealed class ClaudeReasoningProvider : IReasoningProvider, IDisposable
                 ProviderId,
                 cancellationToken)
             .ConfigureAwait(false);
-        var body = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
-        if (!response.IsSuccessStatusCode)
+
+        if (onTextDelta is null)
         {
-            throw CreateApiException(response.StatusCode, body, normalizedModel, apiKey);
+            var body = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+            if (!response.IsSuccessStatusCode)
+            {
+                throw CreateApiException(response.StatusCode, body, normalizedModel, apiKey);
+            }
+
+            return ReasoningProviderSupport.ParsePlanResponse(
+                ProviderId, normalizedModel, ReadMessageText(body), request);
         }
 
-        var text = ReadMessageText(body);
-        return ReasoningProviderSupport.ParsePlanResponse(ProviderId, normalizedModel, text, request);
+        if (!response.IsSuccessStatusCode)
+        {
+            var errorBody = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+            throw CreateApiException(response.StatusCode, errorBody, normalizedModel, apiKey);
+        }
+
+        var answer = new StreamingPlanText(onTextDelta);
+        await ReasoningProviderSupport.ReadEventStreamAsync(
+            response,
+            element =>
+            {
+                if (ReasoningProviderSupport.ReadString(element, "type") != "content_block_delta" ||
+                    !element.TryGetProperty("delta", out var delta))
+                {
+                    return;
+                }
+
+                answer.Append(ReasoningProviderSupport.ReadString(delta, "text"));
+            },
+            cancellationToken).ConfigureAwait(false);
+
+        return ReasoningProviderSupport.ParsePlanResponse(ProviderId, normalizedModel, answer.Raw, request);
     }
 
     public async Task<IReadOnlyList<ReasoningModelInfo>> ListModelsAsync(
@@ -158,6 +200,7 @@ public sealed class ClaudeReasoningProvider : IReasoningProvider, IDisposable
                     new GeminiRequest(
                         "This is a Metis connection diagnostic. Inspect the attached one-pixel image and set spoken_text to OK with no actions.",
                         DiagnosticPng),
+                    onTextDelta: null,
                     cancellationToken)
                 .ConfigureAwait(false);
             stopwatch.Stop();

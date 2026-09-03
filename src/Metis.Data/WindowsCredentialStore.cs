@@ -76,6 +76,21 @@ public sealed class WindowsCredentialStore : ISecretStore
 
     public void DeleteElevenLabsApiKey() => DeleteSecret(ElevenLabsCredentialTarget, "ElevenLabs");
 
+    /// <summary>
+    /// Reads, writes and deletes an arbitrary target, for callers that keep
+    /// something in Credential Manager which is not a provider key.
+    ///
+    /// Internal on purpose. The typed methods above are the interface every
+    /// ordinary caller uses, and keeping the general form out of ISecretStore is
+    /// what stops a sign-in panel or a settings page from being handed the
+    /// ability to read every credential on the machine by name.
+    /// </summary>
+    internal string? ReadRaw(string target, string label) => ReadSecret(target, label);
+
+    internal void WriteRaw(string target, string label, string value) => WriteSecret(target, label, value);
+
+    internal void DeleteRaw(string target, string label) => DeleteSecret(target, label);
+
     private static string? ReadSecret(string target, string provider)
     {
         EnsureWindows();

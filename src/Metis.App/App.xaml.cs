@@ -18,7 +18,6 @@ public partial class App : System.Windows.Application
     private MetisRuntime? _runtime;
     private CompanionWindow? _companionWindow;
     private PreferencesWindow? _preferencesWindow;
-    private OnboardingWindow? _onboardingWindow;
     private GuidanceOverlayWindow? _overlayWindow;
     private TraceOverlayWindow? _traceWindow;
     private NotchWindow? _notchWindow;
@@ -30,6 +29,52 @@ public partial class App : System.Windows.Application
     protected override async void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
+
+        // Catch exceptions that escape from background Task threads (including fire-and-forget tasks
+        // that are not awaited). Without this the process silently terminates on any unhandled exception
+        // in a Task continuation or a fire-and-forget async method.
+        AppDomain.CurrentDomain.UnhandledException += (_, args) =>
+        {
+            try
+            {
+                var ex = args.ExceptionObject as Exception;
+                var report = TryWriteStartupReport(ex ?? new Exception(args.ExceptionObject?.ToString() ?? "Unknown error"));
+                if (_runtime is not null)
+                {
+                    _runtime.Log.Error("Unhandled AppDomain exception", ex ?? new Exception(args.ExceptionObject?.ToString()));
+                }
+            }
+            catch
+            {
+                // Never throw from an unhandled exception handler
+            }
+        };
+
+        TaskScheduler.UnobservedTaskException += (_, args) =>
+        {
+            try
+            {
+                args.SetObserved();
+                _runtime?.Log.Error("Unobserved Task exception caught and suppressed", args.Exception);
+            }
+            catch
+            {
+                // Never throw from an unhandled exception handler
+            }
+        };
+
+        DispatcherUnhandledException += (_, args) =>
+        {
+            try
+            {
+                _runtime?.Log.Error("Unhandled WPF Dispatcher exception caught", args.Exception);
+                args.Handled = true;
+            }
+            catch
+            {
+                // Never throw from an unhandled exception handler
+            }
+        };
 
         _singleInstance = new Mutex(true, "Local\\Metis.Desktop.Companion", out var isFirstInstance);
         _ownsSingleInstance = isFirstInstance;
@@ -49,20 +94,64 @@ public partial class App : System.Windows.Application
             // wearing the right theme instead of flashing light and correcting.
             _themeService = new ThemeService(this);
             _themeService.Apply(_runtime.Settings.ThemePreference);
+
+            // Reduced motion, reconciled from both sides: the application's own
+            // checkbox and the Windows "Show animations" switch. Windows has had
+            // that switch for years and Metis ignored it, so someone who had
+            // already told their computer they did not want animation had to
+            // find and tick a second box here. Applied again whenever settings
+            // are saved, and whenever Windows changes its mind.
+            ApplyMotionPreference();
+            _runtime.SettingsChanged += (_, _) => ApplyMotionPreference();
+            SystemParameters.StaticPropertyChanged += (_, args) =>
+            {
+                if (args.PropertyName is nameof(SystemParameters.ClientAreaAnimation))
+                {
+                    Dispatcher.Invoke(ApplyMotionPreference);
+                }
+            };
             _themeService.Changed += (_, _) => RepaintTrayMenu();
 
             _companionWindow = new CompanionWindow(_runtime);
             _preferencesWindow = new PreferencesWindow(_runtime, _themeService, ShowChat);
-            _onboardingWindow = new OnboardingWindow(_runtime, _themeService, ShowChat);
             _overlayWindow = new GuidanceOverlayWindow();
             _notchWindow = new NotchWindow { DebugLog = message => _runtime.Log.Info(message) };
             _traceWindow = new TraceOverlayWindow();
+
+            // None of Metis's own surfaces belong in a screenshot — least of all
+            // the chat, which is open for the whole of a turn and was being sent
+            // to the model inside the very picture it was being asked about.
+            _companionWindow.KeepOutOfScreenCaptures(_runtime.Log);
+            _preferencesWindow.KeepOutOfScreenCaptures(_runtime.Log);
+            _overlayWindow.KeepOutOfScreenCaptures(_runtime.Log);
+            _notchWindow.KeepOutOfScreenCaptures(_runtime.Log);
+            _traceWindow.KeepOutOfScreenCaptures(_runtime.Log);
 
             // The chat is part of the notch rather than a window of its own, so
             // it is wired here and never shown or hidden as a separate thing.
             _notchWindow.Chat.Attach(_runtime);
             _notchWindow.ConnectChat();
-            _notchWindow.ChatSetupRequested += (_, _) => ShowSetup();
+            _notchWindow.ChatSetupRequested += (_, _) => _notchWindow?.OpenSettings();
+            _notchWindow.AgentDrawer.Attach(_runtime);
+            _notchWindow.ConnectAgentDrawer(_runtime);
+            _notchWindow.ConnectSpawnAgent(_runtime);
+
+            // Settings live 100% inside the notch.
+            _notchWindow.ConnectSettings(_runtime, ShowSetup, () => _notchWindow?.OpenAuth());
+            _notchWindow.ConnectWelcome(
+                _runtime,
+                askQuestion: question => _ = _notchWindow!.AskNowAsync(question),
+                openSettings: () => _notchWindow?.OpenSettings("Account"),
+                onFinished: ShowChat);
+
+            // Clicking a Windows notification brings the agent it is about up
+            // on screen, rather than merely putting Metis in the foreground and
+            // leaving the user to find what it was telling them about.
+            _runtime.AgentNotificationOpened += (_, _) => Dispatcher.Invoke(() =>
+            {
+                _notchWindow?.OpenAgentDrawer();
+                _notchWindow?.AgentDrawer.RefreshTasks();
+            });
 
             // The pen comes out with the chord, and the notch becomes the tool
             // picker. A quick hold-and-drag still commits on release; touching
@@ -111,6 +200,12 @@ public partial class App : System.Windows.Application
                 _runtime.SetTracedRegion(path);
             });
 
+            _traceWindow.TapCompleted += (_, point) => Dispatcher.Invoke(() =>
+            {
+                _runtime.Log.Info($"Tap committed on trace overlay at {point.ScreenX},{point.ScreenY}.");
+                _runtime.SetTappedPoint(point);
+            });
+
             _notchWindow.TraceToolPicked += (_, tool) => Dispatcher.Invoke(() =>
             {
                 _traceWindow.Arm();
@@ -122,7 +217,14 @@ public partial class App : System.Windows.Application
             _runtime.GuidanceOverlayRequested += Runtime_OnGuidanceOverlayRequested;
             _runtime.ActivityChanged += Runtime_OnActivityChanged;
             _notchWindow.OpenRequested += (_, _) => ShowChat();
-            _notchWindow.SettingsRequested += (_, _) => ShowSetup();
+            _notchWindow.SettingsRequested += (_, _) => _notchWindow?.OpenSettings();
+            _notchWindow.PlanRequested += (_, _) => _notchWindow?.OpenSettings("Account");
+
+            // A plan refusal surfaces as a banner in the chat rather than as an
+            // error. Nothing went wrong: an allowance was spent, or a plan does
+            // not include something, and both have an obvious next step.
+            _runtime.PlanLimitReached += (_, notice) => Dispatcher.Invoke(() =>
+                _notchWindow?.ShowPlanNotice(notice.Title, notice.Detail));
 
             // Toggling from the notch keeps the one consequential setting a
             // single click away rather than three levels into a menu.
@@ -146,9 +248,19 @@ public partial class App : System.Windows.Application
             // whole stack quietly slips behind the taskbar and behind any window
             // that raises itself when it is activated.
             _topmostGuard = new TopmostGuard();
+            // Bottom of the stack first; the last one added ends up above the
+            // rest.
+            //
+            // The companion goes above the notch, not below it. It used to be
+            // the other way round on the reasoning that the chat should never be
+            // covered — but the companion is a 56px sprite that appears only
+            // while Metis is explaining something, and hiding it behind the very
+            // window it is explaining meant it silently vanished at the moment
+            // it had something to say. A character that disappears when it acts
+            // is worse than one that briefly overlaps a panel.
             _topmostGuard.Add(_overlayWindow);
-            _topmostGuard.Add(_companionWindow);
             _topmostGuard.Add(_notchWindow);
+            _topmostGuard.Add(_companionWindow);
             _topmostGuard.Start();
             _notchWindow.KeepOnTop = () => _topmostGuard?.Reassert();
 
@@ -271,28 +383,42 @@ public partial class App : System.Windows.Application
     /// Exposes the four operating modes from the tray so the user can change
     /// how much Metis teaches versus does without opening Setup.
     /// </summary>
-    private AccountWindow? _accountWindow;
-
     /// <summary>
-    /// Opens the account window, creating it once and reusing it. Signing in is
-    /// optional throughout: Metis works with no account at all, so this is a
-    /// menu entry rather than anything the user is made to pass through.
+    /// Opens the account and plan page in Preferences. Signing in is optional
+    /// throughout: Metis works with no account at all, so this is a menu entry
+    /// rather than anything the user is made to pass through.
+    ///
+    /// There used to be a separate account window here. It had been broken for
+    /// some time — it referenced a brush no theme dictionary defined, so building
+    /// it threw and the menu entry did nothing at all — and a menu entry that
+    /// silently does nothing is worse than one that is missing. Preferences is
+    /// where every other setting already lives, so the account belongs there
+    /// too rather than in a second window that has to be kept in step with it.
     /// </summary>
+    /// <summary>
+    /// Tells the motion system what the user and the operating system want.
+    /// Either one asking for less is enough.
+    /// </summary>
+    private void ApplyMotionPreference()
+    {
+        MotionTuning.Apply(
+            _runtime?.Settings.ReduceMotion ?? false,
+            SystemParameters.ClientAreaAnimation);
+
+        // The chat bubble entrance is a XAML storyboard on a template trigger,
+        // and a sealed template's animation cannot be retimed at runtime. So it
+        // is neutered instead: with motion off the bubble starts at its resting
+        // size and position, and the animation runs from there to there.
+        Resources["BubbleEnterScale"] = MotionTuning.Reduced ? 1.0 : 0.94;
+        Resources["BubbleEnterRise"] = MotionTuning.Reduced ? 0.0 : 7.0;
+    }
+
     private void ShowAccount()
     {
-        if (_runtime is null)
-        {
-            return;
-        }
-
-        if (_accountWindow is null)
-        {
-            _accountWindow = new AccountWindow(_runtime, new CredentialStoreSessionAccess());
-            _accountWindow.Closed += (_, _) => _accountWindow = null;
-        }
-
-        _accountWindow.Show();
-        _accountWindow.Activate();
+        // In the notch, where somebody already knows to look, rather than in a
+        // window they have to find. This is the change the whole settings move
+        // was asked for.
+        _notchWindow?.OpenSettings("Account");
     }
 
     // ============================= First run =============================
@@ -355,7 +481,18 @@ public partial class App : System.Windows.Application
                     url, key, result.AccessToken!, result.Account!.UserId,
                     Entitlements.ParseEnvironment(settings.MetisEnvironment));
 
+                // Kept, rather than used once and dropped. Metis's own AI is
+                // reached with this token on every turn, so a session restored
+                // at start-up has to carry it forward or the plan the user is
+                // paying for silently does nothing until they sign in again.
+                _runtime.SetSession(result.AccessToken, result.AccessTokenExpiresUtc);
                 _runtime.SignIn(account ?? result.Account);
+
+                // A plan cached on a previous run, so someone who is offline is
+                // shown what they bought rather than the free plan. Refreshed
+                // from the gateway in the background once, if it answers.
+                _runtime.RestoreCachedEntitlements((account ?? result.Account).UserId);
+                _ = _runtime.RefreshEntitlementsAsync();
                 await _runtime.SaveSettingsAsync(
                     _runtime.Settings with { LastAuthenticatedUtc = DateTimeOffset.UtcNow }, null, null);
             }
@@ -393,37 +530,28 @@ public partial class App : System.Windows.Application
     }
 
     /// <summary>
-    /// Signed in. Setup comes next, so the user can add the API key Metis will
-    /// actually answer with, and the welcome page waits until they are done
-    /// with it.
+    /// Signed in. Straight to what Metis needs permission to do.
+    ///
+    /// There used to be a detour here: signing in opened the full 980x700
+    /// settings window and waited for the user to dismiss it before carrying on.
+    /// That was the worst moment in the product. Somebody who had installed
+    /// Metis ninety seconds earlier, and had so far seen one black bar and a
+    /// password field, was handed an eleven-page settings window and left to
+    /// work out which of its twenty-three provider controls they were supposed
+    /// to fill in — before Metis had answered a single question or shown them
+    /// what it was for.
+    ///
+    /// It was also asking twice. The onboarding wizard that runs afterwards has
+    /// its own provider-and-key step, so a new user was made to supply the same
+    /// thing in two different windows, in two different layouts, minutes apart.
+    ///
+    /// Now sign-in leads to permissions and permissions lead to the wizard,
+    /// which is the one place the question is asked.
     /// </summary>
     private void AfterSignIn()
     {
         _notchWindow?.CloseAuth();
-
-        if (_preferencesWindow is null)
-        {
-            ShowWelcomePanel();
-            return;
-        }
-
-        // Setup hides rather than closes — it is created once and lives for the
-        // whole session — so "the user has finished with it" is a visibility
-        // change and not a Closed event. The handler removes itself, because
-        // this should happen on the first run and never again.
-        void OnSetupDismissed(object? sender, DependencyPropertyChangedEventArgs e)
-        {
-            if (_preferencesWindow is null || _preferencesWindow.IsVisible)
-            {
-                return;
-            }
-
-            _preferencesWindow.IsVisibleChanged -= OnSetupDismissed;
-            ShowWelcomePanel();
-        }
-
-        _preferencesWindow.IsVisibleChanged += OnSetupDismissed;
-        ShowSetup();
+        ShowWelcomePanel();
     }
 
     /// <summary>
@@ -473,6 +601,8 @@ public partial class App : System.Windows.Application
     /// </summary>
     private void ContinueStartup(string[] args)
     {
+        ShowWhatsNewIfUpdated();
+
         if (args.Contains("--onboarding", StringComparer.OrdinalIgnoreCase))
         {
             ShowOnboarding();
@@ -530,11 +660,59 @@ public partial class App : System.Windows.Application
     }
 
     /// <summary>
+    /// Shows the release notes once, after an update.
+    ///
+    /// Metis updates itself in the background for testers, so a build with new
+    /// behaviour otherwise just appears one morning with no explanation. This
+    /// release in particular adds agents that write files and drive a browser,
+    /// which is not something anyone should meet by surprise.
+    ///
+    /// The recorded version is written before the window opens rather than
+    /// after it is dismissed: if the notes throw, or the user closes them from
+    /// the taskbar, the alternative is showing them again on every single
+    /// launch forever, which is worse than missing them once.
+    /// </summary>
+    private void ShowWhatsNewIfUpdated()
+    {
+        if (_runtime is null || !WhatsNewWindow.ShouldShow(_runtime.Settings.LastSeenVersion))
+        {
+            RememberThisVersion();
+            return;
+        }
+
+        RememberThisVersion();
+
+        try
+        {
+            var window = new WhatsNewWindow { Owner = null };
+            window.KeepOutOfScreenCaptures(_runtime.Log);
+            window.Show();
+            window.Activate();
+        }
+        catch (Exception exception)
+        {
+            _runtime.Log.Error("The release notes could not be shown.", exception);
+        }
+    }
+
+    private void RememberThisVersion()
+    {
+        if (_runtime is null ||
+            string.Equals(_runtime.Settings.LastSeenVersion, WhatsNewWindow.Version, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        _ = _runtime.SaveSettingsAsync(
+            _runtime.Settings with { LastSeenVersion = WhatsNewWindow.Version }, null, null);
+    }
+
+    /// <summary>
     /// Hands the sign-in window only the session token, not the whole
     /// credential store. A dialog that collects a password has no business
     /// being able to read every provider key on the machine.
     /// </summary>
-    private sealed class CredentialStoreSessionAccess : AccountWindow.ISecretStoreAccess
+    private sealed class CredentialStoreSessionAccess : Metis.Core.Contracts.ISessionTokenAccess
     {
         private readonly Metis.Data.WindowsCredentialStore _store = new();
 
@@ -594,10 +772,10 @@ public partial class App : System.Windows.Application
     }
 
     private void Runtime_OnGuidanceOverlayRequested(object? sender, GuidanceOverlayRequest request) =>
-        Dispatcher.Invoke(() => _overlayWindow?.Show(request));
+        Dispatcher.InvokeAsync(() => _overlayWindow?.Show(request));
 
     private void Runtime_OnActivityChanged(object? sender, MetisActivity activity) =>
-        Dispatcher.Invoke(() =>
+        Dispatcher.InvokeAsync(() =>
         {
             // The notch stays quiet while the toolbar is up, so a trace flag
             // left set by mistake would mute it for the rest of the session.
@@ -653,36 +831,34 @@ public partial class App : System.Windows.Application
     }
 
     /// <summary>
-    /// Preferences is a free-standing, resizable window rather than an anchored
-    /// one. It is a place to work through settings, not a glance at the notch,
-    /// and the paged layout needs more room than the anchored slot allows.
+    /// Opens Settings directly inside the Notch with zero external popup windows.
     /// </summary>
     private void ShowSetup()
     {
-        if (_preferencesWindow is null)
-        {
-            return;
-        }
-
-        _notchWindow?.CloseChat();
-        _preferencesWindow.ShowAt();
+        _notchWindow?.OpenSettings();
     }
 
     /// <summary>
-    /// The wizard is centred and free-standing rather than anchored under the
-    /// notch: on first run the notch has not been explained yet, so it cannot
-    /// serve as the landmark the anchored windows rely on.
+    /// The welcome, in the notch.
+    ///
+    /// It used to be a centred 880x640 wizard, on the reasoning that the notch
+    /// had not been explained yet so it could not be the landmark. That
+    /// reasoning had it backwards: explaining the notch is exactly what the
+    /// first step is for, and a person taught about Metis in a window they then
+    /// close has been taught about the wrong thing. The first step now is the
+    /// notch itself, and every step after it is in the place they will be using
+    /// afterwards.
     /// </summary>
     private void ShowOnboarding()
     {
-        if (_onboardingWindow is null)
+        if (_notchWindow is null)
         {
+            ShowChat();
             return;
         }
 
-        _notchWindow?.CloseChat();
-        _onboardingWindow.Show();
-        _onboardingWindow.Activate();
+        _preferencesWindow?.Hide();
+        _notchWindow.OpenWelcome();
     }
 
     /// <summary>
@@ -723,7 +899,6 @@ public partial class App : System.Windows.Application
         _topmostGuard?.Dispose();
 
         _preferencesWindow?.AllowClose();
-        _onboardingWindow?.AllowClose();
         _overlayWindow?.AllowClose();
         _traceWindow?.AllowClose();
         _notchWindow?.AllowClose();

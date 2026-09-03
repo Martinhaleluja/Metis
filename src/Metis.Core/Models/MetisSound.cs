@@ -32,5 +32,26 @@ public enum MetisSound
     Stopped,
 
     /// <summary>Something failed. Several variants may exist for this one.</summary>
-    Error
+    Error,
+
+    /// <summary>
+    /// The plan on this account changed \u2014 an upgrade took effect, or a
+    /// subscription ended.
+    ///
+    /// Worth a sound because it is the one change that happens *to* the user
+    /// rather than because of something they just did in Metis: the webhook
+    /// arrives while they are working in another window, and the notch quietly
+    /// starts allowing something it did not a moment ago.
+    /// </summary>
+    PlanChanged,
+
+    /// <summary>
+    /// This month's included AI ran out, or the plan does not cover what was
+    /// asked for.
+    ///
+    /// Deliberately not the error cue. Nothing went wrong \u2014 an allowance was
+    /// spent, which is an ordinary and expected thing \u2014 and an error tone would
+    /// send people looking for a fault to fix.
+    /// </summary>
+    LimitReached
 }

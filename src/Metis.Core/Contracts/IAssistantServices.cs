@@ -43,10 +43,16 @@ public interface IDiagnosticLog
 
 public interface IGeminiProvider
 {
+    /// <param name="onTextDelta">
+    /// Receives the answer as it is written, so it can be shown before the
+    /// reply is finished. Null asks for the whole answer at once, which is what
+    /// diagnostics and self-tests want.
+    /// </param>
     Task<GeminiResponse> GenerateAsync(
         string apiKey,
         string model,
         GeminiRequest request,
+        IProgress<string>? onTextDelta = null,
         CancellationToken cancellationToken = default);
 
     Task<IReadOnlyList<GeminiModelInfo>> ListModelsAsync(
@@ -73,6 +79,7 @@ public interface IOpenAiProvider
         string model,
         string transcriptionModel,
         GeminiRequest request,
+        IProgress<string>? onTextDelta = null,
         CancellationToken cancellationToken = default);
 
     Task<IReadOnlyList<OpenAiModelInfo>> ListModelsAsync(
@@ -202,10 +209,16 @@ public interface IReasoningProvider
     ReasoningProviderDescriptor Descriptor { get; }
     Uri Endpoint { get; }
 
+    /// <param name="onTextDelta">
+    /// Receives the answer as it is written. Null asks for the whole answer at
+    /// once. A provider that cannot stream may ignore it and report the reply
+    /// in one piece; the caller must cope with either.
+    /// </param>
     Task<ReasoningResponse> GenerateAsync(
         string? credential,
         string model,
         GeminiRequest request,
+        IProgress<string>? onTextDelta = null,
         CancellationToken cancellationToken = default);
 
     Task<IReadOnlyList<ReasoningModelInfo>> ListModelsAsync(
@@ -286,15 +299,54 @@ public interface IAudioPlayback : IDisposable
     void Stop();
 }
 
+/// <summary>
+/// How much of the screen's detail a capture needs to keep.
+/// </summary>
+public enum ScreenCaptureDetail
+{
+    /// <summary>
+    /// Enough to read and answer about. The image is the largest single thing
+    /// in a request and its size is paid for twice — once uploading it and
+    /// again as the tokens the model reads it as — so an ordinary question
+    /// about the screen gets a smaller frame.
+    /// </summary>
+    Standard,
+
+    /// <summary>
+    /// Everything the display has. For pointing at one small control, where the
+    /// answer is a coordinate and detail lost in a downscale cannot be
+    /// recovered.
+    /// </summary>
+    Full
+}
+
 public interface IScreenCaptureService
 {
     Task<ScreenCapture?> CaptureActiveWindowAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Captures at the given level of detail. Implementations that have only
+    /// one may ignore it.
+    /// </summary>
+    Task<ScreenCapture?> CaptureActiveWindowAsync(
+        ScreenCaptureDetail detail,
+        CancellationToken cancellationToken = default) =>
+        CaptureActiveWindowAsync(cancellationToken);
+
+    /// <summary>
+    /// The coordinate space the next capture will use, if it can be known
+    /// without taking one. Null when it cannot, in which case a caller that
+    /// wanted to start work alongside the capture has to wait for it instead.
+    /// </summary>
+    ScreenBounds? PeekCaptureBounds() => null;
 }
 
 public interface IGlobalPushToTalk : IDisposable
 {
     event EventHandler? Pressed;
     event EventHandler? Released;
+    event EventHandler? DirectAgentVoicePressed;
+    event EventHandler? DirectAgentVoiceReleased;
     event EventHandler? EmergencyStopPressed;
 
     /// <summary>
@@ -339,6 +391,11 @@ public interface IGlobalPushToTalk : IDisposable
     /// </summary>
     bool ContextShortcutsEnabled { get; set; }
 
+    /// <summary>
+    /// Enables direct voice-to-agent shortcut chords (Ctrl+Shift+A / Ctrl+Alt+A).
+    /// </summary>
+    bool DirectAgentShortcutsEnabled { get; set; }
+
     bool IsRunning { get; }
     void Start();
     void Stop();
@@ -359,6 +416,18 @@ public interface IUiAutomationService
     Task<string?> DescribeElementAtAsync(
         int screenX,
         int screenY,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Describes all visible controls, labels, and text situated within a specified screen region
+    /// or bounding box, for traced area and rectangle inspection.
+    /// </summary>
+    Task<string?> DescribeRegionAsync(
+        ScreenCapture capture,
+        int screenLeft,
+        int screenTop,
+        int screenWidth,
+        int screenHeight,
         CancellationToken cancellationToken = default);
 
     /// <summary>

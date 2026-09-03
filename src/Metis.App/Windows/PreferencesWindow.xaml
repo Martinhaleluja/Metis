@@ -6,7 +6,7 @@
         WindowStyle="None" ResizeMode="CanResize"
         Background="Transparent" AllowsTransparency="True"
         WindowStartupLocation="CenterScreen"
-        ShowInTaskbar="True">
+        ShowInTaskbar="False">
     <Window.InputBindings>
         <!-- The old Setup footer advertised both of these and implemented
              neither. -->
@@ -148,16 +148,16 @@
                                     <WrapPanel Margin="0,12,0,0">
                                         <StackPanel Orientation="Horizontal" Margin="0,0,24,8">
                                             <Border Style="{StaticResource KeycapChip}">
-                                                <TextBlock Style="{StaticResource KeycapText}" Text="Ctrl+Shift+1" />
+                                                <TextBlock Style="{StaticResource KeycapText}" Text="Ctrl+Shift+1 / Ctrl+Shift+A" />
                                             </Border>
-                                            <TextBlock Text="Hold to talk" VerticalAlignment="Center" Margin="8,0,0,0"
+                                            <TextBlock Text="Hold to talk · Spawn voice agent" VerticalAlignment="Center" Margin="8,0,0,0"
                                                        Style="{StaticResource CaptionText}" />
                                         </StackPanel>
                                         <StackPanel Orientation="Horizontal" Margin="0,0,24,8">
                                             <Border Style="{StaticResource KeycapChip}">
                                                 <TextBlock Style="{StaticResource KeycapText}" Text="Ctrl+Alt" />
                                             </Border>
-                                            <TextBlock Text="Ask about the screen" VerticalAlignment="Center" Margin="8,0,0,0"
+                                            <TextBlock Text="Ask about the screen (Context)" VerticalAlignment="Center" Margin="8,0,0,0"
                                                        Style="{StaticResource CaptionText}" />
                                         </StackPanel>
                                         <StackPanel Orientation="Horizontal" Margin="0,0,24,8">
@@ -169,9 +169,16 @@
                                         </StackPanel>
                                         <StackPanel Orientation="Horizontal" Margin="0,0,24,8">
                                             <Border Style="{StaticResource KeycapChip}">
+                                                <TextBlock Style="{StaticResource KeycapText}" Text="Ctrl+Space" />
+                                            </Border>
+                                            <TextBlock Text="Continuous listen" VerticalAlignment="Center" Margin="8,0,0,0"
+                                                       Style="{StaticResource CaptionText}" />
+                                        </StackPanel>
+                                        <StackPanel Orientation="Horizontal" Margin="0,0,24,8">
+                                            <Border Style="{StaticResource KeycapChip}">
                                                 <TextBlock Style="{StaticResource KeycapText}" Text="F12" />
                                             </Border>
-                                            <TextBlock Text="Stop everything" VerticalAlignment="Center" Margin="8,0,0,0"
+                                            <TextBlock Text="Stop guidance &amp; agents" VerticalAlignment="Center" Margin="8,0,0,0"
                                                        Style="{StaticResource CaptionText}" />
                                         </StackPanel>
                                     </WrapPanel>
@@ -180,6 +187,77 @@
                         </StackPanel>
 
                         <!-- ============ General ============ -->
+                        <StackPanel x:Name="PageAccount" Visibility="Collapsed">
+                            <TextBlock Text="Account &amp; plan" Style="{StaticResource PageTitleText}" />
+                            <TextBlock Style="{StaticResource CaptionText}" Margin="0,4,0,20"
+                                       Text="Who you are signed in as, and what that includes." />
+
+                            <!-- The plan. Read-only on purpose: anything that
+                                 costs money happens on the website, where a
+                                 payment page belongs, and this button opens it. -->
+                            <Border Style="{StaticResource UtilityCard}" Margin="0,0,0,12">
+                                <StackPanel>
+                                    <Border x:Name="AccountPlanBadge" Style="{StaticResource Badge}">
+                                        <TextBlock x:Name="AccountPlanBadgeText" Style="{StaticResource BadgeText}" Text="FREE" />
+                                    </Border>
+                                    <TextBlock x:Name="AccountPlanTitle" Style="{StaticResource SubtitleText}" Margin="0,12,0,0"
+                                               Text="Not signed in" />
+                                    <TextBlock x:Name="AccountPlanDetail" Style="{StaticResource CaptionText}" Margin="0,4,0,0"
+                                               TextWrapping="Wrap"
+                                               Text="Metis works fully without an account, on your own API key or a local model." />
+
+                                    <StackPanel Orientation="Horizontal" Margin="0,16,0,0">
+                                        <Button x:Name="AccountManageButton" Content="Manage plan on the web"
+                                                Click="AccountManage_OnClick" />
+                                        <Button x:Name="AccountSignInButton" Content="Sign in" Margin="8,0,0,0"
+                                                Style="{StaticResource SecondaryButton}"
+                                                Click="AccountSignIn_OnClick" />
+                                        <Button x:Name="AccountSignOutButton" Content="Sign out" Margin="8,0,0,0"
+                                                Style="{StaticResource QuietButton}"
+                                                Click="AccountSignOut_OnClick" />
+                                    </StackPanel>
+                                </StackPanel>
+                            </Border>
+
+                            <!-- This month's allowance. Only meaningful for the
+                                 AI Metis pays for; turns on the user's own key
+                                 are never counted here because they never reach
+                                 a Metis server at all. -->
+                            <Border x:Name="AccountUsageCard" Style="{StaticResource UtilityCard}" Margin="0,0,0,12">
+                                <StackPanel>
+                                    <TextBlock Style="{StaticResource MonoLabelText}" Text="INCLUDED AI THIS MONTH" />
+                                    <TextBlock x:Name="AccountUsageText" Style="{StaticResource SubtitleText}" Margin="0,8,0,0"
+                                               Text="Nothing used yet" />
+                                    <Border Margin="0,10,0,0" Height="8" CornerRadius="4"
+                                            Background="{DynamicResource TrackFillBrush}">
+                                        <Border x:Name="AccountUsageFill" HorizontalAlignment="Left" Width="0"
+                                                CornerRadius="4" Background="{DynamicResource AccentBrush}" />
+                                    </Border>
+                                    <TextBlock x:Name="AccountUsageDetail" Style="{StaticResource CaptionText}" Margin="0,8,0,0"
+                                               TextWrapping="Wrap" />
+                                </StackPanel>
+                            </Border>
+
+                            <!-- What the plan includes, straight from the
+                                 server's own answer rather than from a list
+                                 written twice. -->
+                            <Border Style="{StaticResource UtilityCard}" Margin="0,0,0,12">
+                                <StackPanel>
+                                    <TextBlock Style="{StaticResource MonoLabelText}" Text="WHAT THIS PLAN INCLUDES" />
+                                    <ItemsControl x:Name="AccountFeatureList" Margin="0,10,0,0">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <TextBlock Style="{StaticResource CaptionText}" Margin="0,0,0,5"
+                                                           TextWrapping="Wrap" Text="{Binding}" />
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                    <TextBlock x:Name="AccountFeatureNote" Style="{StaticResource CaptionText}"
+                                               Margin="0,10,0,0" TextWrapping="Wrap" />
+                                </StackPanel>
+                            </Border>
+                        </StackPanel>
+
                         <StackPanel x:Name="PageGeneral" Visibility="Collapsed">
                             <TextBlock Text="General" Style="{StaticResource PageTitleText}" />
                             <TextBlock Style="{StaticResource CaptionText}" Margin="0,4,0,20"
@@ -245,6 +323,12 @@
                                               HorizontalAlignment="Left"
                                               SelectionChanged="ProviderBox_OnSelectionChanged">
                                         <ComboBoxItem Content="Gemini" />
+                                        <!-- Metis's own AI. Only offered when
+                                             signed in: without an account there
+                                             is no plan for it to draw on, and a
+                                             choice that cannot work is worse
+                                             than one that is absent. -->
+                                        <ComboBoxItem x:Name="MetisProviderItem" Content="Metis" Visibility="Collapsed" />
                                         <ComboBoxItem Content="OpenAI" />
                                         <ComboBoxItem Content="Claude" />
                                         <ComboBoxItem Content="OpenRouter" />
@@ -259,6 +343,8 @@
                                         <Button Content="Test" Margin="8,0,0,0" Click="TestProvider_OnClick" />
                                     </StackPanel>
                                     <TextBlock x:Name="ProviderStatus" Style="{StaticResource CaptionText}" Margin="2,10,0,0" />
+                                    <TextBlock x:Name="ProviderPlanNote" Style="{StaticResource CaptionText}"
+                                               Margin="2,8,0,0" TextWrapping="Wrap" Visibility="Collapsed" />
                                 </StackPanel>
                             </Border>
 
@@ -274,6 +360,22 @@
                                     <Button Content="Remove stored key" Style="{StaticResource QuietButton}"
                                             HorizontalAlignment="Left" Margin="0,12,0,0"
                                             Tag="Gemini" Click="RemoveKey_OnClick" />
+                                </StackPanel>
+                            </Border>
+
+                            <Border x:Name="MetisCard" Style="{StaticResource UtilityCard}" Margin="0,0,0,12"
+                                    Visibility="Collapsed">
+                                <StackPanel>
+                                    <Border Style="{StaticResource Badge}">
+                                        <TextBlock Style="{StaticResource BadgeText}" Text="METIS" />
+                                    </Border>
+                                    <TextBlock Style="{StaticResource CaptionText}" Margin="0,12,0,0" TextWrapping="Wrap"
+                                               Text="There is no key to enter. Metis answers on its own provider account, within the monthly allowance your plan includes, and the model is chosen from what that plan allows." />
+                                    <TextBlock x:Name="MetisPlanSummary" Style="{StaticResource CaptionText}"
+                                               Margin="0,10,0,0" TextWrapping="Wrap" />
+                                    <Button Content="See your plan and usage" Style="{StaticResource SecondaryButton}"
+                                            HorizontalAlignment="Left" Margin="0,14,0,0"
+                                            Tag="Account" Click="Jump_OnClick" />
                                 </StackPanel>
                             </Border>
 
@@ -395,8 +497,12 @@
                                     <StackPanel x:Name="AssemblyAiPanel" Margin="0,12,0,0">
                                         <TextBlock Style="{StaticResource CaptionText}" Text="AssemblyAI key" />
                                         <PasswordBox x:Name="AssemblyAiApiKeyBox" Margin="0,6,0,10" />
-                                        <TextBlock Style="{StaticResource CaptionText}" Text="Model" />
-                                        <TextBox x:Name="AssemblyAiModelBox" Margin="0,6,0,0" />
+                                         <TextBlock Style="{StaticResource CaptionText}" Text="Model" />
+                                         <ComboBox x:Name="AssemblyAiModelBox" Margin="0,6,0,0" IsEditable="True">
+                                             <ComboBoxItem Content="best" ToolTip="Best Accuracy (Standard/Paid)" />
+                                             <ComboBoxItem Content="nano" ToolTip="Nano Model (Low Cost / Free Tier)" />
+                                             <ComboBoxItem Content="universal-2" ToolTip="Universal-2 Model (Legacy)" />
+                                         </ComboBox>
                                     </StackPanel>
                                     <StackPanel x:Name="NativeSttPanel" Margin="0,12,0,0">
                                         <TextBlock Style="{StaticResource CaptionText}" Text="OpenAI transcription model" />
@@ -412,30 +518,49 @@
                                               HorizontalAlignment="Left"
                                               SelectionChanged="SpeechProvider_OnSelectionChanged">
                                         <ComboBoxItem Content="Native" />
-                                        <ComboBoxItem Content="Windows" />
                                         <ComboBoxItem Content="Piper" />
                                         <ComboBoxItem Content="Chatterbox-Nano" />
                                         <ComboBoxItem Content="ElevenLabs" />
                                     </ComboBox>
 
-                                    <!-- Built into Windows: nothing to download,
-                                         works with no key and no network. -->
-                                    <StackPanel x:Name="WindowsVoicePanel" Margin="0,12,0,0">
-                                        <TextBlock Style="{StaticResource CaptionText}"
-                                                   Text="Windows voice (leave blank for the system default)" />
-                                        <ComboBox x:Name="WindowsVoiceBox" Margin="0,6,0,6"
-                                                  IsEditable="True" HorizontalAlignment="Left" Width="240" />
-                                        <TextBlock x:Name="WindowsVoiceStatusText" Style="{StaticResource CaptionText}"
-                                                   TextWrapping="Wrap" />
-                                    </StackPanel>
-
                                     <StackPanel x:Name="NativeTtsPanel" Margin="0,12,0,0">
-                                        <TextBlock Style="{StaticResource CaptionText}" Text="Gemini speech model / voice" />
-                                        <TextBox x:Name="SpeechModelBox" Margin="0,6,0,6" />
-                                        <TextBox x:Name="VoiceNameBox" Margin="0,0,0,10" />
-                                        <TextBlock Style="{StaticResource CaptionText}" Text="OpenAI speech model / voice" />
-                                        <TextBox x:Name="OpenAiSpeechModelBox" Margin="0,6,0,6" />
-                                        <TextBox x:Name="OpenAiVoiceNameBox" />
+                                        <TextBlock Style="{StaticResource MonoLabelText}" Text="GEMINI NATIVE VOICE (RECOMMENDED · FREE TIER)" Margin="0,0,0,4" />
+                                        <TextBlock Style="{StaticResource CaptionText}"
+                                                   Text="Natural, ultra-fast speech synthesis included free with Gemini 2.0 / 2.5 Flash on Google AI Studio keys."
+                                                   TextWrapping="Wrap" Margin="0,0,0,8" />
+
+                                        <TextBlock Style="{StaticResource CaptionText}" Text="Gemini voice" />
+                                        <ComboBox x:Name="GeminiVoiceBox" Margin="0,4,0,10" Width="330" HorizontalAlignment="Left">
+                                            <ComboBoxItem Content="Kore — Clear, soothing &amp; balanced (Female · Recommended)" Tag="Kore" />
+                                            <ComboBoxItem Content="Puck — Energetic, animated &amp; youthful (Male)" Tag="Puck" />
+                                            <ComboBoxItem Content="Charon — Deep, calm &amp; resonant (Male)" Tag="Charon" />
+                                            <ComboBoxItem Content="Fenrir — Strong, confident &amp; dynamic (Male)" Tag="Fenrir" />
+                                            <ComboBoxItem Content="Aoede — Warm, expressive &amp; melodic (Female)" Tag="Aoede" />
+                                        </ComboBox>
+
+                                        <StackPanel Orientation="Horizontal" Margin="0,2,0,12">
+                                            <Button x:Name="GeminiVoicePreviewButton" Content="Preview Gemini voice" Style="{StaticResource SecondaryButton}" Click="GeminiVoicePreview_OnClick" />
+                                            <TextBlock x:Name="GeminiVoicePreviewStatus" Style="{StaticResource CaptionText}" VerticalAlignment="Center" Margin="10,0,0,0" />
+                                        </StackPanel>
+
+                                        <Border Style="{StaticResource Separator}" Margin="0,4,0,12" />
+
+                                        <TextBlock Style="{StaticResource MonoLabelText}" Text="OPENAI VOICE &amp; MODEL" Margin="0,0,0,4" />
+                                        <TextBlock Style="{StaticResource CaptionText}" Text="OpenAI voice" />
+                                        <ComboBox x:Name="OpenAiVoiceBox" Margin="0,4,0,10" Width="330" HorizontalAlignment="Left">
+                                            <ComboBoxItem Content="alloy — Neutral &amp; balanced" Tag="alloy" />
+                                            <ComboBoxItem Content="echo — Warm &amp; rounded" Tag="echo" />
+                                            <ComboBoxItem Content="fable — Expressive British tone" Tag="fable" />
+                                            <ComboBoxItem Content="onyx — Deep &amp; authoritative" Tag="onyx" />
+                                            <ComboBoxItem Content="nova — Energetic &amp; bright" Tag="nova" />
+                                            <ComboBoxItem Content="shimmer — Clear &amp; calm" Tag="shimmer" />
+                                        </ComboBox>
+
+                                        <TextBlock Style="{StaticResource CaptionText}" Text="OpenAI speech model" />
+                                        <ComboBox x:Name="OpenAiSpeechModelBox" Margin="0,4,0,6" Width="330" HorizontalAlignment="Left" IsEditable="True">
+                                            <ComboBoxItem Content="tts-1 (Standard)" Tag="tts-1" />
+                                            <ComboBoxItem Content="tts-1-hd (High Definition)" Tag="tts-1-hd" />
+                                        </ComboBox>
                                     </StackPanel>
                                     <StackPanel x:Name="PiperPanel" Margin="0,12,0,0">
                                         <TextBlock Style="{StaticResource CaptionText}" Text="piper.exe" />
@@ -546,6 +671,19 @@
                                 </StackPanel>
                             </Border>
 
+                            <Border Style="{StaticResource UtilityCard}" Margin="0,0,0,12">
+                                <StackPanel>
+                                    <TextBlock Style="{StaticResource MonoLabelText}" Text="NEVER LOOK AT" />
+                                    <TextBlock Style="{StaticResource CaptionText}" Margin="0,10,0,0"
+                                               Text="One app per line, by its name or a piece of its window title. Anything matching is painted out of the screenshot before it is sent, and Metis is told a region was withheld so it does not guess." />
+                                    <TextBox x:Name="ExcludedAppsBox" Margin="0,12,0,0" Height="92"
+                                             AcceptsReturn="True" TextWrapping="NoWrap"
+                                             VerticalScrollBarVisibility="Auto" />
+                                    <TextBlock Style="{StaticResource CaptionText}" Margin="0,8,0,0"
+                                               Text="Apps that mark themselves private — banking apps, password managers, view-once photos in WhatsApp and Signal — are already hidden from Metis without being listed here. Password boxes are never read." />
+                                </StackPanel>
+                            </Border>
+
                             <Border Style="{StaticResource UtilityCard}">
                                 <StackPanel>
                                     <TextBlock Style="{StaticResource MonoLabelText}" Text="WHAT IS KEPT" />
@@ -604,6 +742,118 @@
                                 </StackPanel>
                             </Border>
                         </StackPanel>
+
+                        <!-- ============ Updates ============ -->
+                        <StackPanel x:Name="PageUpdates" Visibility="Collapsed">
+                            <TextBlock Text="Updates" Style="{StaticResource PageTitleText}" />
+                            <TextBlock Style="{StaticResource CaptionText}" Margin="0,4,0,20"
+                                       Text="Keep Metis up to date with the latest features, models, and improvements." />
+                            <Border Style="{StaticResource UtilityCard}">
+                                <StackPanel>
+                                    <TextBlock Style="{StaticResource MonoLabelText}" Text="APPLICATION VERSION" />
+                                    <Grid Margin="0,14,0,0">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel VerticalAlignment="Center">
+                                            <TextBlock x:Name="CurrentVersionLabel" Text="Metis"
+                                                       FontSize="15" FontWeight="SemiBold"
+                                                       Foreground="{DynamicResource TextBrush}" />
+                                            <TextBlock x:Name="UpdateStatusText" Style="{StaticResource CaptionText}"
+                                                       Margin="0,4,0,0" Text="Click check for updates to query GitHub for new releases." />
+                                        </StackPanel>
+                                        <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                                            <Button x:Name="CheckUpdatesButton" Content="Check for updates"
+                                                    Style="{StaticResource SecondaryButton}"
+                                                    Click="CheckUpdates_OnClick" />
+                                            <Button x:Name="InstallUpdateButton" Content="Update &amp; restart"
+                                                    Margin="10,0,0,0" Visibility="Collapsed"
+                                                    Click="InstallUpdate_OnClick" />
+                                        </StackPanel>
+                                    </Grid>
+                                    <Border Style="{StaticResource Separator}" />
+                                    <TextBlock Style="{StaticResource MonoLabelText}" Text="AUTOMATIC UPDATES" />
+                                    <TextBlock Style="{StaticResource CaptionText}" Margin="0,8,0,0"
+                                               Text="Metis checks for updates in the background on startup and notifies you in the notch. When you click update, it updates seamlessly in 2 seconds and restarts with all your accounts, API keys, and settings preserved." />
+                                </StackPanel>
+                            </Border>
+                        </StackPanel>
+
+                        <!-- ============ Autonomous Agents ============ -->
+                        <StackPanel x:Name="PageAgents" Visibility="Collapsed">
+                            <TextBlock Text="Autonomous Agents" Style="{StaticResource PageTitleText}" />
+                            <TextBlock Style="{StaticResource CaptionText}" Margin="0,4,0,20"
+                                       Text="Configure how background autonomous agents execute tasks, safety approval policies, and desktop notifications." />
+
+                            <Border Style="{StaticResource UtilityCard}" Margin="0,0,0,14">
+                                <StackPanel>
+                                    <TextBlock Style="{StaticResource MonoLabelText}" Text="SAFETY &amp; APPROVAL POLICY" />
+                                    <TextBlock Style="{StaticResource CaptionText}" Margin="0,4,0,10"
+                                               Text="Decide when Metis should pause and ask for your approval before running actions." />
+
+                                    <ComboBox x:Name="AgentAutonomyModeBox" Width="380" HorizontalAlignment="Left" Margin="0,0,0,12">
+                                        <ComboBoxItem Content="Ask Approval for High-Risk Actions (Recommended)" Tag="AskApproval" />
+                                        <ComboBoxItem Content="Require Approval for All Actions (Strict)" Tag="Strict" />
+                                        <ComboBoxItem Content="Full Autonomy (Auto-Approve Low &amp; Medium Risk)" Tag="FullAutonomy" />
+                                    </ComboBox>
+
+                                    <Border Style="{StaticResource Separator}" />
+                                    <TextBlock Style="{StaticResource MonoLabelText}" Text="DESKTOP NOTIFICATIONS" />
+                                    <CheckBox x:Name="AgentNotificationsCheck" Content="Send Windows Desktop Toast Notifications on agent start, approval, finish, and error"
+                                              Margin="0,8,0,0" />
+                                </StackPanel>
+                            </Border>
+
+                            <Border Style="{StaticResource UtilityCard}" Margin="0,0,0,14">
+                                <StackPanel>
+                                    <TextBlock Style="{StaticResource MonoLabelText}" Text="EXECUTION LIMITS &amp; RESILIENCE" />
+                                    <TextBlock Style="{StaticResource CaptionText}" Margin="0,4,0,14"
+                                               Text="Fine-tune execution depth for heavy multi-step autonomous tasks." />
+
+                                    <Grid Margin="0,0,0,14">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel>
+                                            <TextBlock Text="Max Turns per Task" FontSize="13" FontWeight="SemiBold" Foreground="{DynamicResource TextBrush}" />
+                                            <TextBlock Style="{StaticResource CaptionText}" Text="Maximum reasoning steps an agent can execute before finalizing." />
+                                        </StackPanel>
+                                        <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                                            <Slider x:Name="AgentMaxTurnsSlider" Width="140" Minimum="10" Maximum="100" Value="30" SmallChange="5" LargeChange="10" IsSnapToTickEnabled="True" TickFrequency="5" />
+                                            <TextBlock x:Name="AgentMaxTurnsLabel" Text="30 turns" Width="60" TextAlignment="Right" FontSize="12" Foreground="{DynamicResource TextBrush}" VerticalAlignment="Center" Margin="8,0,0,0" />
+                                        </StackPanel>
+                                    </Grid>
+
+                                    <Border Style="{StaticResource Separator}" />
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel>
+                                            <TextBlock Text="Tool Timeout (Seconds)" FontSize="13" FontWeight="SemiBold" Foreground="{DynamicResource TextBrush}" />
+                                            <TextBlock Style="{StaticResource CaptionText}" Text="Maximum execution time before a background command/process times out." />
+                                        </StackPanel>
+                                        <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                                            <Slider x:Name="AgentTimeoutSlider" Width="140" Minimum="10" Maximum="180" Value="45" SmallChange="5" LargeChange="15" IsSnapToTickEnabled="True" TickFrequency="5" />
+                                            <TextBlock x:Name="AgentTimeoutLabel" Text="45s" Width="60" TextAlignment="Right" FontSize="12" Foreground="{DynamicResource TextBrush}" VerticalAlignment="Center" Margin="8,0,0,0" />
+                                        </StackPanel>
+                                    </Grid>
+                                </StackPanel>
+                            </Border>
+
+                            <Border Style="{StaticResource UtilityCard}">
+                                <StackPanel>
+                                    <TextBlock Style="{StaticResource MonoLabelText}" Text="EMERGENCY STOP" />
+                                    <TextBlock Style="{StaticResource CaptionText}" Margin="0,4,0,12"
+                                               Text="You can press F12 at any time to instantly kill all running background agent processes and workers." />
+                                    <Button Content="Stop All Active Agents Now (F12)" Style="{StaticResource SecondaryButton}"
+                                            HorizontalAlignment="Left" Click="StopAllAgents_OnClick" />
+                                </StackPanel>
+                            </Border>
+                        </StackPanel>
                     </Grid>
                 </ScrollViewer>
             </Grid>
@@ -616,7 +866,7 @@
                     <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                         <TextBlock x:Name="SaveStatus" Style="{StaticResource CaptionText}" />
                         <TextBlock Style="{StaticResource CaptionText}" Margin="0,0,0,0"
-                                   Text="Metis  ·  Built by Martin Nakasole" />
+                                   Text="Metis" />
                     </StackPanel>
                     <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
                         <Button Content="Open Metis" Style="{StaticResource SecondaryButton}"

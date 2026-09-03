@@ -40,4 +40,45 @@ public sealed class PushToTalkKeyStateTests
         Assert.False(state.Update(EmergencyStopKeyState.F12, false));
         Assert.True(state.Update(EmergencyStopKeyState.F12, true));
     }
+
+    [Fact]
+    public void Direct_agent_voice_fires_on_ctrl_shift_a()
+    {
+        var state = new DirectAgentVoiceKeyState();
+
+        Assert.Equal(PushToTalkTransition.None, state.Update(DirectAgentVoiceKeyState.LeftControl, true));
+        Assert.Equal(PushToTalkTransition.None, state.Update(DirectAgentVoiceKeyState.LeftShift, true));
+        Assert.Equal(PushToTalkTransition.Pressed, state.Update(DirectAgentVoiceKeyState.KeyA, true));
+        Assert.True(state.IsActive);
+        Assert.Equal(PushToTalkTransition.None, state.Update(DirectAgentVoiceKeyState.KeyA, true));
+        Assert.Equal(PushToTalkTransition.Released, state.Update(DirectAgentVoiceKeyState.KeyA, false));
+        Assert.False(state.IsActive);
+    }
+
+    [Fact]
+    public void Direct_agent_voice_fires_on_ctrl_alt_a()
+    {
+        var state = new DirectAgentVoiceKeyState();
+
+        Assert.Equal(PushToTalkTransition.None, state.Update(DirectAgentVoiceKeyState.RightControl, true));
+        Assert.Equal(PushToTalkTransition.None, state.Update(DirectAgentVoiceKeyState.LeftAlt, true));
+        Assert.Equal(PushToTalkTransition.Pressed, state.Update(DirectAgentVoiceKeyState.KeyA, true));
+        Assert.True(state.IsActive);
+        Assert.Equal(PushToTalkTransition.None, state.Update(DirectAgentVoiceKeyState.KeyA, true));
+        Assert.Equal(PushToTalkTransition.Released, state.Update(DirectAgentVoiceKeyState.LeftAlt, false));
+        Assert.False(state.IsActive);
+    }
+
+    [Fact]
+    public void Direct_agent_voice_resets_cleanly()
+    {
+        var state = new DirectAgentVoiceKeyState();
+        state.Update(DirectAgentVoiceKeyState.LeftControl, true);
+        state.Update(DirectAgentVoiceKeyState.LeftShift, true);
+        state.Update(DirectAgentVoiceKeyState.KeyA, true);
+        Assert.True(state.IsActive);
+
+        state.Reset();
+        Assert.False(state.IsActive);
+    }
 }

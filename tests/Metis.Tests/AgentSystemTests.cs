@@ -1,0 +1,598 @@
+using System.IO;
+using System.Text.Json;
+using Metis.Core.Agents;
+using Metis.Core.Agents.Tools;
+using Metis.Windows;
+using Xunit;
+
+namespace Metis.Tests;
+
+public sealed class AgentSystemTests : IDisposable
+{
+    private readonly string _testDir;
+
+    public AgentSystemTests()
+    {
+        _testDir = Path.Combine(Path.GetTempPath(), "metis_agent_tests_" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(_testDir);
+    }
+
+    public void Dispose()
+    {
+        try
+        {
+            if (Directory.Exists(_testDir))
+            {
+                Directory.Delete(_testDir, recursive: true);
+            }
+        }
+        catch { }
+    }
+
+    [Fact]
+    public void ToolRegistry_RegistersAndFindsToolsCorrectly()
+    {
+        var registry = new AgentToolRegistry();
+        registry.Register(new ReadFileTool());
+        registry.Register(new WriteFileTool());
+        registry.Register(new ListDirectoryTool());
+
+        var readTool = registry.GetTool("read_file");
+        Assert.NotNull(readTool);
+        Assert.Equal("read_file", readTool.Declaration.Name);
+        Assert.Equal(AgentRiskLevel.Low, readTool.Declaration.RiskLevel);
+
+        var unknownTool = registry.GetTool("non_existent_tool");
+        Assert.Null(unknownTool);
+
+        var declarations = registry.GetDeclarations();
+        Assert.Equal(3, declarations.Count);
+    }
+
+    [Fact]
+    public async Task FileSystemTools_WriteReadAndSearchFiles()
+    {
+        var writeTool = new WriteFileTool();
+        var readTool = new ReadFileTool();
+        var searchTool = new SearchFilesTool();
+
+        var context = new AgentToolContext(
+            "test-task",
+            _testDir,
+            null,
+            null,
+            null);
+
+        // 1. Write file
+        var writeArgs = new Dictionary<string, object?>
+        {
+            ["file_path"] = "sub/sample.txt",
+            ["content"] = "Hello, autonomous Metis agent!"
+        };
+
+        var writeResult = await writeTool.ExecuteAsync(writeArgs, context, CancellationToken.None);
+        Assert.True(writeResult.Success);
+        Assert.NotNull(writeResult.Artifact);
+        Assert.Equal("sample.txt", writeResult.Artifact.Name);
+
+        // 2. Read file
+        var readArgs = new Dictionary<string, object?>
+        {
+            ["file_path"] = "sub/sample.txt"
+        };
+
+        var readResult = await readTool.ExecuteAsync(readArgs, context, CancellationToken.None);
+        Assert.True(readResult.Success);
+        Assert.Contains("Hello, autonomous Metis agent!", readResult.Output);
+
+        // 3. Search files
+        var searchArgs = new Dictionary<string, object?>
+        {
+            ["search_pattern"] = "*.txt",
+            ["directory_path"] = "."
+        };
+
+        var searchResult = await searchTool.ExecuteAsync(searchArgs, context, CancellationToken.None);
+        Assert.True(searchResult.Success);
+        Assert.Contains("sample.txt", searchResult.Output);
+    }
+
+    [Fact]
+    public async Task DeleteFileTool_IsClassifiedAsHighRisk()
+    {
+        var deleteTool = new DeleteFileTool();
+        Assert.Equal(AgentRiskLevel.High, deleteTool.Declaration.RiskLevel);
+
+        var filePath = Path.Combine(_testDir, "to_delete.txt");
+        File.WriteAllText(filePath, "temp content");
+
+        var context = new AgentToolContext("test-task", _testDir, null, null, null);
+        var result = await deleteTool.ExecuteAsync(new Dictionary<string, object?> { ["path"] = "to_delete.txt" }, context, CancellationToken.None);
+
+        Assert.True(result.Success);
+        Assert.False(File.Exists(filePath));
+    }
+
+    private sealed class MockReasoningClient : IAgentReasoningClient
+    {
+        private readonly Queue<AgentModelResponse> _responses;
+
+        public MockReasoningClient(IEnumerable<AgentModelResponse> responses)
+        {
+            _responses = new Queue<AgentModelResponse>(responses);
+        }
+
+        public Task<AgentModelResponse> GenerateNextStepAsync(
+            string goal,
+            IReadOnlyList<AgentStep> previousSteps,
+            IReadOnlyList<AgentToolDeclaration> availableTools,
+            string? systemPromptExtra,
+            CancellationToken cancellationToken)
+        {
+            if (_responses.Count > 0)
+            {
+                return Task.FromResult(_responses.Dequeue());
+            }
+
+            return Task.FromResult(new AgentModelResponse("Done", null, null, "Completed with default final answer.", true));
+        }
+    }
+
+    [Fact]
+    public async Task AutonomousAgentWorker_ExecutesReActLoopToCompletion()
+    {
+        var registry = new AgentToolRegistry();
+        registry.Register(new WriteFileTool());
+
+        var responses = new[]
+        {
+            new AgentModelResponse(
+                Thought: "I will create the report file.",
+                ToolName: "write_file",
+                ToolArguments: new Dictionary<string, object?> { ["file_path"] = "report.txt", ["content"] = "Report content generated by agent." },
+                FinalAnswer: null,
+                IsDone: false),
+            new AgentModelResponse(
+                Thought: "The report file has been created successfully. The task is finished.",
+                ToolName: null,
+                ToolArguments: null,
+                FinalAnswer: "Report file generated and verified successfully.",
+                IsDone: true)
+        };
+
+        var client = new MockReasoningClient(responses);
+
+        var record = new AgentTaskRecord(
+            Id: "task-001",
+            Goal: "Generate report.txt",
+            Status: AgentTaskStatus.Queued,
+            CreatedAt: DateTimeOffset.Now,
+            WorkingDirectory: _testDir);
+
+        AgentTaskRecord? latestSnapshot = null;
+
+        using var worker = new AutonomousAgentWorker(
+            record,
+            registry,
+            client,
+            onTaskUpdated: updated => latestSnapshot = updated,
+            onApprovalRequired: req => Task.FromResult(true));
+
+        await worker.RunAsync(CancellationToken.None);
+
+        Assert.NotNull(latestSnapshot);
+        Assert.Equal(AgentTaskStatus.Completed, latestSnapshot.Status);
+        Assert.Equal(1.0f, latestSnapshot.Progress);
+        Assert.Equal("Report file generated and verified successfully.", latestSnapshot.ResultSummary);
+        Assert.Single(latestSnapshot.AllSteps);
+        Assert.Equal(AgentStepStatus.Success, latestSnapshot.AllSteps[0].Status);
+        Assert.True(File.Exists(Path.Combine(_testDir, "report.txt")));
+    }
+
+    [Fact]
+    public async Task AutonomousAgentWorker_PausesForHighRiskApproval()
+    {
+        var registry = new AgentToolRegistry();
+        registry.Register(new DeleteFileTool());
+
+        var filePath = Path.Combine(_testDir, "delete_me.txt");
+        File.WriteAllText(filePath, "delete this");
+
+        var responses = new[]
+        {
+            new AgentModelResponse(
+                Thought: "I will delete the file.",
+                ToolName: "delete_file",
+                ToolArguments: new Dictionary<string, object?> { ["path"] = "delete_me.txt" },
+                FinalAnswer: null,
+                IsDone: false),
+            new AgentModelResponse(
+                Thought: "Deleted.",
+                ToolName: null,
+                ToolArguments: null,
+                FinalAnswer: "Finished deleting target file.",
+                IsDone: true)
+        };
+
+        var client = new MockReasoningClient(responses);
+        var record = new AgentTaskRecord(
+            Id: "task-002",
+            Goal: "Delete delete_me.txt",
+            Status: AgentTaskStatus.Queued,
+            CreatedAt: DateTimeOffset.Now,
+            WorkingDirectory: _testDir);
+
+        var approvalRequested = false;
+
+        using var worker = new AutonomousAgentWorker(
+            record,
+            registry,
+            client,
+            onTaskUpdated: _ => { },
+            onApprovalRequired: req =>
+            {
+                approvalRequested = true;
+                Assert.Equal("delete_file", req.ToolName);
+                Assert.Equal(AgentRiskLevel.High, req.RiskLevel);
+                return Task.FromResult(true); // Approve
+            });
+
+        await worker.RunAsync(CancellationToken.None);
+
+        Assert.True(approvalRequested);
+        Assert.False(File.Exists(filePath));
+    }
+
+    [Fact]
+    public void AgentTaskManager_SpawnsMultipleConcurrentAgentsAndCancelsAll()
+    {
+        var mockClient = new MockReasoningClient(new[]
+        {
+            new AgentModelResponse(
+                Thought: "Working on long task...",
+                ToolName: "write_file",
+                ToolArguments: new Dictionary<string, object?> { ["file_path"] = "task1.txt", ["content"] = "Task 1 output" },
+                FinalAnswer: "Done 1",
+                IsDone: true)
+        });
+
+        using var manager = new AgentTaskManager(mockClient, storageFolder: _testDir);
+
+        var task1 = manager.SpawnTask("Task 1: Generate file 1", workingDir: _testDir);
+        var task2 = manager.SpawnTask("Task 2: Generate file 2", workingDir: _testDir);
+
+        Assert.NotNull(task1);
+        Assert.NotNull(task2);
+        Assert.NotEqual(task1.Id, task2.Id);
+
+        var all = manager.GetAllTasks();
+        Assert.Equal(2, all.Count);
+
+        // Emergency Stop
+        manager.CancelAll();
+
+        // Tasks were cancelled or processed cleanly
+        var snapshot1 = manager.GetTask(task1.Id);
+        Assert.NotNull(snapshot1);
+    }
+
+    [Theory]
+    [InlineData("/spawn research top 3 AI models", "research top 3 AI models")]
+    [InlineData("/agent summarize notes.txt", "summarize notes.txt")]
+    [InlineData("/SPAWN tidy my downloads", "tidy my downloads")]
+    public void A_slash_command_starts_an_agent_without_asking_the_model(string prompt, string expectedGoal)
+    {
+        var matched = AgentIntentDetector.TryExtractExplicitCommand(prompt, out var goal);
+
+        Assert.True(matched);
+        Assert.Equal(expectedGoal, goal);
+    }
+
+    [Theory]
+    [InlineData("spawn an agent to organize my downloads", "organize my downloads")]
+    [InlineData("have an agent tidy my downloads", "tidy my downloads")]
+    [InlineData("use a research agent to look into WPF", "look into WPF")]
+    [InlineData("tidy my downloads", "tidy my downloads")]
+    [InlineData("organize my desktop.", "organize my desktop")]
+    public void A_dictated_goal_loses_its_spoken_run_up(string spoken, string expected)
+    {
+        // The agent shortcut already says this is a spawn, so this only trims
+        // the words people naturally say before the goal. A sentence with no
+        // run-up must come back untouched.
+        Assert.Equal(expected, AgentIntentDetector.StripSpokenSpawnPrefix(spoken));
+    }
+
+    [Theory]
+    [InlineData("spawn an agent to organize my downloads")]
+    [InlineData("please launch a background agent to scrape stock data")]
+    [InlineData("have an agent tidy my downloads")]
+    [InlineData("how do I spawn an agent?")]
+    [InlineData("/spawn")]
+    [InlineData("")]
+    public void Everything_else_is_left_for_the_model_to_read(string prompt)
+    {
+        // These are not failures. Recognising English phrasing here is exactly
+        // what stopped working -- the regex missed most of it, and a miss meant
+        // the request reached a teaching prompt that forbids claiming to act,
+        // so Metis described an agent instead of starting one. The model reads
+        // the whole conversation and decides now.
+        Assert.False(AgentIntentDetector.TryExtractExplicitCommand(prompt, out _));
+    }
+
+    [Theory]
+    [InlineData("kore", "Kore")]
+    [InlineData("Puck", "Puck")]
+    [InlineData("aoede", "Aoede")]
+    [InlineData("fenrir", "Fenrir")]
+    [InlineData("Microsoft David Desktop", "Kore")]
+    [InlineData("", "Kore")]
+    [InlineData(null, "Kore")]
+    public void GeminiRequestBuilder_NormalizesGeminiPrebuiltVoices(string? inputVoice, string expectedNormalized)
+    {
+        var normalized = Metis.AI.GeminiRequestBuilder.NormalizeVoice(inputVoice);
+        Assert.Equal(expectedNormalized, normalized);
+    }
+
+    [Fact]
+    public async Task AutonomousAgentWorker_StrictAutonomy_RequiresApproval()
+    {
+        var registry = new AgentToolRegistry();
+        registry.Register(new WriteFileTool());
+
+        var mockClient = new MockReasoningClient(new[]
+        {
+            new AgentModelResponse(
+                Thought: "Writing file in strict mode",
+                ToolName: "write_file",
+                ToolArguments: new Dictionary<string, object?> { ["file_path"] = "strict.txt", ["content"] = "strict test" },
+                FinalAnswer: null,
+                IsDone: false),
+            new AgentModelResponse("Done", null, null, "Completed strict task.", true)
+        });
+
+        var taskRecord = new AgentTaskRecord("test-strict", "Strict test", AgentTaskStatus.Queued, DateTimeOffset.Now, WorkingDirectory: _testDir);
+        var approvalRequested = false;
+
+        using var worker = new AutonomousAgentWorker(
+            taskRecord,
+            registry,
+            mockClient,
+            onTaskUpdated: _ => { },
+            onApprovalRequired: _ =>
+            {
+                approvalRequested = true;
+                return Task.FromResult(true);
+            },
+            getAutonomyMode: () => "Strict");
+
+        await worker.RunAsync(CancellationToken.None);
+
+        Assert.True(approvalRequested);
+        var snapshot = worker.GetSnapshot();
+        Assert.Equal(AgentTaskStatus.Completed, snapshot.Status);
+    }
+
+    [Fact]
+    public async Task AgentTaskManager_EventHandlersCanQueryManagerWithoutDeadlock()
+    {
+        var mockClient = new MockReasoningClient(new[]
+        {
+            new AgentModelResponse(
+                Thought: "Starting task",
+                ToolName: "write_file",
+                ToolArguments: new Dictionary<string, object?> { ["file_path"] = "reentrant.txt", ["content"] = "data" },
+                FinalAnswer: null,
+                IsDone: false),
+            new AgentModelResponse("Done", null, null, "Finished re-entrant test.", true)
+        });
+
+        using var manager = new AgentTaskManager(mockClient, storageFolder: _testDir);
+
+        var taskUpdatedCount = 0;
+        var tcsCompleted = new TaskCompletionSource<bool>();
+
+        // Subscribers calling back into manager methods that acquire locks
+        manager.TaskCreated += (sender, task) =>
+        {
+            var all = manager.GetAllTasks();
+            Assert.NotEmpty(all);
+            var active = manager.GetActiveTasks();
+            Assert.NotEmpty(active);
+        };
+
+        manager.TaskUpdated += (sender, task) =>
+        {
+            Interlocked.Increment(ref taskUpdatedCount);
+            var found = manager.GetTask(task.Id);
+            Assert.NotNull(found);
+            var active = manager.GetActiveTasks();
+            Assert.NotNull(active);
+        };
+
+        manager.TaskCompleted += (sender, task) =>
+        {
+            var all = manager.GetAllTasks();
+            Assert.NotEmpty(all);
+            tcsCompleted.TrySetResult(true);
+        };
+
+        var spawned = manager.SpawnTask("Test re-entrant event execution", workingDir: _testDir);
+        Assert.NotNull(spawned);
+
+        var completed = await Task.WhenAny(tcsCompleted.Task, Task.Delay(5000));
+        Assert.Equal(tcsCompleted.Task, completed);
+        Assert.True(taskUpdatedCount > 0);
+    }
+
+    [Fact]
+    public async Task AutonomousAgentWorker_EnforcesVerificationStep_BeforeTaskCompletion()
+    {
+        var registry = new AgentToolRegistry();
+        registry.Register(new WriteFileTool());
+        registry.Register(new ReadFileTool());
+
+        // Agent tries to complete without verification on turn 1 (write_file), then turn 2 (is_done without proof)
+        // Worker challenges verification, and on turn 3 agent executes read_file and then completes on turn 4 with proof
+        var responses = new[]
+        {
+            new AgentModelResponse(
+                Thought: "Creating file",
+                ToolName: "write_file",
+                ToolArguments: new Dictionary<string, object?> { ["file_path"] = "output.txt", ["content"] = "Hello world" },
+                FinalAnswer: null,
+                IsDone: false),
+            new AgentModelResponse(
+                Thought: "Done with writing",
+                ToolName: null,
+                ToolArguments: null,
+                FinalAnswer: "Done creating file.",
+                IsDone: true),
+            new AgentModelResponse(
+                Thought: "Verifying file content",
+                ToolName: "read_file",
+                ToolArguments: new Dictionary<string, object?> { ["file_path"] = "output.txt" },
+                FinalAnswer: null,
+                IsDone: false),
+            new AgentModelResponse(
+                Thought: "Verified file content successfully",
+                ToolName: null,
+                ToolArguments: null,
+                FinalAnswer: "File output.txt verified with correct content.",
+                IsDone: true)
+        };
+
+        var client = new MockReasoningClient(responses);
+        var record = new AgentTaskRecord("test-verify-enforce", "Generate output", AgentTaskStatus.Queued, DateTimeOffset.Now, WorkingDirectory: _testDir);
+
+        using var worker = new AutonomousAgentWorker(
+            record,
+            registry,
+            client,
+            onTaskUpdated: _ => { },
+            onApprovalRequired: _ => Task.FromResult(true),
+            maxTurns: 100);
+
+        await worker.RunAsync(CancellationToken.None);
+
+        var snapshot = worker.GetSnapshot();
+        Assert.Equal(AgentTaskStatus.Completed, snapshot.Status);
+        Assert.True(snapshot.IsVerified);
+        Assert.Contains(snapshot.AllSteps, s => s.IsVerification || s.ToolName == "read_file" || s.Description.Contains("Verification"));
+    }
+
+    [Fact]
+    public async Task AutonomousAgentWorker_SupportsLargeScaleExecution_ConfigurableMaxTurns()
+    {
+        var registry = new AgentToolRegistry();
+        registry.Register(new ReadFileTool());
+
+        var list = new List<AgentModelResponse>();
+        // Simulate a long 25-step task
+        for (var i = 0; i < 20; i++)
+        {
+            list.Add(new AgentModelResponse(
+                Thought: $"Step {i + 1}",
+                ToolName: "read_file",
+                ToolArguments: new Dictionary<string, object?> { ["file_path"] = "nonexistent.txt" },
+                FinalAnswer: null,
+                IsDone: false));
+        }
+        list.Add(new AgentModelResponse("Verified completion", null, null, "All 20 steps finished and verified.", true));
+
+        var client = new MockReasoningClient(list);
+        var record = new AgentTaskRecord("test-large-turns", "Long chain task", AgentTaskStatus.Queued, DateTimeOffset.Now, WorkingDirectory: _testDir, MaxTurns: 150);
+
+        using var worker = new AutonomousAgentWorker(
+            record,
+            registry,
+            client,
+            onTaskUpdated: _ => { },
+            onApprovalRequired: _ => Task.FromResult(true),
+            maxTurns: 150);
+
+        await worker.RunAsync(CancellationToken.None);
+
+        var snapshot = worker.GetSnapshot();
+        Assert.Equal(AgentTaskStatus.Completed, snapshot.Status);
+        Assert.Equal(150, snapshot.MaxTurns);
+        Assert.True(snapshot.AllSteps.Count >= 20);
+    }
+
+    [Fact]
+    public async Task AgentTaskManager_RunsMultipleParallelAgentsConcurrently()
+    {
+        var responses = new[]
+        {
+            new AgentModelResponse("Working", "write_file", new Dictionary<string, object?> { ["file_path"] = "concurrent.txt", ["content"] = "data" }, null, false),
+            new AgentModelResponse("Verified", null, null, "Completed and verified.", true)
+        };
+
+        using var manager = new AgentTaskManager(new MockReasoningClient(responses), storageFolder: _testDir);
+        manager.MaxTurnsPerTask = 100;
+
+        var tcs1 = new TaskCompletionSource<bool>();
+        var tcs2 = new TaskCompletionSource<bool>();
+        var tcs3 = new TaskCompletionSource<bool>();
+
+        var completedCount = 0;
+        manager.TaskCompleted += (_, t) =>
+        {
+            Interlocked.Increment(ref completedCount);
+            if (completedCount >= 3)
+            {
+                tcs1.TrySetResult(true);
+            }
+        };
+
+        var task1 = manager.SpawnTask("Concurrent Task A", workingDir: _testDir);
+        var task2 = manager.SpawnTask("Concurrent Task B", workingDir: _testDir);
+        var task3 = manager.SpawnTask("Concurrent Task C", workingDir: _testDir);
+
+        Assert.Equal(3, manager.GetAllTasks().Count);
+        Assert.Equal(100, task1.MaxTurns);
+
+        var finished = await Task.WhenAny(tcs1.Task, Task.Delay(8000));
+        Assert.Equal(tcs1.Task, finished);
+    }
+
+    [Fact]
+    public async Task VerifyTaskOutputTool_ExecutesChecksSuccessfully()
+    {
+        var verifyTool = new VerifyTaskOutputTool();
+        var context = new AgentToolContext("test-verify-tool", _testDir, null, null, null);
+
+        var testFile = Path.Combine(_testDir, "data.json");
+        await File.WriteAllTextAsync(testFile, "{\"status\": \"healthy\", \"count\": 42}");
+
+        // 1. File exists check
+        var existsResult = await verifyTool.ExecuteAsync(new Dictionary<string, object?>
+        {
+            ["check_type"] = "file_exists",
+            ["target_path"] = "data.json",
+            ["min_size_bytes"] = 5
+        }, context, CancellationToken.None);
+
+        Assert.True(existsResult.Success);
+        Assert.Contains("[VERIFICATION PASSED]", existsResult.Output);
+
+        // 2. File contains check
+        var containsResult = await verifyTool.ExecuteAsync(new Dictionary<string, object?>
+        {
+            ["check_type"] = "file_contains",
+            ["target_path"] = "data.json",
+            ["expected_text"] = "healthy"
+        }, context, CancellationToken.None);
+
+        Assert.True(containsResult.Success);
+
+        // 3. JSON valid check
+        var jsonResult = await verifyTool.ExecuteAsync(new Dictionary<string, object?>
+        {
+            ["check_type"] = "json_valid",
+            ["target_path"] = "data.json",
+            ["expected_text"] = "status"
+        }, context, CancellationToken.None);
+
+        Assert.True(jsonResult.Success);
+    }
+}

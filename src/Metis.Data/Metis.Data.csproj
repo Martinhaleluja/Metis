@@ -2,5 +2,13 @@
   <ItemGroup>
     <ProjectReference Include="..\Metis.Core\Metis.Core.csproj" />
   </ItemGroup>
+  <ItemGroup>
+    <!--
+      DPAPI, for encrypting what Metis keeps on disk. Part of Windows rather
+      than a third-party scheme, so there is no key for Metis to store — which
+      matters, because any key it stored would sit in the same folder as the
+      records it protects.
+    -->
+    <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="8.0.0" />
+  </ItemGroup>
 </Project>
-

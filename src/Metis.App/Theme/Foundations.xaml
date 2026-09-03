@@ -35,17 +35,65 @@
     <Thickness x:Key="SpaceButton">14,8</Thickness>
 
     <!--
-        Motion. One curve reused everywhere is most of what makes a set of
-        animations read as one system, so StandardEase is the default and
-        EmphasisEase is reserved for something arriving rather than moving.
+        Motion.
+
+        One curve reused everywhere is most of what makes a set of animations
+        read as one system. That was written here from the start and then not
+        followed: for a long time StandardEase was used twice, by a checkbox, and
+        every other duration in the application was a hard-coded literal. There
+        were four different 420ms body animations with three different eases, and
+        nine distinct fade lengths between 100 and 320ms — variety nobody chose
+        and nobody could see, which is exactly why the app did not feel like one
+        thing.
+
+        These are now the only durations. A literal in a code-behind is a bug.
+
+        Three curves, and only three:
+          StandardEase  everything that moves
+          EmphasisEase  something arriving, so it settles rather than stops
+          ExitEase      something leaving, which should feel decided
+        SettleEase is the fourth and is reserved for the notch tucking away,
+        which both starts and ends at rest.
     -->
     <CubicEase x:Key="StandardEase" EasingMode="EaseOut" />
     <BackEase x:Key="EmphasisEase" EasingMode="EaseOut" Amplitude="0.18" />
+    <CubicEase x:Key="ExitEase" EasingMode="EaseIn" />
+    <CubicEase x:Key="SettleEase" EasingMode="EaseInOut" />
 
-    <Duration x:Key="DurationMicro">0:0:0.12</Duration>
-    <Duration x:Key="DurationFade">0:0:0.18</Duration>
-    <Duration x:Key="DurationClose">0:0:0.24</Duration>
-    <Duration x:Key="DurationOpen">0:0:0.36</Duration>
+    <!--
+        Leaving is quicker than arriving. An entrance is worth watching; an exit
+        is something the user has already decided on, and making them wait for it
+        is making them wait for nothing.
+    -->
+    <Duration x:Key="DurationMicro">0:0:0.10</Duration>
+    <Duration x:Key="DurationFade">0:0:0.16</Duration>
+    <Duration x:Key="DurationNav">0:0:0.20</Duration>
+    <Duration x:Key="DurationClose">0:0:0.22</Duration>
+    <Duration x:Key="DurationEntrance">0:0:0.24</Duration>
+    <Duration x:Key="DurationOpen">0:0:0.34</Duration>
+    <Duration x:Key="DurationShape">0:0:0.38</Duration>
 
-    <KeyTime x:Key="KeyTimeMicro">0:0:0.12</KeyTime>
+    <KeyTime x:Key="KeyTimeMicro">0:0:0.10</KeyTime>
+
+    <!--
+        Per-item delay in a staggered list, in milliseconds. Applied through
+        MotionTuning.StaggerDelayMs, which caps how many items carry one: a
+        stagger reads as a considered arrival for about six things and as a list
+        being typed out for more.
+    -->
+    <system:Double x:Key="StaggerStepMs">36</system:Double>
+
+    <!--
+        Where a chat bubble starts before it settles.
+
+        These are resources rather than literals because the bubble entrance is
+        declared in XAML, on a DataTemplate trigger, and runs for every message.
+        A Storyboard inside a sealed Style or template cannot have its Duration
+        swapped at runtime — animations freeze when the template is sealed — so
+        the way to switch it off is to make it animate from its resting value to
+        itself. App.ApplyMotionPreference overrides both with the resting values
+        when motion is off, and DynamicResource picks that up live.
+    -->
+    <system:Double x:Key="BubbleEnterScale">0.94</system:Double>
+    <system:Double x:Key="BubbleEnterRise">7</system:Double>
 </ResourceDictionary>

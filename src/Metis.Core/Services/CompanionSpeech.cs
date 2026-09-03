@@ -86,4 +86,51 @@ public static class CompanionSpeech
     /// </summary>
     private static bool CountsAsOneRemark(string text) =>
         text.Count(character => character is '.' or '!' or '?') <= 2;
+
+    /// <summary>
+    /// Strips markdown formatting, code blocks, URLs, and markup so that the text-to-speech
+    /// engine receives clean, natural spoken words instead of syntax.
+    /// </summary>
+    public static string CleanForSpeech(string? text)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return string.Empty;
+        }
+
+        var cleaned = text.Trim();
+
+        // Strip code blocks ```...```
+        cleaned = System.Text.RegularExpressions.Regex.Replace(cleaned, @"```[\s\S]*?```", " ");
+
+        // Strip inline code `...`
+        cleaned = System.Text.RegularExpressions.Regex.Replace(cleaned, @"`([^`]+)`", "$1");
+
+        // Strip markdown images ![alt](url)
+        cleaned = System.Text.RegularExpressions.Regex.Replace(cleaned, @"!\[.*?\]\(.*?\)", " ");
+
+        // Strip markdown links [text](url) -> text
+        cleaned = System.Text.RegularExpressions.Regex.Replace(cleaned, @"\[(.*?)\]\(.*?\)", "$1");
+
+        // Strip bold and italic * or _
+        cleaned = System.Text.RegularExpressions.Regex.Replace(cleaned, @"(\*\*|__)(.*?)\1", "$2");
+        cleaned = System.Text.RegularExpressions.Regex.Replace(cleaned, @"(\*|_)(.*?)\1", "$2");
+
+        // Strip markdown headers #, ##, etc.
+        cleaned = System.Text.RegularExpressions.Regex.Replace(cleaned, @"^#{1,6}\s*", "", System.Text.RegularExpressions.RegexOptions.Multiline);
+
+        // Strip blockquotes >
+        cleaned = System.Text.RegularExpressions.Regex.Replace(cleaned, @"^>\s*", "", System.Text.RegularExpressions.RegexOptions.Multiline);
+
+        // Strip bullet points
+        cleaned = System.Text.RegularExpressions.Regex.Replace(cleaned, @"^[\*\-\+]\s+", "", System.Text.RegularExpressions.RegexOptions.Multiline);
+
+        // Strip URLs http/https
+        cleaned = System.Text.RegularExpressions.Regex.Replace(cleaned, @"https?://\S+", "link");
+
+        // Clean excess whitespace
+        cleaned = System.Text.RegularExpressions.Regex.Replace(cleaned, @"\s+", " ").Trim();
+
+        return cleaned;
+    }
 }

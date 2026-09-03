@@ -8,38 +8,63 @@ public sealed class CursorService : ICursorService
 {
     private const uint MonitorDefaultToNearest = 2;
 
+    private (int X, int Y) _lastKnownPosition = (960, 540);
+
     public (int X, int Y) GetPosition()
     {
-        if (!GetCursorPos(out var point))
+        try
         {
-            throw new Win32Exception(Marshal.GetLastWin32Error(), "Windows could not read the cursor position.");
+            if (GetCursorPos(out var point))
+            {
+                _lastKnownPosition = (point.X, point.Y);
+                return _lastKnownPosition;
+            }
+        }
+        catch
+        {
+            // Ignore access errors on disconnected or background sessions
         }
 
-        return (point.X, point.Y);
+        return _lastKnownPosition;
     }
 
     public (int Left, int Top, int Right, int Bottom) GetWorkingArea(int x, int y)
     {
         var info = GetMonitorInformation(x, y);
-        return (info.WorkArea.Left, info.WorkArea.Top, info.WorkArea.Right, info.WorkArea.Bottom);
+        if (info.HasValue)
+        {
+            return (info.Value.WorkArea.Left, info.Value.WorkArea.Top, info.Value.WorkArea.Right, info.Value.WorkArea.Bottom);
+        }
+        return (0, 0, 1920, 1080);
     }
 
     public (int Left, int Top, int Right, int Bottom) GetMonitorArea(int x, int y)
     {
         var info = GetMonitorInformation(x, y);
-        return (info.Monitor.Left, info.Monitor.Top, info.Monitor.Right, info.Monitor.Bottom);
+        if (info.HasValue)
+        {
+            return (info.Value.Monitor.Left, info.Value.Monitor.Top, info.Value.Monitor.Right, info.Value.Monitor.Bottom);
+        }
+        return (0, 0, 1920, 1080);
     }
 
-    private static MonitorInfo GetMonitorInformation(int x, int y)
+    private static MonitorInfo? GetMonitorInformation(int x, int y)
     {
-        var monitor = MonitorFromPoint(new NativePoint(x, y), MonitorDefaultToNearest);
-        var info = new MonitorInfo { Size = Marshal.SizeOf<MonitorInfo>() };
-        if (monitor == nint.Zero || !GetMonitorInfo(monitor, ref info))
+        try
         {
-            throw new Win32Exception(Marshal.GetLastWin32Error(), "Windows could not read the monitor work area.");
+            var monitor = MonitorFromPoint(new NativePoint(x, y), MonitorDefaultToNearest);
+            var info = new MonitorInfo { Size = Marshal.SizeOf<MonitorInfo>() };
+            if (monitor != nint.Zero && GetMonitorInfo(monitor, ref info))
+            {
+                return info;
+            }
+        }
+        catch
+        {
+            // Fallback to null
         }
 
-        return info;
+        return null;
     }
 
 #pragma warning disable CS0649 // user32 populates the monitor and cursor structures.

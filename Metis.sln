@@ -1,4 +1,4 @@
-Microsoft Visual Studio Solution File, Format Version 12.00
+﻿Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 17
 VisualStudioVersion = 17.0.31903.59
 MinimumVisualStudioVersion = 10.0.40219.1
@@ -13,6 +13,14 @@ EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Metis.App", "src\Metis.App\Metis.App.csproj", "{01479109-0202-488B-8753-B24F9EF1437C}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Metis.Tests", "tests\Metis.Tests\Metis.Tests.csproj", "{8BD5CCBD-610E-4EB5-8C22-3846C70BFB14}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{C77A17CC-7537-449C-B32F-E101BFEB17E0}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Metis.Api", "src\Metis.Api\Metis.Api.csproj", "{D864A800-42C6-4356-8581-71381D40079C}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{6DAF31F4-A604-44FC-B8BF-B25DB894F6E4}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Metis.ApiTests", "tests\Metis.ApiTests\Metis.ApiTests.csproj", "{DE265820-4D3D-4F0A-964E-BB12E4F8C5BB}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -44,8 +52,20 @@ Global
 		{8BD5CCBD-610E-4EB5-8C22-3846C70BFB14}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{8BD5CCBD-610E-4EB5-8C22-3846C70BFB14}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{8BD5CCBD-610E-4EB5-8C22-3846C70BFB14}.Release|Any CPU.Build.0 = Release|Any CPU
+		{D864A800-42C6-4356-8581-71381D40079C}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{D864A800-42C6-4356-8581-71381D40079C}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{D864A800-42C6-4356-8581-71381D40079C}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{D864A800-42C6-4356-8581-71381D40079C}.Release|Any CPU.Build.0 = Release|Any CPU
+		{DE265820-4D3D-4F0A-964E-BB12E4F8C5BB}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{DE265820-4D3D-4F0A-964E-BB12E4F8C5BB}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{DE265820-4D3D-4F0A-964E-BB12E4F8C5BB}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{DE265820-4D3D-4F0A-964E-BB12E4F8C5BB}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{D864A800-42C6-4356-8581-71381D40079C} = {C77A17CC-7537-449C-B32F-E101BFEB17E0}
+		{DE265820-4D3D-4F0A-964E-BB12E4F8C5BB} = {6DAF31F4-A604-44FC-B8BF-B25DB894F6E4}
 	EndGlobalSection
 EndGlobal

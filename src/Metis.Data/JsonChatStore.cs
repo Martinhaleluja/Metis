@@ -47,7 +47,16 @@ public sealed class JsonChatStore
         {
             try
             {
-                var session = JsonSerializer.Deserialize<ChatSession>(File.ReadAllText(file), Options);
+                var text = LocalVault.Unprotect(File.ReadAllBytes(file));
+                if (text is null)
+                {
+                    // Written by a different Windows account or on another
+                    // machine. There is nothing to recover from it.
+                    _log?.Invoke($"The chat '{Path.GetFileName(file)}' belongs to another Windows account and was skipped.");
+                    continue;
+                }
+
+                var session = JsonSerializer.Deserialize<ChatSession>(text, Options);
                 if (session is not null && session.Turns.Count > 0)
                 {
                     sessions.Add(session);
@@ -74,7 +83,14 @@ public sealed class JsonChatStore
         try
         {
             Directory.CreateDirectory(FolderPath);
-            File.WriteAllText(PathFor(session.Id), JsonSerializer.Serialize(session, Options));
+            // A chat is a transcript of what Metis was shown, so it is encrypted
+            // to this Windows account rather than left as readable JSON in a
+            // predictable folder. A file written by an older version is plain
+            // text and stays readable; it becomes encrypted the next time that
+            // chat is saved.
+            File.WriteAllBytes(
+                PathFor(session.Id),
+                LocalVault.Protect(JsonSerializer.Serialize(session, Options)));
             TrimOldest();
         }
         catch (Exception exception)

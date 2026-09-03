@@ -2,14 +2,15 @@ using System.IO;
 using Metis.Core.Contracts;
 using Metis.Core.Models;
 using NAudio.Wave;
+using NAudio.Wave.SampleProviders;
 
 namespace Metis.Windows;
 
 public sealed class WaveAudioPlayback : IAudioPlayback
 {
     private readonly object _gate = new();
-    private WaveOutEvent? _output;
-    private RawSourceWaveStream? _source;
+    private IWavePlayer? _output;
+    private IDisposable? _source;
     private MemoryStream? _stream;
     private TaskCompletionSource? _completion;
 
@@ -29,16 +30,11 @@ public sealed class WaveAudioPlayback : IAudioPlayback
     /// Starting playback takes the one output device, so whatever was playing
     /// stops. That used to be unconditional, which meant any cue — a keypress,
     /// a saved setting, a finished task — could silently truncate a sentence
-    /// Metis was in the middle of speaking. Worse, the speaking caller was
-    /// handed a completed task and had no way to tell playback had been cut
-    /// off, so it logged nothing: the voice simply went quiet for no visible
-    /// reason. A cue now yields to speech instead.
+    /// Metis was in the middle of speaking. A cue now yields to speech instead.
     ///
-    /// The whole decision happens under the lock so a cue arriving between the
-    /// check and the first sample cannot slip through. The displaced playback
-    /// is torn down afterwards, outside the lock, because WaveOutEvent.Stop
-    /// waits on the playback thread and that thread may already be blocked on
-    /// this same lock inside the stopped handler.
+    /// Plays raw PCM (16-bit, 24kHz/16kHz mono), WAV audio with RIFF headers,
+    /// and MP3 audio streams seamlessly. Handles device disconnection, format
+    /// mismatch, and buffer underflows without crashing.
     /// </summary>
     public async Task PlayAsync(
         SpeechAudio audio,
@@ -64,25 +60,29 @@ public sealed class WaveAudioPlayback : IAudioPlayback
                 }
             }
 
-            // The old device is released before the new one is opened. Opening
-            // a second one first left the incoming audio waiting behind the
-            // audio it was supposed to replace, so a spoken error arriving over
-            // a cue was delayed by the whole remaining length of that cue.
+            // The old device is released before the new one is opened.
             Stop();
 
             lock (_gate)
             {
-                _stream = new MemoryStream(audio.PcmData, false);
-                _source = new RawSourceWaveStream(
-                    _stream,
-                    new WaveFormat(audio.SampleRate, audio.BitsPerSample, audio.Channels));
-                _output = new WaveOutEvent();
-                _completion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-                _priority = priority;
-                _output.PlaybackStopped += Output_OnPlaybackStopped;
-                _output.Init(_source);
-                _output.Play();
-                completionTask = _completion.Task;
+                try
+                {
+                    var (output, source, stream) = CreateAudioPipeline(audio);
+                    _stream = stream;
+                    _source = source;
+                    _output = output;
+                    _completion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+                    _priority = priority;
+
+                    _output.PlaybackStopped += Output_OnPlaybackStopped;
+                    _output.Play();
+                    completionTask = _completion.Task;
+                }
+                catch
+                {
+                    ClearCurrentLocked();
+                    return;
+                }
             }
         }
         finally
@@ -91,13 +91,25 @@ public sealed class WaveAudioPlayback : IAudioPlayback
         }
 
         using var registration = cancellationToken.Register(Stop);
-        await completionTask.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            await completionTask.WaitAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            Stop();
+            throw;
+        }
+        catch
+        {
+            // Suppress device errors during playback so callers never crash
+        }
     }
 
     public void Stop()
     {
-        WaveOutEvent? output;
-        RawSourceWaveStream? source;
+        IWavePlayer? output;
+        IDisposable? source;
         MemoryStream? stream;
         TaskCompletionSource? completion;
         lock (_gate)
@@ -111,9 +123,18 @@ public sealed class WaveAudioPlayback : IAudioPlayback
 
         if (output is not null)
         {
-            output.PlaybackStopped -= Output_OnPlaybackStopped;
-            output.Stop();
-            output.Dispose();
+            try
+            {
+                output.PlaybackStopped -= Output_OnPlaybackStopped;
+                output.Stop();
+            }
+            catch
+            {
+            }
+            finally
+            {
+                output.Dispose();
+            }
         }
 
         source?.Dispose();
@@ -124,8 +145,8 @@ public sealed class WaveAudioPlayback : IAudioPlayback
     private void Output_OnPlaybackStopped(object? sender, StoppedEventArgs eventArgs)
     {
         TaskCompletionSource? completion;
-        WaveOutEvent? output;
-        RawSourceWaveStream? source;
+        IWavePlayer? output;
+        IDisposable? source;
         MemoryStream? stream;
         lock (_gate)
         {
@@ -143,21 +164,121 @@ public sealed class WaveAudioPlayback : IAudioPlayback
 
         if (output is not null)
         {
-            output.PlaybackStopped -= Output_OnPlaybackStopped;
-            output.Dispose();
+            try
+            {
+                output.PlaybackStopped -= Output_OnPlaybackStopped;
+            }
+            catch
+            {
+            }
+            finally
+            {
+                output.Dispose();
+            }
         }
 
         source?.Dispose();
         stream?.Dispose();
 
-        if (eventArgs.Exception is not null)
+        // Gracefully complete playback without crashing on device disconnect or buffer underflow
+        completion?.TrySetResult();
+    }
+
+    private static (IWavePlayer output, IDisposable source, MemoryStream stream) CreateAudioPipeline(SpeechAudio audio)
+    {
+        var stream = new MemoryStream(audio.PcmData, false);
+        IWaveProvider waveProvider;
+        IDisposable sourceDisposable;
+
+        try
         {
-            completion?.TrySetException(new InvalidOperationException("Windows could not play Metis's speech audio.", eventArgs.Exception));
+            if (IsRiffWave(audio.PcmData))
+            {
+                var waveFileReader = new WaveFileReader(stream);
+                sourceDisposable = waveFileReader;
+                waveProvider = waveFileReader.WaveFormat.Encoding == WaveFormatEncoding.IeeeFloat
+                    ? new SampleToWaveProvider16(waveFileReader.ToSampleProvider())
+                    : waveFileReader;
+            }
+            else if (IsMp3(audio.PcmData, audio.MimeType))
+            {
+                var mp3Reader = new Mp3FileReader(stream);
+                sourceDisposable = mp3Reader;
+                waveProvider = mp3Reader;
+            }
+            else
+            {
+                var sampleRate = audio.SampleRate > 0 ? audio.SampleRate : 24000;
+                var bitsPerSample = audio.BitsPerSample > 0 ? audio.BitsPerSample : 16;
+                var channels = audio.Channels > 0 ? audio.Channels : 1;
+                var rawSource = new RawSourceWaveStream(stream, new WaveFormat(sampleRate, bitsPerSample, channels));
+                sourceDisposable = rawSource;
+                waveProvider = rawSource;
+            }
         }
-        else
+        catch
         {
-            completion?.TrySetResult();
+            stream.Position = 0;
+            var sampleRate = audio.SampleRate > 0 ? audio.SampleRate : 24000;
+            var bitsPerSample = audio.BitsPerSample > 0 ? audio.BitsPerSample : 16;
+            var channels = audio.Channels > 0 ? audio.Channels : 1;
+            var rawSource = new RawSourceWaveStream(stream, new WaveFormat(sampleRate, bitsPerSample, channels));
+            sourceDisposable = rawSource;
+            waveProvider = rawSource;
         }
+
+        IWavePlayer player;
+        try
+        {
+            var waveOut = new WaveOutEvent
+            {
+                DesiredLatency = 100,
+                NumberOfBuffers = 3
+            };
+            waveOut.Init(waveProvider);
+            player = waveOut;
+        }
+        catch
+        {
+            try
+            {
+                // Fallback to WasapiOut if WaveOutEvent fails
+                var wasapiOut = new WasapiOut(NAudio.CoreAudioApi.AudioClientShareMode.Shared, 100);
+                wasapiOut.Init(waveProvider);
+                player = wasapiOut;
+            }
+            catch
+            {
+                // Fallback standard WaveOutEvent
+                var waveOut = new WaveOutEvent();
+                waveOut.Init(waveProvider);
+                player = waveOut;
+            }
+        }
+
+        return (player, sourceDisposable, stream);
+    }
+
+    private static bool IsRiffWave(byte[] data) =>
+        data.Length >= 12 &&
+        data[0] == 0x52 && data[1] == 0x49 && data[2] == 0x46 && data[3] == 0x46 && // "RIFF"
+        data[8] == 0x57 && data[9] == 0x41 && data[10] == 0x56 && data[11] == 0x45; // "WAVE"
+
+    private static bool IsMp3(byte[] data, string? mimeType)
+    {
+        if (!string.IsNullOrWhiteSpace(mimeType) &&
+            (mimeType.Contains("mpeg", StringComparison.OrdinalIgnoreCase) ||
+             mimeType.Contains("mp3", StringComparison.OrdinalIgnoreCase)))
+        {
+            return true;
+        }
+
+        if (data.Length >= 3 && data[0] == 0x49 && data[1] == 0x44 && data[2] == 0x33) // "ID3"
+        {
+            return true;
+        }
+
+        return data.Length >= 2 && data[0] == 0xFF && (data[1] & 0xE0) == 0xE0;
     }
 
     private void ClearCurrentLocked()

@@ -79,27 +79,34 @@ public sealed class TopmostGuard : IDisposable
             return;
         }
 
-        foreach (var window in _stack)
+        try
         {
-            // A hidden window is left where it is. Ordering something the user
-            // cannot see achieves nothing, and it would only have to be redone
-            // when the window is next shown anyway.
-            if (!window.IsVisible)
+            foreach (var window in _stack)
             {
-                continue;
-            }
+                // A hidden window is left where it is. Ordering something the user
+                // cannot see achieves nothing, and it would only have to be redone
+                // when the window is next shown anyway.
+                if (!window.IsVisible)
+                {
+                    continue;
+                }
 
-            var handle = new WindowInteropHelper(window).Handle;
-            if (handle == nint.Zero)
-            {
-                continue;
-            }
+                var handle = new WindowInteropHelper(window).Handle;
+                if (handle == nint.Zero)
+                {
+                    continue;
+                }
 
-            // Owned windows — the notch's own model and conversation menus —
-            // are carried along by Windows, which never places an owner above
-            // the windows it owns. So raising the notch cannot cover its own
-            // dropdown.
-            SetWindowPos(handle, HwndTopmost, 0, 0, 0, 0, SwpNoMove | SwpNoSize | SwpNoActivate);
+                // Owned windows — the notch's own model and conversation menus —
+                // are carried along by Windows, which never places an owner above
+                // the windows it owns. So raising the notch cannot cover its own
+                // dropdown.
+                SetWindowPos(handle, HwndTopmost, 0, 0, 0, 0, SwpNoMove | SwpNoSize | SwpNoActivate);
+            }
+        }
+        catch
+        {
+            // Window state or handle access during window destruction should not crash the timer loop.
         }
     }
 

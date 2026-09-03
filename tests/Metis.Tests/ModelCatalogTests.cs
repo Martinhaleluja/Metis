@@ -53,7 +53,12 @@ public sealed class ModelCatalogTests
         var free = ModelCatalog.Gemini.Where(model => model.Tier == ModelTier.Free).ToArray();
 
         Assert.NotEmpty(free);
-        Assert.Contains(free, model => model.RequestsPerDay > 0);
+
+        // Whether a model publishes a daily allowance is Google's choice, and
+        // the current generation mostly does not. What matters is that Metis
+        // never shows an allowance it cannot substantiate, which is what the
+        // rest of this checks -- inventing a plausible number would be worse
+        // than showing none.
         Assert.All(free, model =>
         {
             Assert.Contains("Free", model.Summary, StringComparison.Ordinal);
@@ -128,11 +133,10 @@ public sealed class ModelCatalogTests
     [Fact]
     public void A_known_live_model_keeps_its_curated_marking_and_takes_the_live_window()
     {
-        var merged = ModelCatalog.Merge("Gemini", [("gemini-2.5-flash", null, 2_000_000)]);
+        var merged = ModelCatalog.Merge("Gemini", [("gemini-3.5-flash", null, 2_000_000)]);
 
-        var flash = Assert.Single(merged, model => model.Id == "gemini-2.5-flash");
+        var flash = Assert.Single(merged, model => model.Id == "gemini-3.5-flash");
         Assert.Equal(ModelTier.Free, flash.Tier);
-        Assert.Equal(250, flash.RequestsPerDay);
         Assert.Equal(2_000_000, flash.ContextTokens);
     }
 
@@ -143,7 +147,7 @@ public sealed class ModelCatalogTests
     public void Curated_models_survive_a_thin_live_list() =>
         Assert.Equal(
             ModelCatalog.Gemini.Count,
-            ModelCatalog.Merge("Gemini", [("gemini-2.5-flash", null, 0)]).Count);
+            ModelCatalog.Merge("Gemini", [("gemini-3.5-flash", null, 0)]).Count);
 }
 
 /// <summary>

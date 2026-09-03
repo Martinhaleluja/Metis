@@ -16,6 +16,7 @@ public sealed class GlobalPushToTalk : IGlobalPushToTalk
     private readonly object _gate = new();
     private readonly HookProcedure _hookProcedure;
     private readonly PushToTalkKeyState _keyState = new();
+    private readonly DirectAgentVoiceKeyState _directAgentVoiceKeyState = new();
     private readonly ContextActivationKeyState _contextKeyState = new();
     private readonly EmergencyStopKeyState _emergencyStopKeyState = new();
     private readonly ActiveListeningKeyState _activeListeningKeyState = new();
@@ -29,6 +30,8 @@ public sealed class GlobalPushToTalk : IGlobalPushToTalk
 
     public event EventHandler? Pressed;
     public event EventHandler? Released;
+    public event EventHandler? DirectAgentVoicePressed;
+    public event EventHandler? DirectAgentVoiceReleased;
     public event EventHandler? EmergencyStopPressed;
     public event EventHandler<ActivationKind>? ContextActivationPressed;
     public event EventHandler<ActivationKind>? ContextActivationReleased;
@@ -57,6 +60,8 @@ public sealed class GlobalPushToTalk : IGlobalPushToTalk
     public bool CancelKeyEnabled { get; set; }
 
     public bool ContextShortcutsEnabled { get; set; } = true;
+
+    public bool DirectAgentShortcutsEnabled { get; set; } = true;
 
     public bool IsRunning
     {
@@ -93,12 +98,15 @@ public sealed class GlobalPushToTalk : IGlobalPushToTalk
     {
         nint handle;
         var fireReleased = false;
+        var fireAgentReleased = false;
         lock (_gate)
         {
             handle = _hookHandle;
             _hookHandle = nint.Zero;
             fireReleased = _keyState.IsActive;
+            fireAgentReleased = _directAgentVoiceKeyState.IsActive;
             _keyState.Reset();
+            _directAgentVoiceKeyState.Reset();
             _contextKeyState.Reset();
             _emergencyStopKeyState.Reset();
             _activeListeningKeyState.Reset();
@@ -112,6 +120,11 @@ public sealed class GlobalPushToTalk : IGlobalPushToTalk
         if (fireReleased)
         {
             Released?.Invoke(this, EventArgs.Empty);
+        }
+
+        if (fireAgentReleased)
+        {
+            DirectAgentVoiceReleased?.Invoke(this, EventArgs.Empty);
         }
     }
 
@@ -130,87 +143,120 @@ public sealed class GlobalPushToTalk : IGlobalPushToTalk
 
     private nint HookCallback(int code, nint message, nint data)
     {
-        if (code >= 0)
+        if (code >= 0 && data != nint.Zero)
         {
-            var keyboard = Marshal.PtrToStructure<LowLevelKeyboardInput>(data);
-            var isDown = message == WmKeyDown || message == WmSysKeyDown;
-            var isUp = message == WmKeyUp || message == WmSysKeyUp;
-            if (isDown || isUp)
+            try
             {
-                EventHandler? handler = null;
-                var emergencyStop = false;
-                var toggleListening = false;
-                var contextTransition = ContextActivationTransition.None;
-                var contextKind = ActivationKind.Context;
-                lock (_gate)
+                var keyboard = Marshal.PtrToStructure<LowLevelKeyboardInput>(data);
+                var isDown = message == WmKeyDown || message == WmSysKeyDown;
+                var isUp = message == WmKeyUp || message == WmSysKeyUp;
+                if (isDown || isUp)
                 {
-                    emergencyStop = _emergencyStopKeyState.Update(keyboard.VirtualKey, isDown);
-                    toggleListening = _activeListeningKeyState.Update(
-                        keyboard.VirtualKey,
-                        isDown,
-                        IsControlHeldNow());
-                    var pushToTalk = _keyState.Update(keyboard.VirtualKey, isDown);
-                    handler = pushToTalk switch
+                    EventHandler? handler = null;
+                    EventHandler? agentHandler = null;
+                    var emergencyStop = false;
+                    var toggleListening = false;
+                    var contextTransition = ContextActivationTransition.None;
+                    var contextKind = ActivationKind.Context;
+                    lock (_gate)
                     {
-                        PushToTalkTransition.Pressed => Pressed,
-                        PushToTalkTransition.Released => Released,
-                        _ => null
-                    };
+                        emergencyStop = _emergencyStopKeyState.Update(keyboard.VirtualKey, isDown);
+                        toggleListening = _activeListeningKeyState.Update(
+                            keyboard.VirtualKey,
+                            isDown,
+                            IsControlHeldNow());
 
-                    // Hold-to-talk owns the Ctrl+Shift+1 chord. Suppressing the
-                    // context state while it is active keeps the two shortcuts
-                    // from firing a second overlapping request.
-                    if (ContextShortcutsEnabled && !_keyState.IsActive)
-                    {
-                        contextTransition = _contextKeyState.Update(keyboard.VirtualKey, isDown);
-                        contextKind = _contextKeyState.ShiftSeen ? ActivationKind.Inspect : ActivationKind.Context;
+                        if (DirectAgentShortcutsEnabled)
+                        {
+                            var agentTransition = _directAgentVoiceKeyState.Update(keyboard.VirtualKey, isDown);
+                            agentHandler = agentTransition switch
+                            {
+                                PushToTalkTransition.Pressed => DirectAgentVoicePressed,
+                                PushToTalkTransition.Released => DirectAgentVoiceReleased,
+                                _ => null
+                            };
+                        }
+                        else
+                        {
+                            _directAgentVoiceKeyState.Reset();
+                        }
+
+                        var pushToTalk = _keyState.Update(keyboard.VirtualKey, isDown);
+                        handler = pushToTalk switch
+                        {
+                            PushToTalkTransition.Pressed => Pressed,
+                            PushToTalkTransition.Released => Released,
+                            _ => null
+                        };
+
+                        // Hold-to-talk and Direct Agent chords take precedence. Suppressing the
+                        // context state while they are active keeps shortcuts from firing overlapping requests.
+                        if (ContextShortcutsEnabled && !_keyState.IsActive && !_directAgentVoiceKeyState.IsActive)
+                        {
+                            contextTransition = _contextKeyState.Update(keyboard.VirtualKey, isDown);
+                            contextKind = _contextKeyState.ShiftSeen ? ActivationKind.Inspect : ActivationKind.Context;
+                        }
+                        else
+                        {
+                            _contextKeyState.Reset();
+                        }
                     }
-                    else
+
+                    if (emergencyStop)
                     {
-                        _contextKeyState.Reset();
+                        Task.Run(() => EmergencyStopPressed?.Invoke(this, EventArgs.Empty));
+                    }
+
+                    if (toggleListening)
+                    {
+                        Task.Run(() => ActiveListeningToggled?.Invoke(this, EventArgs.Empty));
+                    }
+
+                    switch (contextTransition)
+                    {
+                        case ContextActivationTransition.Pressed:
+                            var kindPressed = contextKind;
+                            Task.Run(() => ContextActivationPressed?.Invoke(this, kindPressed));
+                            break;
+                        case ContextActivationTransition.UpgradedToInspect:
+                            Task.Run(() => ContextActivationUpgraded?.Invoke(this, EventArgs.Empty));
+                            break;
+                        case ContextActivationTransition.Released:
+                            var kindReleased = contextKind;
+                            Task.Run(() => ContextActivationReleased?.Invoke(this, kindReleased));
+                            break;
+                    }
+
+                    if (handler is not null)
+                    {
+                        var h = handler;
+                        Task.Run(() => h.Invoke(this, EventArgs.Empty));
+                    }
+
+                    if (agentHandler is not null)
+                    {
+                        var ah = agentHandler;
+                        Task.Run(() => ah.Invoke(this, EventArgs.Empty));
+                    }
+
+                    if (CancelKeyEnabled && isDown && keyboard.VirtualKey == VkEscape)
+                    {
+                        // Swallowed, but only while a trace is up: for that moment
+                        // Escape means "put the pen away", and letting it through as
+                        // well would also dismiss whatever is underneath.
+                        Task.Run(() => CancelPressed?.Invoke(this, EventArgs.Empty));
+                        return 1;
+                    }
+
+                    if (keyboard.VirtualKey == EmergencyStopKeyState.F12)
+                    {
+                        return 1;
                     }
                 }
-
-                if (emergencyStop)
-                {
-                    // This callback runs independently of Metis's inference/action
-                    // loop, so F12 can cancel automation even when that loop stalls.
-                    EmergencyStopPressed?.Invoke(this, EventArgs.Empty);
-                }
-
-                if (toggleListening)
-                {
-                    ActiveListeningToggled?.Invoke(this, EventArgs.Empty);
-                }
-
-                switch (contextTransition)
-                {
-                    case ContextActivationTransition.Pressed:
-                        ContextActivationPressed?.Invoke(this, contextKind);
-                        break;
-                    case ContextActivationTransition.UpgradedToInspect:
-                        ContextActivationUpgraded?.Invoke(this, EventArgs.Empty);
-                        break;
-                    case ContextActivationTransition.Released:
-                        ContextActivationReleased?.Invoke(this, contextKind);
-                        break;
-                }
-
-                handler?.Invoke(this, EventArgs.Empty);
-
-                if (CancelKeyEnabled && isDown && keyboard.VirtualKey == VkEscape)
-                {
-                    // Swallowed, but only while a trace is up: for that moment
-                    // Escape means "put the pen away", and letting it through as
-                    // well would also dismiss whatever is underneath.
-                    CancelPressed?.Invoke(this, EventArgs.Empty);
-                    return 1;
-                }
-
-                if (keyboard.VirtualKey == EmergencyStopKeyState.F12)
-                {
-                    return 1;
-                }
+            }
+            catch
+            {
+                // Protect low-level Windows hook callback from bubbling exceptions to unmanaged caller
             }
         }
 

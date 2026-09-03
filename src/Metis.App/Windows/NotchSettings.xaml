@@ -1,0 +1,1038 @@
+<UserControl x:Class="Metis.App.Windows.NotchSettings"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             Width="640" Background="Transparent"
+             Focusable="False">
+    <UserControl.Resources>
+
+        <!-- A row in the settings menu. The whole row is the target, not the
+             chevron: a 640-wide list where only a 16px glyph responds is a list
+             people miss. -->
+        <!-- The round chrome buttons. A Button rather than a Border with a
+             mouse handler, which is what the rest of the notch does: WPF leaves
+             a Border out of the automation control view altogether, so a
+             screen reader never sees it however carefully it is named, and it
+             has no Enter or Space of its own. The template keeps the look
+             identical — a 26px circle with a stroked glyph inside. -->
+        <Style x:Key="ChromeButton" TargetType="Button">
+            <Setter Property="Width" Value="26" />
+            <Setter Property="Height" Value="26" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="Background" Value="{DynamicResource NotchChipBrush}" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Pill" Background="{TemplateBinding Background}"
+                                CornerRadius="13">
+                            <ContentPresenter HorizontalAlignment="Center"
+                                              VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsKeyboardFocused" Value="True">
+                                <Setter TargetName="Pill" Property="BorderThickness" Value="1.5" />
+                                <Setter TargetName="Pill" Property="BorderBrush"
+                                        Value="{DynamicResource AccentBrush}" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="MenuRow" TargetType="Border">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="CornerRadius" Value="10" />
+            <Setter Property="Padding" Value="12,7" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Background" Value="{DynamicResource NotchHoverBrush}" />
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+
+        <!-- A companion colour. A Button so it can be tabbed to and named:
+             the colour itself is the content, so a name matters more here than
+             it does on a control with words in it. -->
+        <Style x:Key="SwatchButton" TargetType="Button">
+            <Setter Property="Width" Value="30" />
+            <Setter Property="Height" Value="30" />
+            <Setter Property="Margin" Value="0,0,8,8" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="BorderBrush" Value="{DynamicResource NotchChipEdgeBrush}" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Dot" CornerRadius="15" BorderThickness="2"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}" />
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsKeyboardFocused" Value="True">
+                                <Setter TargetName="Dot" Property="BorderBrush"
+                                        Value="{DynamicResource NotchTextBrush}" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- A plan, as a row. A Button so the keyboard and a screen reader can
+             both reach it; the template keeps the card look. -->
+        <Style x:Key="PlanRow" TargetType="Button">
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+            <Setter Property="Margin" Value="0,0,0,8" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Row" CornerRadius="10" Padding="14,12"
+                                BorderThickness="1.5"
+                                Background="{DynamicResource NotchFieldBrush}"
+                                BorderBrush="{TemplateBinding BorderBrush}">
+                            <ContentPresenter />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Row" Property="Background"
+                                        Value="{DynamicResource NotchChipHoverBrush}" />
+                            </Trigger>
+                            <Trigger Property="IsKeyboardFocused" Value="True">
+                                <Setter TargetName="Row" Property="BorderThickness" Value="2.5" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="SettingCard" TargetType="Border">
+            <Setter Property="Background" Value="{DynamicResource NotchSurfaceBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource NotchHairlineBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="12" />
+            <Setter Property="Padding" Value="16,14" />
+            <Setter Property="Margin" Value="0,0,0,10" />
+        </Style>
+
+        <Style x:Key="SettingLabel" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="10.5" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Foreground" Value="{DynamicResource NotchFaintBrush}" />
+        </Style>
+
+        <Style x:Key="SettingBody" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="11.5" />
+            <Setter Property="Foreground" Value="{DynamicResource NotchMutedBrush}" />
+            <Setter Property="TextWrapping" Value="Wrap" />
+        </Style>
+
+        <Style x:Key="SettingChip" TargetType="Border">
+            <Setter Property="Background" Value="{DynamicResource NotchChipBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource NotchChipEdgeBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="14" />
+            <Setter Property="Padding" Value="14,6" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="HorizontalAlignment" Value="Left" />
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Background" Value="{DynamicResource NotchChipHoverBrush}" />
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+        <Style x:Key="SwatchChip" TargetType="Border">
+            <Setter Property="Width" Value="32" />
+            <Setter Property="Height" Value="32" />
+            <Setter Property="CornerRadius" Value="16" />
+            <Setter Property="Background" Value="{DynamicResource NotchChipBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource NotchChipEdgeBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Margin" Value="0,0,6,6" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="HorizontalAlignment" Value="Center" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Background" Value="{DynamicResource NotchChipHoverBrush}" />
+                    <Setter Property="BorderBrush" Value="{DynamicResource AccentBrush}" />
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+        <Style x:Key="SettingScrollThumb" TargetType="Thumb">
+            <Setter Property="IsTabStop" Value="False" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Thumb">
+                        <Border x:Name="Rail" Background="{DynamicResource NotchScrollThumbBrush}" CornerRadius="3" Margin="2" />
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Rail" Property="Background" Value="{DynamicResource NotchScrollThumbHoverBrush}" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="SettingScrollBar" TargetType="ScrollBar">
+            <Setter Property="Width" Value="7" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ScrollBar">
+                        <Grid Background="Transparent">
+                            <Track x:Name="PART_Track" IsDirectionReversed="True">
+                                <Track.Thumb>
+                                    <Thumb Style="{StaticResource SettingScrollThumb}" />
+                                </Track.Thumb>
+                            </Track>
+                        </Grid>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="SettingScroller" TargetType="ScrollViewer">
+            <Setter Property="HorizontalScrollBarVisibility" Value="Disabled" />
+            <Setter Property="VerticalScrollBarVisibility" Value="Auto" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ScrollViewer">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <ScrollContentPresenter Grid.ColumnSpan="2" Margin="{TemplateBinding Padding}" />
+                            <ScrollBar Grid.Column="1" x:Name="PART_VerticalScrollBar"
+                                       Style="{StaticResource SettingScrollBar}"
+                                       Orientation="Vertical"
+                                       Maximum="{TemplateBinding ScrollableHeight}"
+                                       ViewportSize="{TemplateBinding ViewportHeight}"
+                                       Value="{Binding VerticalOffset, Mode=OneWay, RelativeSource={RelativeSource TemplatedParent}}"
+                                       Visibility="{TemplateBinding ComputedVerticalScrollBarVisibility}" />
+                        </Grid>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </UserControl.Resources>
+
+    <Border Background="{DynamicResource NotchBubbleBrush}"
+            BorderBrush="{DynamicResource NotchScrollThumbBrush}"
+            BorderThickness="1" CornerRadius="14" Padding="18,14">
+        <StackPanel>
+            <!-- Header -->
+            <Grid Margin="0,0,0,12">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+
+                <Button x:Name="BackButton" Style="{StaticResource ChromeButton}"
+                        Visibility="Collapsed" Margin="0,0,10,0"
+                        AutomationProperties.Name="Back to settings"
+                        Click="Back_OnClick">
+                    <Path Data="M 10,4 L 6,8 L 10,12"
+                          Stroke="{DynamicResource NotchChromeBrush}" StrokeThickness="1.6"
+                          StrokeStartLineCap="Round" StrokeEndLineCap="Round"
+                          StrokeLineJoin="Round"
+                          HorizontalAlignment="Center" VerticalAlignment="Center" />
+                </Button>
+
+                <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                    <TextBlock x:Name="Breadcrumb" Text="Settings" FontSize="10"
+                               Foreground="{DynamicResource NotchFaintBrush}"
+                               Visibility="Collapsed" />
+                    <TextBlock x:Name="PageTitle" Text="Settings" FontSize="14"
+                               FontWeight="SemiBold"
+                               Foreground="{DynamicResource NotchTextBrush}" />
+                </StackPanel>
+
+                <Button Grid.Column="2" Style="{StaticResource ChromeButton}"
+                        AutomationProperties.Name="Close settings"
+                        Click="Close_OnClick">
+                    <Path Data="M 5,5 L 11,11 M 11,5 L 5,11"
+                          Stroke="{DynamicResource NotchChromeBrush}" StrokeThickness="1.6"
+                          StrokeStartLineCap="Round"
+                          HorizontalAlignment="Center" VerticalAlignment="Center" />
+                </Button>
+            </Grid>
+
+            <Border Height="1" Background="{DynamicResource NotchHairlineBrush}" Margin="0,0,0,12" />
+
+            <!-- Scrollable Content Host -->
+            <ScrollViewer x:Name="SettingsScroll" Style="{StaticResource SettingScroller}" MaxHeight="520" Margin="0,0,-4,0" Padding="0,0,4,0">
+                <StackPanel>
+                    <!-- ============================= Menu ============================= -->
+                    <StackPanel x:Name="MenuPage">
+                        <ItemsControl x:Name="MenuList">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Border Style="{StaticResource MenuRow}" Tag="{Binding Key}"
+                                            Focusable="True"
+                                            KeyDown="MenuRow_OnKey"
+                                            AutomationProperties.Name="{Binding Title}"
+                                            AutomationProperties.HelpText="{Binding Summary}"
+                                            MouseLeftButtonUp="MenuRow_OnClick">
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <StackPanel>
+                                                <TextBlock Text="{Binding Title}" FontSize="12.5"
+                                                           FontWeight="SemiBold"
+                                                           Foreground="{DynamicResource NotchTextBrush}" />
+                                                <TextBlock Text="{Binding Summary}" FontSize="10.5"
+                                                           Visibility="{Binding SummaryVisibility}"
+                                                           Margin="0,1,0,0" TextWrapping="Wrap"
+                                                           Foreground="{DynamicResource NotchMutedBrush}" />
+                                            </StackPanel>
+                                            <Path Grid.Column="1" Data="M 6,4 L 10,8 L 6,12"
+                                                  Stroke="{DynamicResource NotchFaintBrush}" StrokeThickness="1.5"
+                                                  StrokeStartLineCap="Round" StrokeEndLineCap="Round"
+                                                  StrokeLineJoin="Round"
+                                                  VerticalAlignment="Center" Margin="10,0,4,0" />
+                                        </Grid>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </StackPanel>
+
+                    <!-- =========================== Account ============================ -->
+                    <StackPanel x:Name="AccountPage" Visibility="Collapsed">
+                        <!-- Profile Header -->
+                        <Border Style="{StaticResource SettingCard}">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+
+                                <Grid Grid.Column="0" Margin="0,0,16,0" VerticalAlignment="Center">
+                                    <Border x:Name="AvatarCircle" Width="52" Height="52" CornerRadius="26"
+                                            Background="{DynamicResource NotchAccentBedBrush}"
+                                            BorderBrush="{DynamicResource AccentBrush}" BorderThickness="2"
+                                            Cursor="Hand" ToolTip="Click to choose your avatar"
+                                            MouseLeftButtonUp="Avatar_OnClick">
+                                        <TextBlock x:Name="AvatarEmoji" Text="🦊" FontSize="26"
+                                                   HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                    </Border>
+                                </Grid>
+
+                                <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                    <!-- The name, editable in place.
+                                         It was a TextBlock, so the picture could
+                                         be changed from here and the name could
+                                         not — which is an odd half of a profile.
+                                         Borderless until you touch it, so the
+                                         header still reads as a heading rather
+                                         than as a form. -->
+                                    <TextBox x:Name="AccountNameBox" FontSize="15" FontWeight="Bold"
+                                             Background="Transparent" BorderThickness="0"
+                                             Padding="0" MaxLength="60"
+                                             Foreground="{DynamicResource NotchTextBrush}"
+                                             CaretBrush="{DynamicResource AccentBrush}"
+                                             AutomationProperties.Name="Your name"
+                                             ToolTip="Click to change what Metis calls you"
+                                             KeyDown="AccountName_OnKeyDown"
+                                             LostFocus="AccountName_OnLostFocus" />
+                                    <StackPanel Orientation="Horizontal" Margin="0,3,0,0">
+                                        <TextBlock x:Name="AccountEmail" Text="local.tester@metis.internal" FontSize="11.5"
+                                                   Foreground="{DynamicResource NotchMutedBrush}" VerticalAlignment="Center" />
+                                        <Border x:Name="VerifiedBadge" Background="{DynamicResource NotchAccentBedBrush}"
+                                                BorderBrush="{DynamicResource AccentBrush}" BorderThickness="1"
+                                                CornerRadius="8" Padding="6,1" Margin="8,0,0,0" VerticalAlignment="Center">
+                                            <TextBlock Text="✓ Verified" FontSize="9.5" FontWeight="SemiBold"
+                                                       Foreground="{DynamicResource AccentBrush}" />
+                                        </Border>
+                                    </StackPanel>
+
+                                    <!-- Avatar Selection Tray -->
+                                    <WrapPanel x:Name="AvatarPickerTray" Margin="0,10,0,0" Visibility="Collapsed">
+                                        <Border Style="{StaticResource SwatchChip}" Tag="🦊" MouseLeftButtonUp="PickAvatar_OnClick"><TextBlock Text="🦊" FontSize="15" HorizontalAlignment="Center" VerticalAlignment="Center" /></Border>
+                                        <Border Style="{StaticResource SwatchChip}" Tag="🦉" MouseLeftButtonUp="PickAvatar_OnClick"><TextBlock Text="🦉" FontSize="15" HorizontalAlignment="Center" VerticalAlignment="Center" /></Border>
+                                        <Border Style="{StaticResource SwatchChip}" Tag="⚡" MouseLeftButtonUp="PickAvatar_OnClick"><TextBlock Text="⚡" FontSize="15" HorizontalAlignment="Center" VerticalAlignment="Center" /></Border>
+                                        <Border Style="{StaticResource SwatchChip}" Tag="🔮" MouseLeftButtonUp="PickAvatar_OnClick"><TextBlock Text="🔮" FontSize="15" HorizontalAlignment="Center" VerticalAlignment="Center" /></Border>
+                                        <Border Style="{StaticResource SwatchChip}" Tag="🚀" MouseLeftButtonUp="PickAvatar_OnClick"><TextBlock Text="🚀" FontSize="15" HorizontalAlignment="Center" VerticalAlignment="Center" /></Border>
+                                        <Border Style="{StaticResource SwatchChip}" Tag="🤖" MouseLeftButtonUp="PickAvatar_OnClick"><TextBlock Text="🤖" FontSize="15" HorizontalAlignment="Center" VerticalAlignment="Center" /></Border>
+                                        <Border Style="{StaticResource SwatchChip}" Tag="🎨" MouseLeftButtonUp="PickAvatar_OnClick"><TextBlock Text="🎨" FontSize="15" HorizontalAlignment="Center" VerticalAlignment="Center" /></Border>
+                                        <Border Style="{StaticResource SwatchChip}" Tag="🐼" MouseLeftButtonUp="PickAvatar_OnClick"><TextBlock Text="🐼" FontSize="15" HorizontalAlignment="Center" VerticalAlignment="Center" /></Border>
+                                        <Border Style="{StaticResource SwatchChip}" Tag="👑" MouseLeftButtonUp="PickAvatar_OnClick"><TextBlock Text="👑" FontSize="15" HorizontalAlignment="Center" VerticalAlignment="Center" /></Border>
+                                    </WrapPanel>
+
+                                    <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
+                                        <Border x:Name="SignInChip" Style="{StaticResource SettingChip}" MouseLeftButtonUp="SignIn_OnClick">
+                                            <TextBlock Text="Sign in" FontSize="11" Foreground="{DynamicResource NotchTextBrush}" />
+                                        </Border>
+                                        <Border x:Name="SignOutChip" Style="{StaticResource SettingChip}" MouseLeftButtonUp="SignOut_OnClick">
+                                            <TextBlock Text="Sign out" FontSize="11" Foreground="{DynamicResource NotchMutedBrush}" />
+                                        </Border>
+                                        <Border x:Name="ManageWebChip" Style="{StaticResource SettingChip}" Margin="8,0,0,0"
+                                                Background="{DynamicResource NotchChipHoverBrush}" MouseLeftButtonUp="ManagePlan_OnClick">
+                                            <TextBlock Text="Manage on Web ↗" FontSize="11" Foreground="{DynamicResource NotchTextBrush}" />
+                                        </Border>
+                                    </StackPanel>
+                                </StackPanel>
+                            </Grid>
+                        </Border>
+
+                        <!-- ====================== Choosing a plan ======================
+                             One row per plan, stacked, rather than three cards
+                             side by side.
+
+                             The columns version could not survive its own
+                             content: three cards across 640px leaves each about
+                             190px, so every description wrapped to three lines
+                             and needed a MinHeight to stop the cards ending at
+                             different depths. Narrow the notch, lengthen a
+                             sentence, or run at a larger system font and it
+                             fell apart again. Stacked rows have none of that —
+                             each one gets the full width, the price stays on
+                             the right, and the layout is the same at any size.
+
+                             The rows are Buttons so they can be tabbed to and
+                             announced; everything else in the notch that looks
+                             like a button but is a Border cannot be. -->
+                        <Border Style="{StaticResource SettingCard}">
+                            <StackPanel>
+                                <TextBlock Text="YOUR PLAN" Style="{StaticResource SettingLabel}" />
+                                <TextBlock x:Name="PlanSwitcherNote" Style="{StaticResource SettingBody}"
+                                           Margin="0,4,0,12" />
+
+                                <ItemsControl x:Name="PlanList">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <Button Style="{StaticResource PlanRow}" Tag="{Binding Key}"
+                                                    BorderBrush="{Binding EdgeBrush}"
+                                                    AutomationProperties.Name="{Binding AutomationName}"
+                                                    Click="SelectPlan_OnClick">
+                                                <Grid>
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="*" />
+                                                        <ColumnDefinition Width="Auto" />
+                                                    </Grid.ColumnDefinitions>
+
+                                                    <StackPanel Grid.Column="0" Margin="0,0,12,0">
+                                                        <StackPanel Orientation="Horizontal">
+                                                            <TextBlock Text="{Binding Name}" FontSize="13.5"
+                                                                       FontWeight="SemiBold"
+                                                                       Foreground="{DynamicResource NotchTextBrush}" />
+                                                            <Border Background="{DynamicResource NotchAccentBedBrush}"
+                                                                    CornerRadius="7" Padding="7,1" Margin="8,0,0,0"
+                                                                    VerticalAlignment="Center"
+                                                                    Visibility="{Binding CurrentVisibility}">
+                                                                <TextBlock Text="YOUR PLAN" FontSize="8.5"
+                                                                           FontWeight="Bold"
+                                                                           Foreground="{DynamicResource AccentBrush}" />
+                                                            </Border>
+                                                        </StackPanel>
+                                                        <TextBlock Text="{Binding Summary}" FontSize="11"
+                                                                   TextWrapping="Wrap" Margin="0,4,0,0"
+                                                                   Foreground="{DynamicResource NotchMutedBrush}" />
+                                                    </StackPanel>
+
+                                                    <StackPanel Grid.Column="1" VerticalAlignment="Center"
+                                                                HorizontalAlignment="Right">
+                                                        <TextBlock Text="{Binding Price}" FontSize="17"
+                                                                   FontWeight="Bold" HorizontalAlignment="Right"
+                                                                   Foreground="{DynamicResource NotchTextBrush}" />
+                                                        <TextBlock Text="{Binding Cadence}" FontSize="9.5"
+                                                                   HorizontalAlignment="Right"
+                                                                   Foreground="{DynamicResource NotchFaintBrush}" />
+                                                    </StackPanel>
+                                                </Grid>
+                                            </Button>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- ======================= What you have used =======================
+                             One meter per thing the plan actually sells, in the
+                             units the pricing page uses.
+
+                             It used to be a single bar against a dollar budget,
+                             which is the one number a customer cannot act on:
+                             nobody knows whether $0.42 of Gemini is a lot. Talk
+                             messages, minutes and agent messages are countable
+                             by the person spending them.
+
+                             The bars are two star-width grid columns rather
+                             than a pixel Width, so they are correct at any
+                             notch size without a line of layout code. -->
+                        <Border x:Name="UsageCard" Style="{StaticResource SettingCard}">
+                            <StackPanel>
+                                <TextBlock Text="THIS MONTH" Style="{StaticResource SettingLabel}" />
+                                <ItemsControl x:Name="UsageList" Margin="0,10,0,0">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <StackPanel Margin="0,0,0,12">
+                                                <Grid>
+                                                    <TextBlock Text="{Binding Label}" FontSize="11.5"
+                                                               Foreground="{DynamicResource NotchTextBrush}" />
+                                                    <TextBlock Text="{Binding Detail}" FontSize="11.5"
+                                                               HorizontalAlignment="Right"
+                                                               Foreground="{DynamicResource NotchMutedBrush}" />
+                                                </Grid>
+                                                <Grid Height="6" Margin="0,6,0,0">
+                                                    <Border Background="{DynamicResource NotchFieldBrush}"
+                                                            CornerRadius="3" />
+                                                    <Grid>
+                                                        <Grid.ColumnDefinitions>
+                                                            <ColumnDefinition Width="{Binding Used}" />
+                                                            <ColumnDefinition Width="{Binding Left}" />
+                                                        </Grid.ColumnDefinitions>
+                                                        <Border Background="{Binding FillBrush}" CornerRadius="3" />
+                                                    </Grid>
+                                                </Grid>
+                                            </StackPanel>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                                <TextBlock x:Name="UsageDetail" Style="{StaticResource SettingBody}" />
+                            </StackPanel>
+                        </Border>
+
+                        <!-- Plan Feature Checklist -->
+                        <Border Style="{StaticResource SettingCard}">
+                            <StackPanel>
+                                <TextBlock Text="PLAN CAPABILITIES" Style="{StaticResource SettingLabel}" />
+                                <ItemsControl x:Name="FeatureList" Margin="0,10,0,0">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <Grid Margin="0,0,0,6">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="22" />
+                                                    <ColumnDefinition Width="*" />
+                                                </Grid.ColumnDefinitions>
+                                                <TextBlock Text="{Binding StatusSymbol}" FontSize="11.5"
+                                                           Foreground="{Binding StatusBrush}" FontWeight="Bold" />
+                                                <TextBlock Grid.Column="1" Text="{Binding Label}" FontSize="11"
+                                                           Foreground="{DynamicResource NotchTextBrush}" TextWrapping="Wrap" />
+                                            </Grid>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                                <TextBlock x:Name="FeatureNote" Style="{StaticResource SettingBody}" Margin="0,4,0,0" />
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+
+                    <!-- ========================= Intelligence (AI Models & Keys) ========================= -->
+                    <StackPanel x:Name="IntelligencePage" Visibility="Collapsed">
+                        <Border Style="{StaticResource SettingCard}">
+                            <StackPanel>
+                                <TextBlock Text="AI PROVIDER &amp; REASONING" Style="{StaticResource SettingLabel}" />
+                                <TextBlock Style="{StaticResource SettingBody}" Margin="0,6,0,10"
+                                           Text="Choose which AI intelligence engine powers your Metis answers and guidance." />
+                                
+                                <Grid Margin="0,0,0,4">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <ComboBox x:Name="AiProviderBox" Height="30" SelectionChanged="AiProviderBox_OnSelectionChanged">
+                                        <ComboBoxItem Content="Metis (Managed)" Tag="Metis" />
+                                        <ComboBoxItem Content="Google Gemini" Tag="Gemini" />
+                                        <ComboBoxItem Content="OpenAI" Tag="OpenAI" />
+                                        <ComboBoxItem Content="Anthropic Claude" Tag="Claude" />
+                                        <ComboBoxItem Content="OpenRouter" Tag="OpenRouter" />
+                                        <ComboBoxItem Content="Ollama (Local)" Tag="Ollama" />
+                                        <ComboBoxItem Content="OpenClaw" Tag="OpenClaw" />
+                                    </ComboBox>
+                                    <Border x:Name="TestProviderChip" Grid.Column="1" Style="{StaticResource SettingChip}"
+                                            Margin="8,0,0,0" VerticalAlignment="Center" MouseLeftButtonUp="TestProvider_OnClick">
+                                        <TextBlock Text="Test Connection" FontSize="11" Foreground="{DynamicResource NotchTextBrush}" />
+                                    </Border>
+                                </Grid>
+                                <TextBlock x:Name="AiProviderStatus" Style="{StaticResource SettingBody}" Margin="0,6,0,0" />
+                            </StackPanel>
+                        </Border>
+
+                        <!-- Metis Managed Card -->
+                        <Border x:Name="MetisManagedCard" Style="{StaticResource SettingCard}">
+                            <StackPanel>
+                                <TextBlock Text="MANAGED AI CLOUD ROUTING" Style="{StaticResource SettingLabel}" />
+                                <TextBlock Style="{StaticResource SettingBody}" Margin="0,6,0,0"
+                                           Text="Zero configuration required. Metis securely routes queries through our high-speed cloud infrastructure within your monthly subscription tier." />
+                                <TextBlock x:Name="MetisTierModelSummary" Style="{StaticResource SettingBody}" Margin="0,6,0,0"
+                                           Foreground="{DynamicResource AccentBrush}" FontWeight="SemiBold" />
+                            </StackPanel>
+                        </Border>
+
+                        <!-- Pro Gating Notice (Shown when Free/Plus selects a BYOK provider) -->
+                        <Border x:Name="ByoGatingCard" Style="{StaticResource SettingCard}" Background="{DynamicResource NotchAccentBedBrush}"
+                                BorderBrush="{DynamicResource AccentBrush}" Visibility="Collapsed">
+                            <StackPanel>
+                                <TextBlock x:Name="ByoGatingLabel" Style="{StaticResource SettingLabel}"
+                                           Foreground="{DynamicResource AccentBrush}" />
+                                <TextBlock x:Name="ByoGatingBody" Style="{StaticResource SettingBody}"
+                                           Margin="0,6,0,10" />
+                                <Border Style="{StaticResource SettingChip}" Background="{DynamicResource AccentBrush}"
+                                        BorderThickness="0" MouseLeftButtonUp="UpgradeForOwnKey_OnClick">
+                                    <TextBlock x:Name="ByoUpgradeLabel" FontSize="11" FontWeight="SemiBold" Foreground="White" />
+                                </Border>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- BYOK Cards (Unlocked on Pro) -->
+                        <Border x:Name="GeminiCard" Style="{StaticResource SettingCard}" Visibility="Collapsed">
+                            <StackPanel>
+                                <TextBlock Text="GOOGLE GEMINI CONFIGURATION" Style="{StaticResource SettingLabel}" />
+                                <TextBlock Text="API Key (Google AI Studio)" Style="{StaticResource SettingBody}" Margin="0,8,0,3" />
+                                <Border Background="{DynamicResource NotchFieldBrush}" BorderBrush="{DynamicResource NotchFieldEdgeBrush}"
+                                        BorderThickness="1" CornerRadius="8" Padding="10,6">
+                                    <PasswordBox x:Name="GeminiApiKeyBox" Background="Transparent" BorderThickness="0"
+                                                 Foreground="{DynamicResource NotchTextBrush}" />
+                                </Border>
+                                <TextBlock Text="Model" Style="{StaticResource SettingBody}" Margin="0,8,0,3" />
+                                <Border Background="{DynamicResource NotchFieldBrush}" BorderBrush="{DynamicResource NotchFieldEdgeBrush}"
+                                        BorderThickness="1" CornerRadius="8" Padding="10,6">
+                                    <TextBox x:Name="GeminiModelBox" Background="Transparent" BorderThickness="0"
+                                             Foreground="{DynamicResource NotchTextBrush}" />
+                                </Border>
+                                <Border Style="{StaticResource SettingChip}" Margin="0,10,0,0" Tag="Gemini" MouseLeftButtonUp="RemoveKey_OnClick">
+                                    <TextBlock Text="Remove Stored Key" FontSize="10.5" Foreground="{DynamicResource NotchDangerInkBrush}" />
+                                </Border>
+                            </StackPanel>
+                        </Border>
+
+                        <Border x:Name="OpenAiCard" Style="{StaticResource SettingCard}" Visibility="Collapsed">
+                            <StackPanel>
+                                <TextBlock Text="OPENAI CONFIGURATION" Style="{StaticResource SettingLabel}" />
+                                <TextBlock Text="API Key" Style="{StaticResource SettingBody}" Margin="0,8,0,3" />
+                                <Border Background="{DynamicResource NotchFieldBrush}" BorderBrush="{DynamicResource NotchFieldEdgeBrush}"
+                                        BorderThickness="1" CornerRadius="8" Padding="10,6">
+                                    <PasswordBox x:Name="OpenAiApiKeyBox" Background="Transparent" BorderThickness="0"
+                                                 Foreground="{DynamicResource NotchTextBrush}" />
+                                </Border>
+                                <TextBlock Text="Model" Style="{StaticResource SettingBody}" Margin="0,8,0,3" />
+                                <Border Background="{DynamicResource NotchFieldBrush}" BorderBrush="{DynamicResource NotchFieldEdgeBrush}"
+                                        BorderThickness="1" CornerRadius="8" Padding="10,6">
+                                    <TextBox x:Name="OpenAiModelBox" Background="Transparent" BorderThickness="0"
+                                             Foreground="{DynamicResource NotchTextBrush}" />
+                                </Border>
+                                <Border Style="{StaticResource SettingChip}" Margin="0,10,0,0" Tag="OpenAI" MouseLeftButtonUp="RemoveKey_OnClick">
+                                    <TextBlock Text="Remove Stored Key" FontSize="10.5" Foreground="{DynamicResource NotchDangerInkBrush}" />
+                                </Border>
+                            </StackPanel>
+                        </Border>
+
+                        <Border x:Name="ClaudeCard" Style="{StaticResource SettingCard}" Visibility="Collapsed">
+                            <StackPanel>
+                                <TextBlock Text="ANTHROPIC CLAUDE CONFIGURATION" Style="{StaticResource SettingLabel}" />
+                                <TextBlock Text="API Key" Style="{StaticResource SettingBody}" Margin="0,8,0,3" />
+                                <Border Background="{DynamicResource NotchFieldBrush}" BorderBrush="{DynamicResource NotchFieldEdgeBrush}"
+                                        BorderThickness="1" CornerRadius="8" Padding="10,6">
+                                    <PasswordBox x:Name="ClaudeApiKeyBox" Background="Transparent" BorderThickness="0"
+                                                 Foreground="{DynamicResource NotchTextBrush}" />
+                                </Border>
+                                <TextBlock Text="Model" Style="{StaticResource SettingBody}" Margin="0,8,0,3" />
+                                <Border Background="{DynamicResource NotchFieldBrush}" BorderBrush="{DynamicResource NotchFieldEdgeBrush}"
+                                        BorderThickness="1" CornerRadius="8" Padding="10,6">
+                                    <TextBox x:Name="ClaudeModelBox" Background="Transparent" BorderThickness="0"
+                                             Foreground="{DynamicResource NotchTextBrush}" />
+                                </Border>
+                                <Border Style="{StaticResource SettingChip}" Margin="0,10,0,0" Tag="Claude" MouseLeftButtonUp="RemoveKey_OnClick">
+                                    <TextBlock Text="Remove Stored Key" FontSize="10.5" Foreground="{DynamicResource NotchDangerInkBrush}" />
+                                </Border>
+                            </StackPanel>
+                        </Border>
+
+                        <Border x:Name="OpenRouterCard" Style="{StaticResource SettingCard}" Visibility="Collapsed">
+                            <StackPanel>
+                                <TextBlock Text="OPENROUTER CONFIGURATION" Style="{StaticResource SettingLabel}" />
+                                <TextBlock Text="API Key" Style="{StaticResource SettingBody}" Margin="0,8,0,3" />
+                                <Border Background="{DynamicResource NotchFieldBrush}" BorderBrush="{DynamicResource NotchFieldEdgeBrush}"
+                                        BorderThickness="1" CornerRadius="8" Padding="10,6">
+                                    <PasswordBox x:Name="OpenRouterApiKeyBox" Background="Transparent" BorderThickness="0"
+                                                 Foreground="{DynamicResource NotchTextBrush}" />
+                                </Border>
+                                <TextBlock Text="Model" Style="{StaticResource SettingBody}" Margin="0,8,0,3" />
+                                <Border Background="{DynamicResource NotchFieldBrush}" BorderBrush="{DynamicResource NotchFieldEdgeBrush}"
+                                        BorderThickness="1" CornerRadius="8" Padding="10,6">
+                                    <TextBox x:Name="OpenRouterModelBox" Background="Transparent" BorderThickness="0"
+                                             Foreground="{DynamicResource NotchTextBrush}" />
+                                </Border>
+                                <Border Style="{StaticResource SettingChip}" Margin="0,10,0,0" Tag="OpenRouter" MouseLeftButtonUp="RemoveKey_OnClick">
+                                    <TextBlock Text="Remove Stored Key" FontSize="10.5" Foreground="{DynamicResource NotchDangerInkBrush}" />
+                                </Border>
+                            </StackPanel>
+                        </Border>
+
+                        <Border x:Name="OllamaCard" Style="{StaticResource SettingCard}" Visibility="Collapsed">
+                            <StackPanel>
+                                <TextBlock Text="OLLAMA LOCAL MODEL" Style="{StaticResource SettingLabel}" />
+                                <TextBlock Text="Endpoint" Style="{StaticResource SettingBody}" Margin="0,8,0,3" />
+                                <Border Background="{DynamicResource NotchFieldBrush}" BorderBrush="{DynamicResource NotchFieldEdgeBrush}"
+                                        BorderThickness="1" CornerRadius="8" Padding="10,6">
+                                    <TextBox x:Name="OllamaEndpointBox" Background="Transparent" BorderThickness="0"
+                                             Foreground="{DynamicResource NotchTextBrush}" />
+                                </Border>
+                                <TextBlock Text="Model" Style="{StaticResource SettingBody}" Margin="0,8,0,3" />
+                                <Border Background="{DynamicResource NotchFieldBrush}" BorderBrush="{DynamicResource NotchFieldEdgeBrush}"
+                                        BorderThickness="1" CornerRadius="8" Padding="10,6">
+                                    <TextBox x:Name="OllamaModelBox" Background="Transparent" BorderThickness="0"
+                                             Foreground="{DynamicResource NotchTextBrush}" />
+                                </Border>
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+
+                    <!-- ========================= Voice & Speech ========================= -->
+                    <StackPanel x:Name="VoicePage" Visibility="Collapsed">
+                        <Border Style="{StaticResource SettingCard}">
+                            <StackPanel>
+                                <TextBlock Text="VOICE OUTPUT &amp; SPEECH" Style="{StaticResource SettingLabel}" />
+                                <CheckBox x:Name="SpeechEnabledCheck" Margin="0,10,0,0"
+                                          Content="Speak answers out loud"
+                                          Foreground="{DynamicResource NotchTextBrush}" FontSize="12" />
+                                <CheckBox x:Name="SpeakErrorsCheck" Margin="0,8,0,12"
+                                          Content="Speak error notifications aloud"
+                                          Foreground="{DynamicResource NotchTextBrush}" FontSize="12" />
+
+                                <TextBlock Text="Voice Persona" Style="{StaticResource SettingLabel}" Margin="0,6,0,4" />
+                                <ComboBox x:Name="GeminiVoiceBox" Height="30" Margin="0,4,0,8">
+                                    <ComboBoxItem Content="Kore — Soothing &amp; balanced (Recommended)" Tag="Kore" />
+                                    <ComboBoxItem Content="Puck — Energetic &amp; animated" Tag="Puck" />
+                                    <ComboBoxItem Content="Charon — Deep &amp; calm" Tag="Charon" />
+                                    <ComboBoxItem Content="Fenrir — Strong &amp; confident" Tag="Fenrir" />
+                                    <ComboBoxItem Content="Aoede — Warm &amp; expressive" Tag="Aoede" />
+                                </ComboBox>
+                                <StackPanel Orientation="Horizontal" Margin="0,2,0,0">
+                                    <Border x:Name="PreviewVoiceChip" Style="{StaticResource SettingChip}"
+                                            MouseLeftButtonUp="PreviewVoice_OnClick">
+                                        <TextBlock Text="Preview Voice 🔊" FontSize="11" Foreground="{DynamicResource NotchTextBrush}" />
+                                    </Border>
+                                    <TextBlock x:Name="VoicePreviewStatus" Style="{StaticResource SettingBody}"
+                                               VerticalAlignment="Center" Margin="10,0,0,0" />
+                                </StackPanel>
+                            </StackPanel>
+                        </Border>
+
+                        <Border Style="{StaticResource SettingCard}">
+                            <StackPanel>
+                                <TextBlock Text="MICROPHONE &amp; INPUT" Style="{StaticResource SettingLabel}" />
+                                <TextBlock Style="{StaticResource SettingBody}" Margin="0,6,0,8"
+                                           Text="Select your input microphone for voice commands and hands-free questions." />
+                                <ComboBox x:Name="MicrophoneBox" Height="30" Margin="0,0,0,8" />
+                                <TextBlock x:Name="MicrophoneStatus" Style="{StaticResource SettingBody}" />
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+
+                    <!-- =========================== General ============================ -->
+                    <StackPanel x:Name="GeneralPage" Visibility="Collapsed">
+                        <Border Style="{StaticResource SettingCard}">
+                            <StackPanel>
+                                <TextBlock Text="WHAT METIS CALLS YOU" Style="{StaticResource SettingLabel}" />
+                                <Border Background="{DynamicResource NotchFieldBrush}" BorderBrush="{DynamicResource NotchFieldEdgeBrush}"
+                                        BorderThickness="1" CornerRadius="8" Padding="10,7" Margin="0,8,0,0">
+                                    <TextBox x:Name="UserNameBox" Background="Transparent" BorderThickness="0" FontSize="12.5"
+                                             Foreground="{DynamicResource NotchTextBrush}" CaretBrush="{DynamicResource AccentBrush}" />
+                                </Border>
+                            </StackPanel>
+                        </Border>
+
+                        <Border Style="{StaticResource SettingCard}">
+                            <StackPanel>
+                                <TextBlock Text="APPEARANCE" Style="{StaticResource SettingLabel}" />
+                                <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
+                                    <Border x:Name="ThemeSystemChip" Style="{StaticResource SettingChip}" Tag="System" MouseLeftButtonUp="Theme_OnClick">
+                                        <TextBlock Text="Match Windows" FontSize="11.5" Foreground="{DynamicResource NotchTextBrush}" />
+                                    </Border>
+                                    <Border x:Name="ThemeLightChip" Style="{StaticResource SettingChip}" Margin="8,0,0,0" Tag="Light" MouseLeftButtonUp="Theme_OnClick">
+                                        <TextBlock Text="Light" FontSize="11.5" Foreground="{DynamicResource NotchTextBrush}" />
+                                    </Border>
+                                    <Border x:Name="ThemeDarkChip" Style="{StaticResource SettingChip}" Margin="8,0,0,0" Tag="Dark" MouseLeftButtonUp="Theme_OnClick">
+                                        <TextBlock Text="Dark" FontSize="11.5" Foreground="{DynamicResource NotchTextBrush}" />
+                                    </Border>
+                                </StackPanel>
+                            </StackPanel>
+                        </Border>
+
+                        <Border Style="{StaticResource SettingCard}">
+                            <StackPanel>
+                                <CheckBox x:Name="StartWithWindowsCheck" Content="Start Metis when I sign in"
+                                          Foreground="{DynamicResource NotchTextBrush}" FontSize="12" />
+                                <CheckBox x:Name="ReduceMotionCheck" Content="Reduce motion" Margin="0,12,0,0"
+                                          Foreground="{DynamicResource NotchTextBrush}" FontSize="12" />
+                                <TextBlock Text="Turns off animations for maximum performance."
+                                           Style="{StaticResource SettingBody}" Margin="26,3,0,0" />
+                                <CheckBox x:Name="SoundsCheck" Content="Play sound effects" Margin="0,12,0,0"
+                                          Foreground="{DynamicResource NotchTextBrush}" FontSize="12" />
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+
+                    <!-- ========================== Companion ========================== -->
+                    <StackPanel x:Name="CompanionPage" Visibility="Collapsed">
+                        <Border Style="{StaticResource SettingCard}">
+                            <StackPanel>
+                                <TextBlock Text="WHEN IT APPEARS" Style="{StaticResource SettingLabel}" />
+                                <TextBlock Style="{StaticResource SettingBody}" Margin="0,8,0,0"
+                                           Text="Metis's companion arrives when there is something to show you and leaves afterwards. Turn this on if you would rather it stayed." />
+                                <CheckBox x:Name="CompanionAlwaysCheck" Margin="0,10,0,0"
+                                          Content="Keep the companion on screen all the time"
+                                          Foreground="{DynamicResource NotchTextBrush}" FontSize="12" />
+                            </StackPanel>
+                        </Border>
+
+                        <Border Style="{StaticResource SettingCard}">
+                            <StackPanel>
+                                <TextBlock Text="COLOUR" Style="{StaticResource SettingLabel}" />
+                                <ItemsControl x:Name="CompanionColours" Margin="0,10,0,0">
+                                    <ItemsControl.ItemsPanel>
+                                        <ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate>
+                                    </ItemsControl.ItemsPanel>
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <Button Style="{StaticResource SwatchButton}" Tag="{Binding Name}"
+                                                    Background="{Binding Fill}" AutomationProperties.Name="{Binding Name}"
+                                                    Click="CompanionColour_OnClick" />
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                                <TextBlock x:Name="CompanionColourName" Style="{StaticResource SettingBody}" Margin="0,8,0,0" />
+                            </StackPanel>
+                        </Border>
+
+                        <Border Style="{StaticResource SettingCard}">
+                            <StackPanel>
+                                <TextBlock Text="SIZE" Style="{StaticResource SettingLabel}" />
+                                <Slider x:Name="CompanionSizeSlider" Minimum="32" Maximum="112"
+                                        TickFrequency="8" IsSnapToTickEnabled="True" Margin="0,10,0,0" />
+                                <TextBlock x:Name="CompanionSizeLabel" Style="{StaticResource SettingBody}" Margin="0,4,0,0" />
+                            </StackPanel>
+                        </Border>
+
+                        <!-- How far the companion sits from the pointer.
+                             The setting existed and was enforced from the moment
+                             it was written; there was simply nowhere to change
+                             it, so everyone had the 25px default forever. -->
+                        <Border Style="{StaticResource SettingCard}">
+                            <StackPanel>
+                                <TextBlock Text="HOW CLOSE IT FOLLOWS" Style="{StaticResource SettingLabel}" />
+                                <Slider x:Name="CursorDistanceSlider" Minimum="0" Maximum="120"
+                                        TickFrequency="5" IsSnapToTickEnabled="True" Margin="0,10,0,0" />
+                                <TextBlock x:Name="CursorDistanceLabel" Style="{StaticResource SettingBody}"
+                                           Margin="0,4,0,0" />
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+
+                    <!-- =========================== Privacy =========================== -->
+                    <StackPanel x:Name="PrivacyPage" Visibility="Collapsed">
+                        <Border Style="{StaticResource SettingCard}">
+                            <StackPanel>
+                                <TextBlock Text="SCREEN ACCESS &amp; VISUAL GUIDANCE" Style="{StaticResource SettingLabel}" />
+                                <CheckBox x:Name="CaptureScreenCheck" Margin="0,10,0,0"
+                                          Content="Let Metis inspect the screen when I ask questions"
+                                          Foreground="{DynamicResource NotchTextBrush}" FontSize="12" />
+                                <CheckBox x:Name="VisualGuidanceCheck" Margin="0,8,0,0"
+                                          Content="Draw helpful arrows and guidance highlights over windows"
+                                          Foreground="{DynamicResource NotchTextBrush}" FontSize="12" />
+                            </StackPanel>
+                        </Border>
+
+                        <Border Style="{StaticResource SettingCard}">
+                            <StackPanel>
+                                <TextBlock Text="WHAT METIS NEVER SEES" Style="{StaticResource SettingLabel}" />
+                                <TextBlock Style="{StaticResource SettingBody}" Margin="0,8,0,0"
+                                           Text="Banking apps and password managers black themselves out already. Name any other window titles here to keep them private." />
+                                <Border Background="{DynamicResource NotchFieldBrush}" BorderBrush="{DynamicResource NotchFieldEdgeBrush}"
+                                        BorderThickness="1" CornerRadius="8" Padding="10,7" Margin="0,10,0,0">
+                                    <TextBox x:Name="ExcludedAppsBox" Background="Transparent" BorderThickness="0" FontSize="12"
+                                             MinHeight="52" AcceptsReturn="True" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto"
+                                             Foreground="{DynamicResource NotchTextBrush}" CaretBrush="{DynamicResource AccentBrush}" />
+                                </Border>
+                                <TextBlock Style="{StaticResource SettingBody}" Margin="0,6,0,0" Text="One program name per line." />
+                            </StackPanel>
+                        </Border>
+
+                        <Border Style="{StaticResource SettingCard}">
+                            <StackPanel>
+                                <TextBlock Text="MEMORY &amp; CONVERSATIONS" Style="{StaticResource SettingLabel}" />
+                                <CheckBox x:Name="MemoryEnabledCheck" Margin="0,10,0,0"
+                                          Content="Remember past tasks and context"
+                                          Foreground="{DynamicResource NotchTextBrush}" FontSize="12" />
+                                <CheckBox x:Name="ChatMemoryCheck" Margin="0,8,0,12"
+                                          Content="Keep conversations between restarts"
+                                          Foreground="{DynamicResource NotchTextBrush}" FontSize="12" />
+                                <StackPanel Orientation="Horizontal">
+                                    <Border Style="{StaticResource SettingChip}" MouseLeftButtonUp="ClearMemory_OnClick">
+                                        <TextBlock Text="Clear Memory" FontSize="11" Foreground="{DynamicResource NotchDangerInkBrush}" />
+                                    </Border>
+                                    <Border Style="{StaticResource SettingChip}" Margin="8,0,0,0" MouseLeftButtonUp="ClearHistory_OnClick">
+                                        <TextBlock Text="Clear Chat History" FontSize="11" Foreground="{DynamicResource NotchDangerInkBrush}" />
+                                    </Border>
+                                </StackPanel>
+                                <TextBlock x:Name="PrivacyStatus" Style="{StaticResource SettingBody}" Margin="0,6,0,0" />
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+
+                    <!-- ============================ Agents ============================ -->
+                    <StackPanel x:Name="AgentsPage" Visibility="Collapsed">
+                        <!-- How many agent messages this plan includes.
+                             Every plan has agents now, so this is an allowance
+                             note rather than a locked banner. Its wording comes
+                             from PlanCatalogue at runtime: the version that was
+                             here spelled out "Plus and Pro plans" and "Switch to
+                             Plus Plan ($12/mo)" in the markup, and went on
+                             saying it for months after Plus stopped existing. -->
+                        <Border x:Name="AgentsAllowanceCard" Style="{StaticResource SettingCard}"
+                                Background="{DynamicResource NotchAccentBedBrush}"
+                                BorderBrush="{DynamicResource AccentBrush}">
+                            <StackPanel>
+                                <TextBlock x:Name="AgentsAllowanceLabel" Style="{StaticResource SettingLabel}"
+                                           Foreground="{DynamicResource AccentBrush}" />
+                                <TextBlock x:Name="AgentsAllowanceBody" Style="{StaticResource SettingBody}"
+                                           Margin="0,6,0,10" />
+                                <Border x:Name="AgentsUpgradeChip" Style="{StaticResource SettingChip}"
+                                        Background="{DynamicResource AccentBrush}"
+                                        BorderThickness="0" MouseLeftButtonUp="UpgradePlan_OnClick">
+                                    <TextBlock x:Name="AgentsUpgradeLabel" FontSize="11"
+                                               FontWeight="SemiBold" Foreground="White" />
+                                </Border>
+                            </StackPanel>
+                        </Border>
+
+                        <StackPanel x:Name="AgentsConfigPanel">
+                            <Border Style="{StaticResource SettingCard}">
+                                <StackPanel>
+                                    <TextBlock Text="BEFORE IT DOES SOMETHING RISKY" Style="{StaticResource SettingLabel}" />
+                                    <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
+                                        <Border x:Name="AskApprovalChip" Style="{StaticResource SettingChip}" Tag="AskApproval" MouseLeftButtonUp="Autonomy_OnClick">
+                                            <TextBlock Text="Ask me first" FontSize="11.5" Foreground="{DynamicResource NotchTextBrush}" />
+                                        </Border>
+                                        <Border x:Name="AutonomousChip" Style="{StaticResource SettingChip}" Margin="8,0,0,0" Tag="Autonomous" MouseLeftButtonUp="Autonomy_OnClick">
+                                            <TextBlock Text="Just get on with it" FontSize="11.5" Foreground="{DynamicResource NotchTextBrush}" />
+                                        </Border>
+                                    </StackPanel>
+                                    <TextBlock x:Name="AutonomyNote" Style="{StaticResource SettingBody}" Margin="0,8,0,0" />
+                                </StackPanel>
+                            </Border>
+
+                            <Border Style="{StaticResource SettingCard}">
+                                <StackPanel>
+                                    <TextBlock Text="HOW LONG ONE MAY RUN" Style="{StaticResource SettingLabel}" />
+                                    <Slider x:Name="AgentTurnsSlider" Minimum="5" Maximum="80"
+                                            TickFrequency="5" IsSnapToTickEnabled="True" Margin="0,10,0,0" />
+                                    <TextBlock x:Name="AgentTurnsLabel" Style="{StaticResource SettingBody}" Margin="0,4,0,0" />
+                                </StackPanel>
+                            </Border>
+
+                            <Border Style="{StaticResource SettingCard}">
+                                <StackPanel>
+                                    <TextBlock Text="NOTIFICATIONS" Style="{StaticResource SettingLabel}" />
+                                    <CheckBox x:Name="AgentNotificationsCheck" Margin="0,10,0,0"
+                                              Content="Show Windows notifications when tasks complete"
+                                              Foreground="{DynamicResource NotchTextBrush}" FontSize="12" />
+                                </StackPanel>
+                            </Border>
+                        </StackPanel>
+                    </StackPanel>
+
+                    <!-- ============================ Skills ============================ -->
+                    <StackPanel x:Name="SkillsPage" Visibility="Collapsed">
+                        <Border Style="{StaticResource SettingCard}">
+                            <StackPanel>
+                                <TextBlock Text="CUSTOM SKILLS &amp; INSTRUCTIONS" Style="{StaticResource SettingLabel}" />
+                                <TextBlock Style="{StaticResource SettingBody}" Margin="0,6,0,10"
+                                           Text="Teach Metis about your custom software, command shortcuts, and project workflows using markdown files." />
+                                <CheckBox x:Name="UserSkillsCheck" Content="Enable custom skill notes"
+                                          Foreground="{DynamicResource NotchTextBrush}" FontSize="12" />
+                                <TextBlock Text="Skills folder directory" Style="{StaticResource SettingBody}" Margin="0,10,0,3" />
+                                <Border Background="{DynamicResource NotchFieldBrush}" BorderBrush="{DynamicResource NotchFieldEdgeBrush}"
+                                        BorderThickness="1" CornerRadius="8" Padding="10,6">
+                                    <TextBox x:Name="SkillsFolderBox" Background="Transparent" BorderThickness="0"
+                                             Foreground="{DynamicResource NotchTextBrush}" />
+                                </Border>
+                                <Border Style="{StaticResource SettingChip}" Margin="0,10,0,0" MouseLeftButtonUp="OpenSkillsFolder_OnClick">
+                                    <TextBlock Text="Open Skills Folder 📁" FontSize="11" Foreground="{DynamicResource NotchTextBrush}" />
+                                </Border>
+                            </StackPanel>
+                        </Border>
+
+                        <Border Style="{StaticResource SettingCard}">
+                            <StackPanel>
+                                <TextBlock Text="SYSTEM AUTOMATION TOOLS" Style="{StaticResource SettingLabel}" />
+                                <TextBlock x:Name="SystemToolsSummary" Style="{StaticResource SettingBody}" Margin="0,6,0,0"
+                                           Text="System terminal execution and advanced machine diagnostics are enabled on your plan." />
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+
+                    <!-- =========================== Updates =========================== -->
+                    <StackPanel x:Name="UpdatesPage" Visibility="Collapsed">
+                        <Border Style="{StaticResource SettingCard}">
+                            <StackPanel>
+                                <TextBlock Text="THIS COPY OF METIS" Style="{StaticResource SettingLabel}" />
+                                <TextBlock x:Name="VersionLabel" FontSize="15" FontWeight="SemiBold" Margin="0,8,0,0"
+                                           Foreground="{DynamicResource NotchTextBrush}" />
+                                <TextBlock x:Name="UpdateStatus" Style="{StaticResource SettingBody}" Margin="0,4,0,0" />
+                                <StackPanel Orientation="Horizontal" Margin="0,12,0,0">
+                                    <Border x:Name="CheckUpdatesChip" Style="{StaticResource SettingChip}" MouseLeftButtonUp="CheckUpdates_OnClick">
+                                        <TextBlock Text="Check for updates" FontSize="11.5" Foreground="{DynamicResource NotchTextBrush}" />
+                                    </Border>
+                                </StackPanel>
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+
+                    <!-- ========================= Diagnostics ========================= -->
+                    <StackPanel x:Name="DiagnosticsPage" Visibility="Collapsed">
+                        <Border Style="{StaticResource SettingCard}">
+                            <StackPanel>
+                                <TextBlock Text="SYSTEM DIAGNOSTICS &amp; ENGINE STATE" Style="{StaticResource SettingLabel}" />
+                                <ItemsControl x:Name="DiagnosticsList" Margin="0,10,0,0">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <Grid Margin="0,0,0,7">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="150" />
+                                                    <ColumnDefinition Width="*" />
+                                                </Grid.ColumnDefinitions>
+                                                <TextBlock Text="{Binding Label}" FontSize="11.5" Foreground="{DynamicResource NotchMutedBrush}" />
+                                                <TextBlock Grid.Column="1" Text="{Binding Value}" FontSize="11.5" TextWrapping="Wrap"
+                                                           Foreground="{DynamicResource NotchTextBrush}" />
+                                            </Grid>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                                <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
+                                    <Border Style="{StaticResource SettingChip}" MouseLeftButtonUp="RefreshDiagnostics_OnClick">
+                                        <TextBlock Text="Refresh" FontSize="11.5" Foreground="{DynamicResource NotchTextBrush}" />
+                                    </Border>
+                                    <Border Style="{StaticResource SettingChip}" Margin="8,0,0,0" MouseLeftButtonUp="OpenLogs_OnClick">
+                                        <TextBlock Text="Open log file" FontSize="11.5" Foreground="{DynamicResource NotchTextBrush}" />
+                                    </Border>
+                                </StackPanel>
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+                </StackPanel>
+            </ScrollViewer>
+
+            <!-- Saving Row -->
+            <Grid x:Name="SaveRow" Margin="0,10,0,0" Visibility="Collapsed">
+                <TextBlock x:Name="SaveStatus" VerticalAlignment="Center" FontSize="11"
+                           Foreground="{DynamicResource NotchFaintBrush}" />
+                <Border x:Name="SaveChip" Style="{StaticResource SettingChip}"
+                        HorizontalAlignment="Right"
+                        Background="{DynamicResource AccentBrush}" BorderThickness="0"
+                        MouseLeftButtonUp="Save_OnClick">
+                    <TextBlock Text="Save Changes" FontSize="11.5" FontWeight="SemiBold" Foreground="White" />
+                </Border>
+            </Grid>
+        </StackPanel>
+    </Border>
+</UserControl>

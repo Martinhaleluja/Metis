@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/Martinhaleluja/Metis/security/advisories/new
+    about: Report privately. Please do not open a public issue for a security problem.
+  - name: Privacy question
+    url: https://github.com/Martinhaleluja/Metis/blob/main/PRIVACY.md
+    about: What Metis captures, where it goes, and how to delete it.

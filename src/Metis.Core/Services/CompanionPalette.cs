@@ -5,7 +5,19 @@ namespace Metis.Core.Services;
 /// is a lighter, more saturated relative of the fill rather than a second hue,
 /// so the companion reads as one lit object instead of two stacked shapes.
 /// </summary>
-public sealed record CompanionColorOption(string Name, string Fill, string Glow);
+public sealed record CompanionColorOption(string Name, string Fill, string Glow)
+{
+    /// <summary>
+    /// The colour's name, for anyone listening rather than looking.
+    ///
+    /// An ItemsControl hands its data item to UI Automation as the name of each
+    /// generated container, so without this a screen reader read the colour
+    /// picker out as "CompanionColorOption { Name = Sky, Fill = #8ED8FF, Glow =
+    /// #56CCFF }", ten times over, on a row of controls whose entire content is
+    /// a colour and whose name is therefore the only thing telling them apart.
+    /// </summary>
+    public override string ToString() => Name;
+}
 
 /// <summary>
 /// The colours a user can give their companion. Defined once here so the Setup
