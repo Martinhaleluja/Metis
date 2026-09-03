@@ -1,4 +1,4 @@
-﻿<Window x:Class="Metis.App.Windows.NotchWindow"
+<Window x:Class="Metis.App.Windows.NotchWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:windows="clr-namespace:Metis.App.Windows"
@@ -107,9 +107,9 @@
              no window of its own — this is it. -->
         <Border x:Name="NotchBody"
                 Background="{DynamicResource NotchBodyBrush}"
-                BorderBrush="{DynamicResource NotchEdgeBrush}"
-                BorderThickness="1"
-                CornerRadius="0,0,18,18"
+                BorderBrush="{DynamicResource NotchGlassBorderBrush}"
+                BorderThickness="1.2"
+                CornerRadius="0,0,24,24"
                 HorizontalAlignment="Center"
                 VerticalAlignment="Top"
                 Width="104" Height="34"
@@ -124,7 +124,7 @@
                 <TranslateTransform x:Name="NotchDrop" Y="-22" />
             </Border.RenderTransform>
             <Border.Effect>
-                <DropShadowEffect Color="{DynamicResource NotchShadow}" BlurRadius="16" ShadowDepth="3" Opacity="0.42" />
+                <DropShadowEffect Color="{DynamicResource NotchShadow}" BlurRadius="22" ShadowDepth="4" Opacity="0.45" />
             </Border.Effect>
 
             <!-- Clipped, because the body's height is animated and the chat
@@ -132,15 +132,76 @@
                  motion. Without this the panel spills out of the notch and
                  hangs unattached over the screen while it grows. -->
             <Grid ClipToBounds="True">
+                <!-- Living Aurora Gradient Mesh (Animated Green, Blue, Pink, Cyan, Orange gradients) -->
+                <Grid x:Name="AuroraMesh" IsHitTestVisible="False" ClipToBounds="True" Opacity="0.32">
+                    <!-- Green / Emerald Orb -->
+                    <Ellipse x:Name="AuroraOrb1" Width="180" Height="140" Fill="{DynamicResource AuroraGreenBrush}"
+                             HorizontalAlignment="Left" VerticalAlignment="Top" Margin="-40,-40,0,0">
+                        <Ellipse.RenderTransform>
+                            <TranslateTransform x:Name="AuroraOrb1Transform" />
+                        </Ellipse.RenderTransform>
+                        <Ellipse.Effect>
+                            <BlurEffect Radius="55" />
+                        </Ellipse.Effect>
+                    </Ellipse>
+
+                    <!-- Cyan / Sky Blue Orb -->
+                    <Ellipse x:Name="AuroraOrb2" Width="220" Height="150" Fill="{DynamicResource AuroraCyanBrush}"
+                             HorizontalAlignment="Center" VerticalAlignment="Top" Margin="0,-50,0,0">
+                        <Ellipse.RenderTransform>
+                            <TranslateTransform x:Name="AuroraOrb2Transform" />
+                        </Ellipse.RenderTransform>
+                        <Ellipse.Effect>
+                            <BlurEffect Radius="60" />
+                        </Ellipse.Effect>
+                    </Ellipse>
+
+                    <!-- Electric Blue Orb -->
+                    <Ellipse x:Name="AuroraOrb3" Width="200" Height="160" Fill="{DynamicResource AuroraBlueBrush}"
+                             HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,-30,-30,0">
+                        <Ellipse.RenderTransform>
+                            <TranslateTransform x:Name="AuroraOrb3Transform" />
+                        </Ellipse.RenderTransform>
+                        <Ellipse.Effect>
+                            <BlurEffect Radius="65" />
+                        </Ellipse.Effect>
+                    </Ellipse>
+
+                    <!-- Neon Pink / Magenta Orb -->
+                    <Ellipse x:Name="AuroraOrb4" Width="190" Height="150" Fill="{DynamicResource AuroraPinkBrush}"
+                             HorizontalAlignment="Left" VerticalAlignment="Bottom" Margin="-20,0,0,-40">
+                        <Ellipse.RenderTransform>
+                            <TranslateTransform x:Name="AuroraOrb4Transform" />
+                        </Ellipse.RenderTransform>
+                        <Ellipse.Effect>
+                            <BlurEffect Radius="55" />
+                        </Ellipse.Effect>
+                    </Ellipse>
+
+                    <!-- Sunset Orange Orb -->
+                    <Ellipse x:Name="AuroraOrb5" Width="190" Height="150" Fill="{DynamicResource AuroraOrangeBrush}"
+                             HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0,0,-30,-40">
+                        <Ellipse.RenderTransform>
+                            <TranslateTransform x:Name="AuroraOrb5Transform" />
+                        </Ellipse.RenderTransform>
+                        <Ellipse.Effect>
+                            <BlurEffect Radius="60" />
+                        </Ellipse.Effect>
+                    </Ellipse>
+                </Grid>
+
+                <!-- Glass Specular Highlight Sheen across top edge -->
+                <Border IsHitTestVisible="False" Background="{DynamicResource NotchGlassSheenBrush}" Height="20" VerticalAlignment="Top" />
+
                 <!-- Everything that belongs to the resting notch is pinned to
                      the top strip, so it does not drift to the middle of the
                      panel when the body grows into the chat. -->
                 <Grid x:Name="PillLayer" Height="34" VerticalAlignment="Top">
                     <!-- Tucked state: a grabber bar, so the notch reads as
                          something you can pull rather than a stray black shape. -->
-                    <Border x:Name="Grabber" Width="30" Height="3" CornerRadius="2"
+                    <Border x:Name="Grabber" Width="34" Height="3.5" CornerRadius="2"
                             Background="{DynamicResource NotchGrabberBrush}" HorizontalAlignment="Center"
-                            VerticalAlignment="Bottom" Margin="0,0,0,7" />
+                            VerticalAlignment="Bottom" Margin="0,0,0,6" Opacity="0.85" />
 
                     <Grid x:Name="NotchContent" Margin="14,0" Opacity="0">
                         <StackPanel Orientation="Horizontal" VerticalAlignment="Center">

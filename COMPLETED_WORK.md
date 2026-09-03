@@ -134,15 +134,57 @@ persisted to `settings.json`, "Saved at 16:12." shown, process healthy.
 
 **Tests:** 1368 passing (1247 `Metis.Tests` + 121 `Metis.ApiTests`).
 
+### 6. Notch glass — `c708f55`
+
+Real Windows acrylic, so the desktop shows through the notch blurred instead of
+sitting behind a flat panel.
+
+- Uses `SetWindowCompositionAttribute`, not the documented DWM backdrops: the
+  notch is a layered window (`AllowsTransparency` is what lets it be a rounded
+  pill with click-through space beside it) and DWM backdrops do not apply to
+  those at all. The call is undocumented, so it is defensive — a Windows that
+  declines leaves the notch exactly as it was, and the log says which happened.
+- Acrylic paints the whole window rectangle, so the window is clipped to the
+  body's own rounded bounds and re-shaped on every size change of the body,
+  not just at the ends of animations.
+- **This only became possible because of step 2.** While the window was 560pt
+  wide around a 104pt pill, blurring it would have painted a glass bar across
+  the top of the screen.
+
+**Verified by running it:** "Notch glass: acrylic enabled" in the log, resting
+pill still 160x80, settings still opening to 830x711 with every section
+reachable — the effect changed how it looks and nothing about how it behaves.
+
+### 7. Website back to modern — `954a044`, `31d9e76`
+
+- Deleted 183 lines of Windows 95 / XP / Media Player chrome CSS, replaced by
+  four classes: `card`, `card-raised`, `glass`, `panel-title` (plus `btn`).
+- **The doodles stay**, as you asked. Nothing needed recolouring: every glyph
+  draws in `currentColor` under one `text-ink` container, so moving the ink
+  token moved all forty-five at once — exactly what the ~116 hard-coded hex
+  literals elsewhere made impossible, and why those are now gone.
+- `Nav` and `Footer` rewritten rather than restyled; both were entirely inline
+  gradients with no class to hook. The nav is now floating glass using the same
+  material as the notch, so the site and the app read as one thing.
+- The three video players collapsed into one — identical in behaviour, differing
+  only in which era's frame they wore.
+- Filename-style titles (`questions.txt`, `free_plan.exe`, `compare.xls`) became
+  real headings.
+- Two accessibility fixes fell out: the fake window buttons were announced as
+  loose punctuation, and the two that were really links home were announced as a
+  multiplication sign.
+- The "Manage Billing" link pointed at `sandbox.polar.sh` — Polar's *test*
+  environment. A paying customer following it would have seen no purchases.
+
+**Verified in the browser:** no console errors, every section renders, doodles
+show through the new palette.
+
 ---
 
 ## Not done, and why
 
 ### Blocked on you
 
-- **Steps 6 and 7 — notch glass and the website's modern redesign.** You chose
-  to authorise the Figma connector first, so these are waiting on that. Nothing
-  else depends on them.
 - **The gateway's `GOOGLE_API_KEY`.** If the new boot check reports it refused,
   that is a value in the Render dashboard and cannot be changed from here.
   Deploy this branch and read the startup log — it will name which of the four
@@ -175,11 +217,10 @@ persisted to `settings.json`, "Saved at 16:12." shown, process healthy.
    `GOOGLE_API_KEY` verdict. This is the single highest-value action left —
    report 11 (the AI refusing everything) is very likely a bad key, and the app
    changes only make the reason *visible*; they cannot fix the key itself.
-2. **Once Figma is authorised**, do Step 6 (notch acrylic — note it depends on
-   the window now hugging its content, which step 2 delivered) and Step 7
-   (website: delete `index.css:160-342`, rewrite `Nav.tsx` and `Footer.tsx`,
-   recolour `RetroBackground.tsx`'s 45 doodles rather than removing them, and
-   replace the ~116 raw hex literals with the tokens that already exist).
+2. **Look at the redesign and say what to change.** The Figma board
+   (`Metis — Modern UI`) holds the palette, the notch's two states and the
+   website's nav and hero; the code matches it. Both are a starting point, not
+   a finished opinion.
 3. **Test the web handoff end to end** — it is written and builds, but has not
    been exercised against a live gateway: sign in on the app, click "Manage on
    Web", confirm the browser lands as the same account.
