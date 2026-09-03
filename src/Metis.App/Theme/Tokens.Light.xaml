@@ -1,4 +1,4 @@
-<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+﻿<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
     <!--
         Metis light tokens. A low-contrast system in the macOS idiom: one white
@@ -182,6 +182,14 @@
     <Color x:Key="NotchGlassSpecularBottom">#26000000</Color>
     <Color x:Key="NotchGlassBackdrop">#B3F2F2F7</Color>
     <Color x:Key="NotchGlassSheen">#33FFFFFF</Color>
+
+    <!-- The brushes for the four colours above. Every colour token needs one:
+         a Color on its own cannot be bound to a property, so a themed value
+         with no brush is a value nothing can use. ThemeTokenTests enforces
+         this, which is how the omission was caught. -->
+    <SolidColorBrush x:Key="NotchGlassSpecularTopBrush" Color="{StaticResource NotchGlassSpecularTop}" />
+    <SolidColorBrush x:Key="NotchGlassSpecularBottomBrush" Color="{StaticResource NotchGlassSpecularBottom}" />
+    <SolidColorBrush x:Key="NotchGlassBackdropBrush" Color="{StaticResource NotchGlassBackdrop}" />
 
     <LinearGradientBrush x:Key="NotchGlassBorderBrush" StartPoint="0,0" EndPoint="0,1">
         <GradientStop Offset="0" Color="#66FFFFFF" />
