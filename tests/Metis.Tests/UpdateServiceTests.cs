@@ -27,6 +27,111 @@ public sealed class UpdateServiceTests
             Task.FromResult(handler(request));
     }
 
+    // The digest below is the one GitHub actually published for the live
+    // v3.15.0 asset, so these pin the real shape rather than an invented one.
+    private const string LiveRelease = """
+    {
+        "tag_name": "v3.15.0",
+        "body": "What's new in v3.15.0. No checksum was pasted into this one.",
+        "assets": [
+            {
+                "name": "Metis-Setup-3.15.0-win-x64.exe",
+                "browser_download_url": "https://github.com/Martinhaleluja/Metis/releases/download/v3.15.0/Metis-Setup-3.15.0-win-x64.exe",
+                "digest": "sha256:17542086b54edfd0bc350baa226d761265047a51a822da7fdea79d5508745d64"
+            }
+        ]
+    }
+    """;
+
+    [Fact]
+    public void FindAssetDigest_reads_the_sha256_github_published()
+    {
+        using var doc = JsonDocument.Parse(LiveRelease);
+
+        Assert.Equal(
+            "17542086b54edfd0bc350baa226d761265047a51a822da7fdea79d5508745d64",
+            UpdateService.FindAssetDigest(doc.RootElement));
+    }
+
+    [Fact]
+    public void A_release_with_no_checksum_in_its_notes_still_gets_one()
+    {
+        // v3.15.0 shipped exactly like this: an installer, and release notes
+        // nobody pasted a hash into. Before the digest fallback that meant the
+        // download ran unverified.
+        using var doc = JsonDocument.Parse(LiveRelease);
+        var notes = doc.RootElement.GetProperty("body").GetString();
+
+        Assert.Null(UpdateService.FindPublishedChecksum(notes));
+        Assert.NotNull(UpdateService.FindAssetDigest(doc.RootElement));
+    }
+
+    [Fact]
+    public void A_digest_in_another_algorithm_is_not_offered_as_a_sha256()
+    {
+        // Comparing a SHA-512 against a SHA-256 would fail every download
+        // rather than skipping the check, which is worse than having none.
+        var json = """
+        {
+            "assets": [
+                {
+                    "name": "Metis-Setup-9.0.0-win-x64.exe",
+                    "browser_download_url": "https://github.com/Martinhaleluja/Metis/releases/download/v9.0.0/Metis-Setup-9.0.0-win-x64.exe",
+                    "digest": "sha512:17542086b54edfd0bc350baa226d761265047a51a822da7fdea79d5508745d64"
+                }
+            ]
+        }
+        """;
+        using var doc = JsonDocument.Parse(json);
+
+        Assert.Null(UpdateService.FindAssetDigest(doc.RootElement));
+    }
+
+    [Fact]
+    public void A_digest_on_an_asset_served_elsewhere_is_ignored()
+    {
+        // The host check guards the download; the digest must not be read off
+        // an asset the downloader would have refused to fetch.
+        var json = """
+        {
+            "assets": [
+                {
+                    "name": "Metis-Setup-9.0.0-win-x64.exe",
+                    "browser_download_url": "https://example.com/Metis-Setup-9.0.0-win-x64.exe",
+                    "digest": "sha256:17542086b54edfd0bc350baa226d761265047a51a822da7fdea79d5508745d64"
+                }
+            ]
+        }
+        """;
+        using var doc = JsonDocument.Parse(json);
+
+        Assert.Null(UpdateService.FindInstaller(doc.RootElement));
+        Assert.Null(UpdateService.FindAssetDigest(doc.RootElement));
+    }
+
+    [Fact]
+    public void A_handwritten_checksum_wins_over_the_published_digest()
+    {
+        var json = """
+        {
+            "tag_name": "v9.0.0",
+            "body": "SHA-256: aaaabbbbccccddddeeeeffff00001111222233334444555566667777888899990",
+            "assets": [
+                {
+                    "name": "Metis-Setup-9.0.0-win-x64.exe",
+                    "browser_download_url": "https://github.com/Martinhaleluja/Metis/releases/download/v9.0.0/Metis-Setup-9.0.0-win-x64.exe",
+                    "digest": "sha256:17542086b54edfd0bc350baa226d761265047a51a822da7fdea79d5508745d64"
+                }
+            ]
+        }
+        """;
+        using var doc = JsonDocument.Parse(json);
+        var notes = doc.RootElement.GetProperty("body").GetString();
+
+        Assert.NotNull(UpdateService.FindPublishedChecksum(notes));
+        Assert.NotEqual(UpdateService.FindPublishedChecksum(notes), UpdateService.FindAssetDigest(doc.RootElement));
+    }
+
     [Fact]
     public void FindInstaller_accepts_valid_github_setup_executable()
     {

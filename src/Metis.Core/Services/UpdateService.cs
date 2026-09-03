@@ -122,7 +122,9 @@ public sealed class UpdateService(IDiagnosticLog log, HttpClient? httpClient = n
                     AppVersion.Parse(tag)?.ToString(3),
                     installer,
                     notes,
-                    Sha256: FindPublishedChecksum(notes));
+                    // The release note first, because a person wrote it down
+                    // deliberately. GitHub's own digest when they did not.
+                    Sha256: FindPublishedChecksum(notes) ?? FindAssetDigest(root));
             }
             finally
             {
@@ -183,6 +185,49 @@ public sealed class UpdateService(IDiagnosticLog log, HttpClient? httpClient = n
     /// anything served from somewhere other than GitHub.
     /// </summary>
     public static Uri? FindInstaller(JsonElement release)
+        => MatchInstallerAsset(release)?.Url;
+
+    /// <summary>
+    /// The SHA-256 GitHub itself computed for the installer asset, or null.
+    ///
+    /// This exists because the checksum in the release notes is typed by a
+    /// human and v3.15.0 shipped without one, which quietly turned every
+    /// update into an unverified download. GitHub publishes a digest on the
+    /// asset in the form <c>sha256:&lt;hex&gt;</c>, and it is computed on upload
+    /// from the bytes it will serve, so it cannot disagree with them.
+    ///
+    /// It is a fallback rather than the primary source on purpose. Both come
+    /// from the same response over the same TLS connection, so neither defends
+    /// against GitHub itself; the note in the release body is the one a person
+    /// writes down after building, and is worth preferring for that reason
+    /// alone. This is what stops a forgotten paste from disabling the check.
+    /// </summary>
+    public static string? FindAssetDigest(JsonElement release)
+    {
+        var digest = MatchInstallerAsset(release)?.Digest;
+        if (digest is null)
+        {
+            return null;
+        }
+
+        const string prefix = "sha256:";
+        if (!digest.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+        {
+            // Some other algorithm, or a shape this build does not know. A
+            // checksum that cannot be compared is worse than none, because it
+            // would fail every download rather than skipping the comparison.
+            return null;
+        }
+
+        var hex = digest[prefix.Length..];
+        return hex.Length == 64 && hex.All(Uri.IsHexDigit) ? hex.ToLowerInvariant() : null;
+    }
+
+    /// <summary>
+    /// The one place the installer asset is recognised, so the URL and the
+    /// digest can never be read off two different files.
+    /// </summary>
+    private static (Uri Url, string? Digest)? MatchInstallerAsset(JsonElement release)
     {
         if (!release.TryGetProperty("assets", out var assets) || assets.ValueKind != JsonValueKind.Array)
         {
@@ -212,7 +257,11 @@ public sealed class UpdateService(IDiagnosticLog log, HttpClient? httpClient = n
                 continue;
             }
 
-            return uri;
+            var digest = asset.TryGetProperty("digest", out var d) && d.ValueKind == JsonValueKind.String
+                ? d.GetString()
+                : null;
+
+            return (uri, digest);
         }
 
         return null;
