@@ -165,8 +165,13 @@ public sealed class PolarWebhookVerifier(string? secret) : IBillingWebhookVerifi
         }
 
         var id = headers["webhook-id"].ToString();
+        if (string.IsNullOrEmpty(id)) id = headers["svix-id"].ToString();
+
         var timestamp = headers["webhook-timestamp"].ToString();
+        if (string.IsNullOrEmpty(timestamp)) timestamp = headers["svix-timestamp"].ToString();
+
         var signatures = headers["webhook-signature"].ToString();
+        if (string.IsNullOrEmpty(signatures)) signatures = headers["svix-signature"].ToString();
 
         if (id.Length == 0 || timestamp.Length == 0 || signatures.Length == 0)
         {
@@ -200,14 +205,13 @@ public sealed class PolarWebhookVerifier(string? secret) : IBillingWebhookVerifi
             key = Encoding.UTF8.GetBytes(material);
         }
 
-        var signed = new byte[0];
         var message = new List<byte>(rawBody.Length + id.Length + timestamp.Length + 2);
         message.AddRange(Encoding.UTF8.GetBytes(id));
         message.Add((byte)'.');
         message.AddRange(Encoding.UTF8.GetBytes(timestamp));
         message.Add((byte)'.');
         message.AddRange(rawBody.ToArray());
-        signed = WebhookCrypto.Hmac(key, message.ToArray());
+        var signed = WebhookCrypto.Hmac(key, message.ToArray());
 
         foreach (var candidate in signatures.Split(' ', StringSplitOptions.RemoveEmptyEntries))
         {
@@ -217,9 +221,18 @@ public sealed class PolarWebhookVerifier(string? secret) : IBillingWebhookVerifi
                 continue;
             }
 
+            var sigPart = candidate[(comma + 1)..];
+            var sigPadded = (sigPart.Length % 4) switch
+            {
+                2 => sigPart + "==",
+                3 => sigPart + "=",
+                _ => sigPart
+            };
+
             try
             {
-                if (WebhookCrypto.Equal(signed, Convert.FromBase64String(candidate[(comma + 1)..])))
+                var sigBytes = Convert.FromBase64String(sigPadded.Replace('-', '+').Replace('_', '/'));
+                if (WebhookCrypto.Equal(signed, sigBytes))
                 {
                     reason = string.Empty;
                     return true;
@@ -227,12 +240,11 @@ public sealed class PolarWebhookVerifier(string? secret) : IBillingWebhookVerifi
             }
             catch (FormatException)
             {
-                // A malformed candidate is simply not a match. Several may be
-                // sent during a secret rotation and only one needs to verify.
+                // A malformed candidate is simply not a match.
             }
         }
 
-        reason = "No signature matched.";
+        reason = $"No signature matched. Computed: {Convert.ToBase64String(signed)}. Header had: {signatures}";
         return false;
     }
 
