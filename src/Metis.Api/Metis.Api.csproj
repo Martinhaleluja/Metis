@@ -14,7 +14,7 @@
          copy of "who may do what" written in SQL or TypeScript would drift from
          the client's copy, and the half that drifts is the one that grants
          access it should not. -->
-    <ProjectReference Include="..\Metis.Core\Metis.Core.csproj" />
+    <ProjectReference Include="../Metis.Core/Metis.Core.csproj" />
   </ItemGroup>
 
 </Project>
