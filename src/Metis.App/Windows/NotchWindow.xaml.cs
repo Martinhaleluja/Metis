@@ -1920,7 +1920,15 @@ public partial class NotchWindow : Window
             MakeToolWindow();
             PositionOverTopEdge();
             PrimeTraceTools();
+            EnableGlass();
         };
+
+        // The glass has to keep the notch's shape, and the notch changes shape
+        // constantly: it grows into a chat, a settings page, a toolbar, and
+        // shrinks back to a pill. Following the body's own size change is the
+        // only way the effect and the panel it sits behind stay the same shape
+        // through an animation rather than only at the ends of one.
+        NotchBody.SizeChanged += (_, _) => ShapeGlass();
 
         Closing += (_, args) =>
         {
@@ -2322,6 +2330,68 @@ public partial class NotchWindow : Window
         Width = NotchGeometry.WindowWidth(_bodyWidthTarget, primary);
         Left = origin.X + ((primary - Width) / 2);
         Top = origin.Y;
+    }
+
+    /// <summary>Whether the platform accepted the acrylic effect.</summary>
+    private bool _glassEnabled;
+
+    /// <summary>
+    /// Asks Windows for real acrylic behind the notch.
+    ///
+    /// The tint is the theme's own notch colour at partial alpha, so light and
+    /// dark keep their own character rather than both becoming the same grey
+    /// pane. If the platform declines -- an older Windows, or one where the
+    /// undocumented entry point has moved -- the ordinary opaque brush stays
+    /// exactly as it was and the window keeps its full rectangle, because a
+    /// notch clipped to a shape it is not drawing glass in would cut off its
+    /// own drop shadow.
+    /// </summary>
+    private void EnableGlass()
+    {
+        var tint = TryFindResource("NotchBody") is MediaColor themed
+            ? themed
+            : MediaColor.FromRgb(0x0A, 0x0A, 0x0C);
+
+        // Alpha is the whole readable/glassy trade-off. Much below this the
+        // wallpaper starts to win against the text on top; much above it there
+        // is no point having asked for glass.
+        _glassEnabled = NotchAcrylic.Enable(
+            this, MediaColor.FromArgb(0xB0, tint.R, tint.G, tint.B));
+
+        if (_glassEnabled)
+        {
+            NotchBody.Background = new SolidColorBrush(
+                MediaColor.FromArgb(0x14, tint.R, tint.G, tint.B));
+            ShapeGlass();
+        }
+        else
+        {
+            NotchAcrylic.ClearShape(this);
+        }
+
+        DebugLog?.Invoke(_glassEnabled
+            ? "Notch glass: acrylic enabled."
+            : "Notch glass: the platform declined acrylic; using the opaque notch.");
+    }
+
+    /// <summary>
+    /// Clips the window, and so the acrylic in it, to the body's rounded bounds.
+    /// </summary>
+    private void ShapeGlass()
+    {
+        if (!_glassEnabled || NotchBody.ActualWidth <= 0)
+        {
+            return;
+        }
+
+        var origin = NotchBody.TranslatePoint(new System.Windows.Point(0, 0), this);
+
+        // The body's own radius, so the glass corners match the panel's rather
+        // than being a rounded rectangle of some other roundness behind it.
+        NotchAcrylic.ShapeTo(
+            this,
+            new Rect(origin.X, origin.Y, NotchBody.ActualWidth, NotchBody.ActualHeight),
+            NotchBody.CornerRadius.BottomLeft);
     }
 
     private void MakeToolWindow()
