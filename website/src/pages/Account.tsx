@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   changePlan,
@@ -12,6 +12,7 @@ import {
   useAccountData,
 } from "../lib/account";
 import { getSupabase, useAuth } from "../lib/auth";
+import { startCheckout, type PaidPlanId } from "../lib/billing";
 import { planById, plans, priceLabel, type PlanId } from "../lib/plans";
 
 const AVATARS = ["🦊", "🦉", "⚡", "🔮", "🚀", "🤖", "🎨", "🐼", "👑"];
@@ -38,6 +39,8 @@ export function Account() {
   const [isEditingName, setIsEditingName] = useState(false);
   const [showAvatarPicker, setShowAvatarPicker] = useState(false);
   const [switchingPlan, setSwitchingPlan] = useState(false);
+  const [startingCheckout, setStartingCheckout] = useState<PaidPlanId | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (auth.status === "signed-out") {
@@ -59,14 +62,26 @@ export function Account() {
     );
   }
 
-  // The account row is the only authority on which plan this is. There is no
-  // local override: a plan the page believes in and the server does not is how
-  // the website ended up showing Pro to an account the gateway was refusing.
+  const isStaff =
+    data?.status?.role === "developer" ||
+    data?.status?.role === "founder" ||
+    data?.status?.role === "staff";
+
+  // The account row is the only authority on which plan this is.
   const currentPlanId: PlanId = (data?.status?.plan as PlanId | undefined) ?? "free";
   const plan = planById[currentPlanId] ?? planById.free;
   const limits = data?.limits;
   const usage = data?.usage;
-  const billingIsLive = data?.billingIsLive ?? false;
+
+  async function handleStartCheckout(planId: PaidPlanId) {
+    setStartingCheckout(planId);
+    setPlanError(null);
+    const result = await startCheckout(planId);
+    if (!result.ok) {
+      setPlanError(result.error);
+      setStartingCheckout(null);
+    }
+  }
 
   async function handleSelectPlan(targetPlan: PlanId) {
     if (switchingPlan || !session || targetPlan === currentPlanId) return;
@@ -79,10 +94,6 @@ export function Account() {
       setPlanError(result.error ?? "The plan could not be changed.");
     }
 
-    // Re-read either way. On success it confirms the change came from the
-    // server rather than from this page believing itself; on failure it puts
-    // the cards back on the plan that is actually in force, which the message
-    // above them now explains instead of leaving it to be guessed at.
     await reload();
     setSwitchingPlan(false);
   }
@@ -102,6 +113,44 @@ export function Account() {
     if (!result.ok) setProfileError(result.error ?? "Your picture could not be saved.");
   }
 
+  function handleFileUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 8 * 1024 * 1024) {
+      setProfileError("Image must be under 8 MB.");
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement("canvas");
+        const maxDim = 256;
+        let width = img.width;
+        let height = img.height;
+        if (width > height) {
+          if (width > maxDim) {
+            height = Math.round((height * maxDim) / width);
+            width = maxDim;
+          }
+        } else {
+          if (height > maxDim) {
+            width = Math.round((width * maxDim) / height);
+            height = maxDim;
+          }
+        }
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext("2d");
+        ctx?.drawImage(img, 0, 0, width, height);
+        const dataUrl = canvas.toDataURL("image/jpeg", 0.85);
+        void handleSelectAvatar(dataUrl);
+      };
+      img.src = event.target?.result as string;
+    };
+    reader.readAsDataURL(file);
+  }
+
   return (
     <Frame title="Your Account">
       {/* --------------------------- User Profile Card --------------------------- */}
@@ -112,25 +161,51 @@ export function Account() {
               <div className="relative">
                 <button
                   type="button"
-                  title="Click to change avatar"
+                  title="Click to change avatar or upload photo"
                   onClick={() => setShowAvatarPicker((prev) => !prev)}
-                  className="flex h-16 w-16 items-center justify-center rounded-full border-2 border-[#000080] bg-[#e0e0ff] text-[32px] shadow-sm hover:scale-105 transition-transform"
+                  className="flex h-16 w-16 items-center justify-center rounded-full border-2 border-[#000080] bg-[#e0e0ff] text-[32px] shadow-sm hover:scale-105 transition-transform overflow-hidden"
                 >
-                  {avatar}
+                  {avatar.startsWith("data:") || avatar.startsWith("http") ? (
+                    <img src={avatar} alt="Profile" className="h-full w-full object-cover" />
+                  ) : (
+                    avatar
+                  )}
                 </button>
 
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*"
+                  onChange={handleFileUpload}
+                  className="hidden"
+                />
+
                 {showAvatarPicker && (
-                  <div className="absolute top-20 left-0 z-50 flex flex-wrap gap-2 rounded border border-[#808080] bg-[#c0c0c0] p-2.5 shadow-lg max-w-[200px]">
-                    {AVATARS.map((av) => (
-                      <button
-                        key={av}
-                        type="button"
-                        onClick={() => handleSelectAvatar(av)}
-                        className="h-8 w-8 rounded text-[18px] hover:bg-white flex items-center justify-center"
-                      >
-                        {av}
-                      </button>
-                    ))}
+                  <div className="absolute top-20 left-0 z-50 flex flex-col gap-2 rounded border border-[#808080] bg-[#c0c0c0] p-2.5 shadow-lg w-[220px]">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowAvatarPicker(false);
+                        fileInputRef.current?.click();
+                      }}
+                      className="win95-button press w-full py-1.5 text-[11.5px] font-bold text-center flex items-center justify-center gap-1.5"
+                    >
+                      <span>📁</span> Upload Photo...
+                    </button>
+                    <div className="border-t border-[#808080] my-1" />
+                    <span className="text-[10px] text-[#444] font-bold">Or pick an icon:</span>
+                    <div className="flex flex-wrap gap-1.5">
+                      {AVATARS.map((av) => (
+                        <button
+                          key={av}
+                          type="button"
+                          onClick={() => handleSelectAvatar(av)}
+                          className="h-7 w-7 rounded text-[16px] hover:bg-white flex items-center justify-center border border-transparent hover:border-[#808080]"
+                        >
+                          {av}
+                        </button>
+                      ))}
+                    </div>
                   </div>
                 )}
               </div>
@@ -229,16 +304,29 @@ export function Account() {
            plan is described, and this reads it. */}
       <div className="mb-6">
         <Window title="Your plan">
-          {/* Switching here is a staff-only shortcut and the copy has to say
-              so. It changes what the account may actually do without anything
-              being paid, so `set_my_test_plan` refuses everybody else — and a
-              panel that invites a customer to "choose a plan" and then refuses
-              them reads as a broken page rather than as a rule. */}
-          <p className="mb-4 text-[12px] leading-relaxed text-[#444]">
-            {billingIsLive
-              ? "Switching here changes the plan without paying for it, so it is limited to staff accounts. Everyone else changes plan through checkout."
-              : "Nothing is being charged yet. Switching here changes what this account may actually do, so each plan can be seen from the inside — which is why it is limited to staff accounts while the plans are being tested."}
-          </p>
+          {data?.subscription && (
+            <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded border border-[#000080] bg-[#e8f0fe] p-3 text-[12px]">
+              <div>
+                <span className="font-bold text-[#000080]">
+                  Active Subscription: Metis {plan.name}
+                </span>
+                <span className="ml-2 text-[#444]">
+                  ({data.subscription.status}, {data.subscription.cancel_at_period_end ? "ends" : "renews"}{" "}
+                  {data.subscription.current_period_end
+                    ? new Date(data.subscription.current_period_end).toLocaleDateString()
+                    : "monthly"})
+                </span>
+              </div>
+              <a
+                href="https://sandbox.polar.sh/purchases"
+                target="_blank"
+                rel="noreferrer"
+                className="win95-button press px-3 py-1 text-[11px] font-bold text-black"
+              >
+                Manage Billing &amp; Invoices ↗
+              </a>
+            </div>
+          )}
 
           {planError && (
             <p className="mb-3 border border-[#c62828] bg-[#ffebee] px-3 py-2 text-[11.5px] text-[#b71c1c]">
@@ -249,6 +337,7 @@ export function Account() {
           <div className="grid items-stretch gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {plans.map((option) => {
               const isCurrent = option.id === currentPlanId;
+              const isCheckingOut = startingCheckout === option.id;
               return (
                 <div
                   key={option.id}
@@ -289,24 +378,60 @@ export function Account() {
                     </ul>
                   </div>
 
-                  <button
-                    type="button"
-                    disabled={isCurrent || switchingPlan}
-                    onClick={() => void handleSelectPlan(option.id)}
-                    className={`win95-button press mt-4 w-full py-1.5 text-[11.5px] font-bold ${
-                      isCurrent ? "opacity-60" : ""
-                    }`}
-                  >
-                    {isCurrent
-                      ? "Your plan"
-                      : switchingPlan
-                        ? "Changing\u2026"
-                        : `Switch to ${option.name}`}
-                  </button>
+                  {isCurrent ? (
+                    <button
+                      type="button"
+                      disabled
+                      className="win95-button mt-4 w-full py-1.5 text-[11.5px] font-bold opacity-60"
+                    >
+                      ✓ Your Current Plan
+                    </button>
+                  ) : option.id === "free" ? (
+                    <button
+                      type="button"
+                      disabled
+                      className="win95-button mt-4 w-full py-1.5 text-[11.5px] font-bold opacity-50"
+                    >
+                      Included Tier
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      disabled={isCheckingOut}
+                      onClick={() => void handleStartCheckout(option.id as PaidPlanId)}
+                      className="win95-button press mt-4 w-full py-1.5 text-[11.5px] font-bold text-[#000080]"
+                    >
+                      {isCheckingOut ? "Opening checkout…" : `Upgrade to ${option.name}`}
+                    </button>
+                  )}
                 </div>
               );
             })}
           </div>
+
+          {isStaff && (
+            <div className="mt-5 border-t border-[#808080] pt-3">
+              <details className="text-[11px] text-[#555]">
+                <summary className="cursor-pointer font-bold text-[#000080]">
+                  Developer Utility: Force-switch test plan (bypasses checkout)
+                </summary>
+                <div className="mt-2 flex flex-wrap items-center gap-2">
+                  <span className="text-[10px] text-[#666]">Staff only:</span>
+                  {plans.map((opt) => (
+                    <button
+                      key={opt.id}
+                      type="button"
+                      disabled={opt.id === currentPlanId || switchingPlan}
+                      onClick={() => void handleSelectPlan(opt.id)}
+                      className="win95-button press px-2.5 py-1 text-[10.5px]"
+                    >
+                      {switchingPlan ? "…" : `Set ${opt.name}`}
+                    </button>
+                  ))}
+                </div>
+              </details>
+            </div>
+          )}
         </Window>
       </div>
 

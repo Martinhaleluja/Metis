@@ -195,15 +195,16 @@ public sealed class PolarWebhookVerifier(string? secret) : IBillingWebhookVerifi
             3 => material + "=",
             _ => material
         };
-        byte[] key;
+        var keysToTry = new List<byte[]>();
         try
         {
-            key = Convert.FromBase64String(padded);
+            keysToTry.Add(Convert.FromBase64String(padded));
         }
         catch (FormatException)
         {
-            key = Encoding.UTF8.GetBytes(material);
         }
+        keysToTry.Add(Encoding.UTF8.GetBytes(secret));
+        keysToTry.Add(Encoding.UTF8.GetBytes(material));
 
         var message = new List<byte>(rawBody.Length + id.Length + timestamp.Length + 2);
         message.AddRange(Encoding.UTF8.GetBytes(id));
@@ -211,40 +212,45 @@ public sealed class PolarWebhookVerifier(string? secret) : IBillingWebhookVerifi
         message.AddRange(Encoding.UTF8.GetBytes(timestamp));
         message.Add((byte)'.');
         message.AddRange(rawBody.ToArray());
-        var signed = WebhookCrypto.Hmac(key, message.ToArray());
+        var messageBytes = message.ToArray();
 
-        foreach (var candidate in signatures.Split(' ', StringSplitOptions.RemoveEmptyEntries))
+        foreach (var key in keysToTry)
         {
-            var comma = candidate.IndexOf(',');
-            if (comma < 0)
-            {
-                continue;
-            }
+            var signed = WebhookCrypto.Hmac(key, messageBytes);
 
-            var sigPart = candidate[(comma + 1)..];
-            var sigPadded = (sigPart.Length % 4) switch
+            foreach (var candidate in signatures.Split(' ', StringSplitOptions.RemoveEmptyEntries))
             {
-                2 => sigPart + "==",
-                3 => sigPart + "=",
-                _ => sigPart
-            };
-
-            try
-            {
-                var sigBytes = Convert.FromBase64String(sigPadded.Replace('-', '+').Replace('_', '/'));
-                if (WebhookCrypto.Equal(signed, sigBytes))
+                var comma = candidate.IndexOf(',');
+                if (comma < 0)
                 {
-                    reason = string.Empty;
-                    return true;
+                    continue;
                 }
-            }
-            catch (FormatException)
-            {
-                // A malformed candidate is simply not a match.
+
+                var sigPart = candidate[(comma + 1)..];
+                var sigPadded = (sigPart.Length % 4) switch
+                {
+                    2 => sigPart + "==",
+                    3 => sigPart + "=",
+                    _ => sigPart
+                };
+
+                try
+                {
+                    var sigBytes = Convert.FromBase64String(sigPadded.Replace('-', '+').Replace('_', '/'));
+                    if (WebhookCrypto.Equal(signed, sigBytes))
+                    {
+                        reason = string.Empty;
+                        return true;
+                    }
+                }
+                catch (FormatException)
+                {
+                    // A malformed candidate is simply not a match.
+                }
             }
         }
 
-        reason = $"No signature matched. Computed: {Convert.ToBase64String(signed)}. Header had: {signatures}";
+        reason = $"No signature matched. id='{id}', ts='{timestamp}', bodyLen={rawBody.Length}. Header had: {signatures}";
         return false;
     }
 
