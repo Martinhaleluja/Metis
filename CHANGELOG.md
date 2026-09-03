@@ -40,6 +40,53 @@ All notable changes to Metis are recorded here. The format follows
   when it costs more than Metis can carry. Bring-your-own and local models are
   unaffected by construction rather than by exception.
 
+### Added — running it in production
+
+- **The cold start no longer looks like a hang.** The gateway sleeps after
+  fifteen minutes on a free instance and takes the better part of a minute to
+  wake. The entitlement refresh used a twenty second timeout, so it gave up
+  every time and carried on against a stale cached plan without saying so.
+  Timeouts now sit above the wake, waking calls retry with backoff on 502, 503
+  and 504 only, and a call that has not answered in three seconds says so in
+  the notch through the channels the interface already listens on.
+- **Get Help & Support and Report a Bug**, in the tray menu. Both open a mail
+  draft with the version, the Windows build, whether the gateway answered and
+  the plan already written in — and nothing else. No key, no conversation, no
+  screenshot, no access token, and the block is fenced and announced so the
+  person can read it and delete it before sending.
+- **Crash reporting**, off unless `METIS_SENTRY_DSN` is set, which it is on no
+  build that ships. What makes it safe to turn on is the scrubbing rather than
+  the sampling: the rule lives in `SecretRedaction` with tests, matches key
+  shapes rather than a list of known secrets, and takes the user's name out of
+  every path.
+- **Updates are verified again.** The updater compares the download against a
+  SHA-256 from the release notes, and v3.15.0 shipped without one, so the check
+  was being skipped. GitHub's own digest is now the fallback when nobody pasted
+  a hash.
+- **`docs/OPERATIONS.md`** — the free-tier map, the keep-alive and the
+  instance-hour arithmetic behind it, the Resend SMTP setup, and the two SQL
+  brakes. **`docs/CODE_SIGNING.md`** — honest that there is no free signing
+  route for a proprietary app from Namibia today, and what to do instead.
+
+### Fixed — things that were quietly wrong
+
+- **The terms promised the plans were free.** `billing_is_live` is true and a
+  subscription has been taken, but the terms still said no plan was on sale and
+  that bringing your own AI key was free for everyone. Now corrected, with the
+  merchant-of-record clause naming Polar, a liability cap, an AI-output
+  disclaimer, and every processor named with what it receives.
+- **`my_usage_this_period()` threw on every call.** It declared four columns
+  after `usage_this_period` grew a fifth, so the account page's usage meters
+  had been in their error branch for every signed-in user.
+- **The top plan was refused six capabilities it had paid for**, and bringing
+  your own key was granted to the middle one. `my_feature` was still asking
+  about plan names that the remap had removed.
+- **The pricing page could never show a buy button.** It reads whether billing
+  is live signed out, and the row was readable only by authenticated users, so
+  it concluded the shop was shut whatever the database said.
+- **Anyone could read anyone else's usage** — the function took the account as
+  an argument and was callable by anonymous visitors.
+
 ### Changed
 
 - **`PRIVACY.md` now says where screen content goes per route, and the claim
