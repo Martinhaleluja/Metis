@@ -3927,6 +3927,144 @@ public sealed class MetisRuntime : IDisposable
         _ => null
     };
 
+    // ===================== Telling the user it is waking =====================
+
+    /// <summary>
+    /// How many gateway calls are outstanding. The notice is one thing shared
+    /// between them: two overlapping calls should not produce two announcements,
+    /// and the first one to finish should not clear a notice the second still
+    /// needs.
+    /// </summary>
+    private int _gatewayCallsInFlight;
+
+    /// <summary>Cancels the pending "it is waking" announcement when the call answers first.</summary>
+    private CancellationTokenSource? _wakeNoticeTimer;
+
+    /// <summary>
+    /// The activity and status the notch was showing before the notice replaced
+    /// them, so the wait can be undone rather than left as a stale line. Null
+    /// while no notice is showing.
+    /// </summary>
+    private MetisActivity? _wakeNoticeShown;
+    private MetisActivity? _wakeNoticeRestoreActivity;
+    private string? _wakeNoticeRestoreStatus;
+
+    /// <summary>
+    /// Runs a gateway call, and if it has not answered within three seconds,
+    /// says so in the notch.
+    ///
+    /// This deliberately reuses the two channels the interface already listens
+    /// on — <see cref="ActivityChanged"/> for the notch's own line and
+    /// <see cref="StatusChanged"/> for the chat's — rather than inventing a
+    /// second way to say something. Both handlers marshal to the interface
+    /// thread themselves, so nothing here touches it and nothing blocks.
+    ///
+    /// The notice is put up on a timer that the call cancels when it returns, so
+    /// a warm request costs one <c>Task.Delay</c> that never fires.
+    /// </summary>
+    private async Task<T> WhileGatewayMayBeWakingAsync<T>(Func<Task<T>> call)
+    {
+        BeginGatewayCall();
+        try
+        {
+            return await call();
+        }
+        finally
+        {
+            EndGatewayCall();
+        }
+    }
+
+    private void BeginGatewayCall()
+    {
+        if (Interlocked.Increment(ref _gatewayCallsInFlight) != 1)
+        {
+            return;
+        }
+
+        var timer = new CancellationTokenSource();
+        Interlocked.Exchange(ref _wakeNoticeTimer, timer)?.Dispose();
+        _ = ShowWakeNoticeAfterDelayAsync(timer.Token);
+    }
+
+    private void EndGatewayCall()
+    {
+        if (Interlocked.Decrement(ref _gatewayCallsInFlight) != 0)
+        {
+            return;
+        }
+
+        NoteGatewayAnswered();
+    }
+
+    /// <summary>
+    /// The gateway is talking. Called both when a call returns and, for a turn
+    /// that streams, as soon as the first words arrive — a reply being written
+    /// on screen is proof enough that nothing is asleep any more, and leaving
+    /// "waking up" over a sentence the user is already reading would be worse
+    /// than never having said it.
+    /// </summary>
+    private void NoteGatewayAnswered()
+    {
+        Interlocked.Exchange(ref _wakeNoticeTimer, null)?.Cancel();
+        ClearWakeNotice();
+    }
+
+    private async Task ShowWakeNoticeAfterDelayAsync(CancellationToken settled)
+    {
+        try
+        {
+            await Task.Delay(GatewayRetry.NoticeAfter, settled);
+        }
+        catch (OperationCanceledException)
+        {
+            // Answered inside three seconds, which is the ordinary case.
+            return;
+        }
+
+        if (_disposed || settled.IsCancellationRequested)
+        {
+            return;
+        }
+
+        _wakeNoticeRestoreActivity = CurrentActivity;
+        _wakeNoticeRestoreStatus = CurrentStatus;
+        _wakeNoticeShown = new MetisActivity(MetisActivityKind.Thinking, GatewayRetry.Notice);
+
+        CurrentActivity = _wakeNoticeShown;
+        ActivityChanged?.Invoke(this, CurrentActivity);
+        SetStatus(GatewayRetry.Notice);
+    }
+
+    /// <summary>
+    /// Puts back whatever the notice covered up — but only if it is still the
+    /// notice that is showing. Anything else means the turn moved on while the
+    /// gateway was waking, and restoring a line from before that would undo a
+    /// newer, truer one.
+    /// </summary>
+    private void ClearWakeNotice()
+    {
+        var shown = Interlocked.Exchange(ref _wakeNoticeShown, null);
+        if (shown is null)
+        {
+            return;
+        }
+
+        if (ReferenceEquals(CurrentActivity, shown))
+        {
+            CurrentActivity = _wakeNoticeRestoreActivity ?? MetisActivity.Idle;
+            ActivityChanged?.Invoke(this, CurrentActivity);
+        }
+
+        if (string.Equals(CurrentStatus, GatewayRetry.Notice, StringComparison.Ordinal))
+        {
+            SetStatus(_wakeNoticeRestoreStatus ?? string.Empty);
+        }
+
+        _wakeNoticeRestoreActivity = null;
+        _wakeNoticeRestoreStatus = null;
+    }
+
     /// <summary>
     /// How long to wait for the gateway to say what an account may do.
     ///
@@ -4027,23 +4165,22 @@ public sealed class MetisRuntime : IDisposable
 
         try
         {
-            // Two attempts, because the first request after an idle period is
-            // spent waking the container rather than answering: Render returns
-            // it a 502 or drops it once the build takes longer than its own
-            // edge timeout, and the retry lands on a service that is now warm.
-            // Two rather than three — if a minute of waiting and a second go
-            // have not produced an answer, the service is down rather than
-            // asleep, and the cached snapshot is the right thing to keep using.
-            for (var attempt = 1; attempt <= 2; attempt++)
+            // Three attempts with a doubling wait, because the first request
+            // after an idle period is spent waking the container rather than
+            // answering: Render returns it a 502 or drops it once the build
+            // takes longer than its own edge timeout, and a later attempt lands
+            // on a service that is now warm. Safe to repeat because this is a
+            // GET of a snapshot — see GatewayRetry, which owns both rules.
+            for (var attempt = 1; attempt <= GatewayRetry.MaxAttempts; attempt++)
             {
+                if (attempt > 1)
+                {
+                    await Task.Delay(GatewayRetry.BackoffBefore(attempt), cancellationToken);
+                }
+
                 if (await TryRefreshEntitlementsAsync(token, cancellationToken))
                 {
                     return;
-                }
-
-                if (attempt == 1)
-                {
-                    await Task.Delay(TimeSpan.FromSeconds(2), cancellationToken);
                 }
             }
         }
@@ -4074,7 +4211,11 @@ public sealed class MetisRuntime : IDisposable
             request.Headers.Authorization =
                 new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
 
-            using var response = await http.SendAsync(request, cancellationToken);
+            // Wrapped so that a request spent waiting on a cold start says so in
+            // the notch instead of leaving the interface silent for a minute.
+            using var response = await WhileGatewayMayBeWakingAsync(
+                () => http.SendAsync(request, cancellationToken));
+
             if (!response.IsSuccessStatusCode)
             {
                 _log.Info($"The gateway did not report entitlements ({(int)response.StatusCode}).");
@@ -4082,7 +4223,7 @@ public sealed class MetisRuntime : IDisposable
                 // A refusal is an answer and repeating it changes nothing. Only
                 // the shapes that mean "the service is not up yet" are worth a
                 // second go.
-                return (int)response.StatusCode is not (502 or 503 or 504);
+                return !GatewayRetry.IsWaking((int)response.StatusCode);
             }
 
             var body = await response.Content.ReadAsStringAsync(cancellationToken);
@@ -4533,13 +4674,50 @@ public sealed class MetisRuntime : IDisposable
                 _ => Settings.OllamaModel
             };
 
-            var response = await provider.GenerateAsync(credential, model, request, onTextDelta, cancellationToken);
+            // Only the gateway can be asleep. OpenClaw and Ollama are on the
+            // user's own machine or network, so a slow answer from either is
+            // the model thinking rather than a container being built, and
+            // announcing a wake-up would be a lie about what is happening.
+            var managed = providerName == ProviderRouting.GatewayProviderId;
+            var progress = managed && onTextDelta is not null
+                ? new FirstDeltaNotice(onTextDelta, NoteGatewayAnswered)
+                : onTextDelta;
+
+            var response = managed
+                ? await WhileGatewayMayBeWakingAsync(
+                    () => provider.GenerateAsync(credential, model, request, progress, cancellationToken))
+                : await provider.GenerateAsync(credential, model, request, progress, cancellationToken);
+
             return new ProviderTurnResult(
                 providerName, response.Model, response.Text, response.Plan, response.Usage);
         }
         finally
         {
             (provider as IDisposable)?.Dispose();
+        }
+    }
+
+    /// <summary>
+    /// Passes a streamed answer through untouched, and rings a bell the first
+    /// time any of it arrives.
+    ///
+    /// A streamed turn's call does not return until the last word, so the
+    /// "waking up" notice would otherwise stay over an answer the user is
+    /// already reading. The first delta is the moment the gateway is provably
+    /// awake, which is the moment to take it down.
+    /// </summary>
+    private sealed class FirstDeltaNotice(IProgress<string> inner, Action onFirstDelta) : IProgress<string>
+    {
+        private int _rung;
+
+        public void Report(string value)
+        {
+            if (Interlocked.Exchange(ref _rung, 1) == 0)
+            {
+                onFirstDelta();
+            }
+
+            inner.Report(value);
         }
     }
 

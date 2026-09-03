@@ -27,5 +27,17 @@
   <ItemGroup>
     <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.2" />
     <PackageReference Include="NAudio" Version="2.2.1" />
+
+    <!--
+      Crash reporting, and inert unless somebody deliberately turns it on.
+
+      Metis has no Sentry account, so there is no DSN compiled in and none is
+      read from any file that ships. CrashReporting reads METIS_SENTRY_DSN from
+      the environment and does nothing at all when it is empty — no
+      initialisation, no client, no network, no console output — which is the
+      state every build is in today. Pinned rather than floating so two machines
+      building the same commit get the same binary.
+    -->
+    <PackageReference Include="Sentry" Version="5.16.3" />
   </ItemGroup>
 </Project>

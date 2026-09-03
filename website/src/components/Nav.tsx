@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { useAuth } from "../lib/auth";
+import { supportMailto } from "../lib/support";
 
 /**
  * Taskbar buttons. The anchors are absolute rather than bare fragments so they
@@ -25,6 +26,13 @@ export function Nav() {
   const location = useLocation();
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
+
+  // The account id goes into the support email only when there is one. `useAuth`
+  // is already being asked here for the tray button, so this costs nothing
+  // extra, and the id is read from the session rather than the token beside it.
+  const support = supportMailto(
+    auth.status === "signed-in" ? auth.session.user.id : undefined,
+  );
 
   // Closed on navigation. Most of these are hash links to the page already
   // underneath the menu, so without this the menu stays open covering the very
@@ -128,6 +136,8 @@ export function Nav() {
                   </StartItem>
                 ))}
 
+                <StartItem href={support}>Support</StartItem>
+
                 <li className="my-1.5 border-t border-[#808080] border-b border-b-white" />
 
                 {auth.status === "signed-in" ? (
@@ -153,6 +163,12 @@ export function Nav() {
               {link.label}
             </a>
           ))}
+          {/* Last, because it is the button you want when the others have not
+              worked. It opens a mail client with the browser, the build and —
+              only if somebody is signed in — the account id already written in. */}
+          <a href={support} className={taskbarButton} style={systemFont}>
+            Support
+          </a>
         </nav>
 
         {/* System tray area */}

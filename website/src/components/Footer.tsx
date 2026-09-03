@@ -1,7 +1,18 @@
 import { Link } from "react-router-dom";
+import { useAuth } from "../lib/auth";
+import { supportMailto } from "../lib/support";
 
 export function Footer() {
   const year = new Date().getFullYear();
+
+  // Asked for the same reason the taskbar asks: so a signed-in customer's
+  // support email carries their account id and a signed-out visitor's carries
+  // no line at all. `Nav` already opens this subscription on every page, so
+  // there is no new download here — only a second listener on the same client.
+  const auth = useAuth();
+  const support = supportMailto(
+    auth.status === "signed-in" ? auth.session.user.id : undefined,
+  );
 
   return (
     <footer
@@ -58,6 +69,13 @@ export function Footer() {
           >
             Terms
           </Link>
+          <a
+            href={support}
+            className="text-white/60 hover:text-white text-[11px] transition-colors no-underline"
+            style={{ fontFamily: "var(--font-system)" }}
+          >
+            Support
+          </a>
           <a
             href="https://github.com/Martinhaleluja/Metis"
             className="text-white/60 hover:text-white text-[11px] transition-colors"
