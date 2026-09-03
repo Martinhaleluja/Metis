@@ -19,7 +19,7 @@
       -p:Version explicitly and that still wins; this is what every other way of
       building Metis now agrees with.
     -->
-    <Version>3.15.0</Version>
+    <Version>3.16.0</Version>
 
     <!--
       Start-up cost. A published Metis was paying full just-in-time compilation

@@ -40,6 +40,25 @@ public static class MetisBackend
     public const string DefaultGatewayUrl = "https://metis-gateway.onrender.com";
 
     /// <summary>
+    /// The website, where a person signs in, sees their plan and buys one.
+    ///
+    /// Written down once here rather than in each window that links to it. It
+    /// was previously a private constant in two separate files, both pointing
+    /// at a domain that answers 404 — so every "Manage plan" and "Upgrade"
+    /// button in the application led to a dead page, which is the one link that
+    /// has to work for anybody to be able to pay.
+    ///
+    /// No trailing slash: the callers append a path.
+    /// </summary>
+    public const string SiteUrl = "https://metis-website-lyart.vercel.app";
+
+    /// <summary>The account page, where a plan is bought and managed.</summary>
+    public static string AccountPageUrl => SiteUrl + "/account";
+
+    /// <summary>The pricing page, for someone deciding rather than managing.</summary>
+    public static string PricingPageUrl => SiteUrl + "/pricing";
+
+    /// <summary>
     /// The public half of the key the gateway signs entitlement snapshots with,
     /// as base64 SubjectPublicKeyInfo.
     ///

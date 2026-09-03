@@ -53,7 +53,9 @@ public partial class NotchSettings : UserControl
 
     /// <summary>Where the plan is managed. Anything that costs money happens on
     /// the web, which is where a payment page belongs.</summary>
-    private const string AccountPageUrl = "https://metis.software/account";
+    // One place, in Metis.Core. This used to be a private copy in each
+    // window pointing at a domain that answers 404.
+    private static string AccountPageUrl => MetisBackend.AccountPageUrl;
 
     public NotchSettings()
     {

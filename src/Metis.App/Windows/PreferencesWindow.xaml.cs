@@ -212,7 +212,9 @@ public partial class PreferencesWindow : System.Windows.Window
     /// details directly, and the second of those is not something an application
     /// should ever do. The browser is where a payment page belongs.
     /// </summary>
-    private const string AccountPageUrl = "https://metis.software/account";
+    // One place, in Metis.Core. This used to be a private copy in each
+    // window pointing at a domain that answers 404.
+    private static string AccountPageUrl => MetisBackend.AccountPageUrl;
 
     private void RefreshAccount()
     {
