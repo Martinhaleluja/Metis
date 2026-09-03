@@ -22,7 +22,7 @@ services:
     dockerContext: .
     plan: free
     region: frankfurt
-    branch: feat/launch-website
+    branch: main
     healthCheckPath: /health
     envVars:
       - key: METIS_ENV
@@ -109,8 +109,8 @@ services:
 # protection. Deploying it would have looked completely healthy while silently
 # never applying a payment.
 #
-# The branch is therefore the one that actually holds the gateway. Move it back
-# to `main` the day that branch is merged, and not before.
+# feat/launch-website has since been merged, so `main` now holds the current
+# gateway and this points back at it.
 #
 # The name matters too: it is the hostname, and it is compiled into the desktop
 # app at MetisBackend.DefaultGatewayUrl. Renaming this service without changing
