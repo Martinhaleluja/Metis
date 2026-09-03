@@ -3950,6 +3950,23 @@ public sealed class MetisRuntime : IDisposable
     private string? _wakeNoticeRestoreStatus;
 
     /// <summary>
+    /// Whether the last finished gateway call answered.
+    ///
+    /// Read by the support diagnostics, which run on the interface thread from
+    /// a menu click and so cannot afford to probe: a sleeping free-tier gateway
+    /// would freeze the menu for the better part of a minute. What happened
+    /// last time is the answer a person can act on anyway — "it worked a moment
+    /// ago" and "it has not worked all morning" are different complaints.
+    /// </summary>
+    public bool LastGatewayCallSucceeded { get; private set; }
+
+    /// <summary>
+    /// Whether a gateway call is outstanding and has been slow enough that the
+    /// notch is saying so. True only while the waking notice is up.
+    /// </summary>
+    public bool GatewayMayBeWaking => Volatile.Read(ref _wakeNoticeShown) is not null;
+
+    /// <summary>
     /// Runs a gateway call, and if it has not answered within three seconds,
     /// says so in the notch.
     ///
@@ -3967,7 +3984,18 @@ public sealed class MetisRuntime : IDisposable
         BeginGatewayCall();
         try
         {
-            return await call();
+            var result = await call();
+
+            // Recorded for the support diagnostics. "It answered" here means
+            // the call completed rather than that the server was happy with it
+            // — a 403 about a plan is the gateway working correctly.
+            LastGatewayCallSucceeded = true;
+            return result;
+        }
+        catch
+        {
+            LastGatewayCallSucceeded = false;
+            throw;
         }
         finally
         {

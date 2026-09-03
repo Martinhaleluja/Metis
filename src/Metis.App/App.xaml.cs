@@ -376,6 +376,18 @@ public partial class App : System.Windows.Application
         {
             Padding = new Forms.Padding(8, 6, 18, 6)
         };
+        // Both open the user's mail client with the diagnostics already
+        // written in, rather than a window of Metis's own — support is the one
+        // thing a person reaches for when Metis itself is misbehaving, so it
+        // should depend on as little of Metis as possible.
+        var helpItem = new Forms.ToolStripMenuItem("Get Help & Support", null, (_, _) => OpenSupportMail(bug: false))
+        {
+            Padding = new Forms.Padding(8, 6, 18, 6)
+        };
+        var bugItem = new Forms.ToolStripMenuItem("Report a Bug", null, (_, _) => OpenSupportMail(bug: true))
+        {
+            Padding = new Forms.Padding(8, 6, 18, 6)
+        };
         var quitItem = new Forms.ToolStripMenuItem("Quit", null, (_, _) => Dispatcher.Invoke(Quit))
         {
             Padding = new Forms.Padding(8, 6, 18, 6)
@@ -384,6 +396,9 @@ public partial class App : System.Windows.Application
         menu.Items.Add(openItem);
         menu.Items.Add(setupItem);
         menu.Items.Add(accountItem);
+        menu.Items.Add(new Forms.ToolStripSeparator());
+        menu.Items.Add(helpItem);
+        menu.Items.Add(bugItem);
         menu.Items.Add(new Forms.ToolStripSeparator());
         menu.Items.Add(quitItem);
 
@@ -813,6 +828,73 @@ public partial class App : System.Windows.Application
     /// live palette on every paint, so the menu only needs its own two colours
     /// refreshed and an invalidate; it does not have to be rebuilt.
     /// </summary>
+    /// <summary>
+    /// Opens the user's mail client with the diagnostics already filled in.
+    ///
+    /// Deliberately not a window of Metis's own. This is the thing somebody
+    /// reaches for when Metis is misbehaving, so it should depend on as little
+    /// of Metis as possible — and a mail draft they can read and edit before
+    /// sending is more honest than a form that submits somewhere unseen.
+    /// </summary>
+    private void OpenSupportMail(bool bug)
+    {
+        try
+        {
+            var account = _runtime?.Account;
+            var signedIn = account?.IsSignedIn == true;
+
+            var lines = SupportDiagnostics.Lines(
+                appVersion: AppVersion.Current,
+                windowsVersion: Environment.OSVersion.VersionString,
+                // Whether it answered last time rather than a fresh probe: this
+                // runs on the interface thread from a menu click, and a cold
+                // gateway would freeze the menu for the better part of a minute.
+                gatewayStatus: SupportDiagnostics.DescribeGateway(
+                    reachable: _runtime?.LastGatewayCallSucceeded ?? false,
+                    waking: _runtime?.GatewayMayBeWaking ?? false),
+                signedIn: signedIn,
+                plan: signedIn ? account?.Plan.ToString() : null,
+                accountId: signedIn ? account?.UserId : null,
+                crashReporting: CrashReporting.Describe());
+
+            var url = bug
+                ? SupportDiagnostics.Mailto(
+                    "Metis bug report",
+                    "What happened, and what you expected instead:",
+                    lines)
+                : SupportDiagnostics.Mailto(
+                    "Metis support request",
+                    "How can we help?",
+                    lines);
+
+            // Also on the clipboard, because a machine with no mail client
+            // configured opens nothing at all and the person is left with
+            // neither the address nor the diagnostics.
+            try
+            {
+                System.Windows.Clipboard.SetText(
+                    SupportDiagnostics.SupportEmail
+                    + Environment.NewLine
+                    + Environment.NewLine
+                    + SupportDiagnostics.Block(lines));
+            }
+            catch
+            {
+                // The clipboard is held by another process often enough that
+                // failing to take it is not worth abandoning the mail draft.
+            }
+
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(url)
+            {
+                UseShellExecute = true
+            });
+        }
+        catch (Exception exception)
+        {
+            _runtime?.Log.Error("Could not open a support mail draft", exception);
+        }
+    }
+
     private void RepaintTrayMenu()
     {
         if (_trayIcon?.ContextMenuStrip is not { } menu || _themeService is null)
