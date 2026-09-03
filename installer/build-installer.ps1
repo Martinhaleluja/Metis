@@ -1,10 +1,17 @@
 ﻿[CmdletBinding()]
 param(
-    # Defaulted from Directory.Build.props rather than repeated here, so the
+    # Read from Directory.Build.props below rather than defaulted here, so the
     # installer and an ordinary build can never disagree about what version
     # this is. Pass -Version to override for a one-off build.
+    #
+    # It is resolved in the body rather than in this default expression on
+    # purpose: a default is evaluated during parameter binding, and there are
+    # invocation modes -- `powershell -File`, among others -- where
+    # $PSScriptRoot is not populated by then. When that happened the script
+    # died inside Join-Path before its first line ran, and still exited 0,
+    # which is the shape of failure a release process cannot afford.
     [ValidatePattern('^\d+\.\d+\.\d+$')]
-    [string]$Version = ([xml](Get-Content (Join-Path $PSScriptRoot '..\Directory.Build.props'))).Project.PropertyGroup.Version,
+    [string]$Version,
     [ValidateSet('Debug', 'Release')]
     [string]$Configuration = 'Release',
     [switch]$SkipTests,
@@ -12,6 +19,33 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+
+# Without this the script prints its error and exits 0. `powershell -File` does
+# not reliably turn an unhandled terminating error into a non-zero exit code,
+# so a release script that died halfway looks to everything downstream -- a
+# shell, a CI step, a person reading the last line -- exactly like one that
+# finished. The whole point of a build script is that it can say it failed.
+trap {
+    Write-Host ''
+    Write-Host "BUILD FAILED: $_" -ForegroundColor Red
+    exit 1
+}
+
+if (-not $Version) {
+    $propsPath = Join-Path $PSScriptRoot '..\Directory.Build.props'
+    if (-not (Test-Path $propsPath)) {
+        throw "Cannot find Directory.Build.props at '$propsPath'. Pass -Version explicitly."
+    }
+
+    $Version = ([xml](Get-Content $propsPath)).Project.PropertyGroup.Version
+    if (-not $Version) {
+        throw "Directory.Build.props has no <Version>. Pass -Version explicitly."
+    }
+
+    if ($Version -notmatch '^\d+\.\d+\.\d+$') {
+        throw "Version '$Version' from Directory.Build.props is not three numbers."
+    }
+}
 $env:DOTNET_CLI_TELEMETRY_OPTOUT = '1'
 $env:DOTNET_NOLOGO = '1'
 $env:DOTNET_SKIP_FIRST_TIME_EXPERIENCE = '1'
