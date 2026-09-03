@@ -43,6 +43,16 @@
     <None Include="..\..\src\Metis.App\Windows\NotchAgentDrawer.xaml"
           Link="Fixtures\NotchAgentDrawer.xaml"
           CopyToOutputDirectory="PreserveNewest" />
+    <!-- The two newest surfaces, and the two that carry the account and the
+         first run. They were the only notch pages the markup tests could not
+         see, which is exactly backwards: a missing resource key has shipped
+         from here before, and these are the pages a new user meets first. -->
+    <None Include="..\..\src\Metis.App\Windows\NotchSettings.xaml"
+          Link="Fixtures\NotchSettings.xaml"
+          CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\src\Metis.App\Windows\NotchWelcome.xaml"
+          Link="Fixtures\NotchWelcome.xaml"
+          CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\..\src\Metis.App\Windows\NotchSpawnAgentPanel.xaml"
           Link="Fixtures\NotchSpawnAgentPanel.xaml"
           CopyToOutputDirectory="PreserveNewest" />

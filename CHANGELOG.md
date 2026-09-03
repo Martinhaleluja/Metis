@@ -8,10 +8,10 @@ All notable changes to Metis are recorded here. The format follows
 
 ### Added — plans, and an AI gateway that pays for two of them
 
-- **Three plans: Free at $0, Plus at $14, Pro at $29 with bring-your-own-AI.**
-  Nothing is on sale yet — no payment provider has been chosen — and every paid
-  capability stays free for everyone until `billing_state.billing_is_live` says
-  otherwise. That switch is a row update rather than a release.
+- **Three plans: Free at $0, Pro at $20, Max at $50.** The middle tier was
+  called Plus while it was being built; it is Pro now, and the top one is Max.
+  Nothing is on sale until `billing_state.billing_is_live` says otherwise, and
+  that switch is a row update rather than a release.
 - **The plans meter what Metis pays a provider for, never what the software can
   do.** Anyone running Metis on their own API key keeps screen vision,
   automation and agents, on Free, signed out, for as long as they like. Those
@@ -20,13 +20,20 @@ All notable changes to Metis are recorded here. The format follows
   question about accounts and billing.
 - **Metis can answer on its own AI** for people who have not brought a key.
   Prompt, screenshot and all, through the gateway, streamed back as it arrives.
-- **Bring your own provider on Pro.** Connect an OpenAI, Anthropic, Gemini,
+- **Checkout.** The website can take money: the gateway creates the payment
+  session so the processor's token and the product ids never reach a browser,
+  and the account it is for comes from the signed-in token rather than from the
+  request, because a checkout that will accept somebody else's account id is a
+  way to move somebody else's plan.
+- **Bring your own provider on Max.** Connect an OpenAI, Anthropic, Gemini,
   Mistral or OpenRouter account from the website; the key is tested against the
   provider, stored encrypted in Supabase Vault, and never returned to a browser.
-  That provider bills you for model usage, separately from the $29.
-- **An Account & plan page in Preferences**, with what the plan includes and how
+  That provider bills you for model usage, separately from the $50.
+- **An Account & plan page in the notch**, with what the plan includes and how
   much of the month's included AI is left. Anything that costs money opens the
-  website, which is where a payment page belongs.
+  website, which is where a payment page belongs. Entitlements refresh on a
+  timer and when the page is opened, so buying a plan on the website no longer
+  needs the app restarted before it arrives.
 - **A plan banner in the notch** for the refusals that are not faults — an
   allowance spent, or something a plan does not cover — and cues for both.
 - **Cost protection**: an emergency switch that degrades or refuses managed AI
