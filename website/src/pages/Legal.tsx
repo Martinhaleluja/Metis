@@ -120,6 +120,49 @@ export function PrivacyPolicy() {
         <li>Your waitlist entry, if you joined it.</li>
       </ul>
 
+      <H>Who else touches it</H>
+      <p>
+        Metis is one person, not a data centre, so the parts it does not run
+        itself are run by other companies. Each is named here with what it
+        actually receives, because &ldquo;we may share data with third
+        parties&rdquo; tells you nothing worth knowing.
+      </p>
+      <ul>
+        <li>
+          <strong>Supabase</strong> holds your account: email address, password
+          in a form nobody can read back, which plan you are on, and the record
+          of what each answer cost. Hosted in the EU.
+        </li>
+        <li>
+          <strong>Render</strong> runs the server that passes your question to
+          an AI provider. It handles the request; it stores none of it.
+        </li>
+        <li>
+          <strong>Google</strong> answers the questions Metis pays for, through
+          the Gemini API. It receives your question and, when you asked about
+          your screen, the picture. It does not receive your email address or
+          your name.
+        </li>
+        <li>
+          <strong>Polar</strong> takes the payment and gets your billing details
+          &mdash; name, email, country, and whatever the card requires. Metis
+          never sees your card number.
+        </li>
+        <li>
+          <strong>Sentry</strong> receives a crash report if the application
+          fails, and only if crash reporting has been switched on for that
+          build. A report carries the error and where in the code it happened.
+          It never carries a screenshot, a conversation, an API key, or the
+          contents of anything you were looking at.
+        </li>
+      </ul>
+      <p>
+        If you are in the UK or the EU, these are our processors under the GDPR
+        and we remain the controller. If you are in California, none of this is
+        a sale or share of personal information under the CCPA &mdash; Metis
+        does not sell your data and has nothing to gain by doing so.
+      </p>
+
       <H>Deleting it</H>
       <p>
         Your conversations, what Metis has learned, and any notes you wrote are on
@@ -179,20 +222,25 @@ export function Terms() {
         Metis. Metis does not mark it up and does not see the invoice.
       </p>
       <p>
-        <strong>No plan is on sale yet.</strong> Until a payment provider is
-        settled, every paid capability is available to everyone at no charge,
-        including connecting your own AI account.
+        <strong>Connecting your own AI account is part of {maxPlan.name}.</strong>{' '}
+        Running a model on your own computer stays free on every plan, because
+        it costs Metis nothing.
+      </p>
+
+      <H>Who you are buying from</H>
+      <p>
+        <strong>Polar is the merchant of record.</strong> When you subscribe,
+        the contract of sale is between you and Polar, not between you and
+        Metis. Polar takes the payment, is the seller named on your statement
+        and on the invoice, and is the party responsible for charging and
+        remitting VAT or sales tax wherever you happen to live.
       </p>
       <p>
-        <strong>Connecting your own AI account will become part of {maxPlan.name}.</strong>{' '}
-        It is free for everyone today and will stay free until plans go on sale.
-        On the day they do, using a key of your own becomes a {maxPlan.name} feature,
-        and that applies to everybody &mdash; there is no arrangement that keeps
-        it for people who were using it beforehand. This is said here plainly
-        because it is a capability being moved behind a plan rather than a new
-        one being added, and you should know that before you build a habit
-        around it. It will be announced before it takes effect. Running a model
-        on your own computer stays free on every plan.
+        In practice that means your receipt and your invoice come from Polar,
+        refunds and chargebacks are handled under Polar&rsquo;s terms, and your
+        card details go to them rather than to us &mdash; Metis never sees a
+        card number. Billing questions can go to either of us; anything that
+        needs the payment itself touched has to be done by Polar.
       </p>
 
       <H>Cancelling</H>
@@ -232,12 +280,46 @@ export function Terms() {
         <li>Keep the credentials for your account and any connected provider to yourself.</li>
       </ul>
 
-      <H>No warranty</H>
+      <H>What Metis tells you is not advice</H>
       <p>
-        Metis is provided as it is. It reads a screen and asks a language model
-        about it, and language models are confidently wrong sometimes. Check
-        anything that matters before acting on it, particularly where a step is
-        irreversible.
+        Metis reads a screen and asks a language model about it, and language
+        models are confidently wrong sometimes. Everything it says is
+        assistance, not instruction: <strong>you are the one deciding whether
+        to act on it</strong>, and you remain responsible for what happens on
+        your computer when you do.
+      </p>
+      <p>
+        Check anything that matters before acting on it, particularly where a
+        step is irreversible, involves money, or touches somebody else&rsquo;s
+        data. Metis is not a substitute for professional advice &mdash; not
+        legal, medical, financial, or anything else a qualified person is
+        supposed to give you. It is a teacher that can be mistaken, and it will
+        sometimes describe a button that is not there.
+      </p>
+
+      <H>No warranty, and what we are liable for</H>
+      <p>
+        Metis is provided as it is, without warranty of any kind, express or
+        implied &mdash; including any implied warranty of merchantability,
+        fitness for a particular purpose, or non-infringement. It is not
+        promised to be uninterrupted, error-free, or available at any
+        particular moment.
+      </p>
+      <p>
+        <strong>
+          Where the law allows a limit, total liability for any claim is capped
+          at whatever you actually paid Metis in the twelve months before it
+          arose
+        </strong>{' '}
+        &mdash; and at nothing, if you were on the free plan. Metis is not
+        liable for indirect or consequential loss: lost profit, lost data, lost
+        time, or work you had to redo.
+      </p>
+      <p>
+        Some countries do not permit excluding certain warranties or limiting
+        certain liabilities. Where that is true where you live, those rules win
+        and this section applies only as far as it is allowed to. Nothing here
+        limits liability for death, personal injury, or fraud.
       </p>
     </Document>
   );
