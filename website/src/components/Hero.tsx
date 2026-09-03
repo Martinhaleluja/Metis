@@ -62,8 +62,7 @@ export function Hero({
         {/* Status badge */}
         <motion.div {...rise(0)} className="mb-5">
           <span
-            className="inline-flex items-center gap-2 win95-button !cursor-default !py-1.5 !px-5 text-[12px]"
-            style={{ fontFamily: "var(--font-system)" }}
+            className="inline-flex items-center gap-2 press rounded-lg border border-line bg-surface px-3 py-1.5 text-[13px] !cursor-default !py-1.5 !px-5 text-[12px]"
           >
             <span className="w-2 h-2 rounded-full bg-[#00c800] shadow-[0_0_4px_#00c800]" />
             Now accepting waitlist signups
@@ -88,20 +87,14 @@ export function Hero({
           &mdash; it draws, speaks, and never takes over.
         </motion.p>
 
-        {/* WMP 11 video frame */}
-        <motion.div {...rise(0.18)} className="mt-10 mx-auto max-w-[720px]" style={{ transform: "rotate(0.7deg)" }}>
-          <div className="wmp11-frame">
-            <div className="wmp11-titlebar">
-              <span className="font-semibold">
-                Windows Media Player &mdash; Metis Demo
-              </span>
-              <div className="flex gap-1.5">
-                <span className="w-3 h-3 rounded-full bg-[#2c3444] border border-[#4a5568]" />
-                <span className="w-3 h-3 rounded-full bg-[#2c3444] border border-[#4a5568]" />
-                <span className="w-3 h-3 rounded-full bg-[#e14e2c] border border-[#c42907]" />
-              </div>
-            </div>
-
+        {/* The demonstration itself.
+            It used to be dressed as Windows Media Player 11 — a fake title bar
+            naming the player, three window-control dots, and a skip-back button
+            wired to nothing. All of it was set decoration around the only thing
+            anyone comes here to look at, so the frame is now a plain card and
+            the video fills it. */}
+        <motion.div {...rise(0.18)} className="mt-10 mx-auto max-w-[720px]">
+          <div className="card overflow-hidden">
             <div className="relative bg-black">
               <video
                 ref={videoRef}
@@ -120,18 +113,11 @@ export function Hero({
               </video>
             </div>
 
-            <div className="wmp11-controls flex items-center gap-4">
+            <div className="flex items-center gap-4">
               <div className="flex items-center gap-2">
                 <button
-                  className="w-7 h-7 rounded-full bg-[#2e3848] border border-[#48566d] text-[#adc0d8] grid place-items-center text-[10px] hover:text-white hover:border-[#5d6f8d] transition-colors cursor-pointer"
-                  aria-hidden="true"
-                  tabIndex={-1}
-                >
-                  ⏮
-                </button>
-                <button
                   onClick={toggle}
-                  className="wmp11-play text-lg cursor-pointer"
+                  className="grid h-9 w-9 place-items-center rounded-full bg-accent text-accent-contrast text-lg cursor-pointer"
                   aria-label={
                     playing
                       ? "Pause the demonstration"
@@ -140,22 +126,11 @@ export function Hero({
                 >
                   {playing ? "⏸" : "▶"}
                 </button>
-                <button
-                  className="w-7 h-7 rounded-full bg-[#2e3848] border border-[#48566d] text-[#adc0d8] grid place-items-center text-[10px] hover:text-white hover:border-[#5d6f8d] transition-colors cursor-pointer"
-                  aria-hidden="true"
-                  tabIndex={-1}
-                >
-                  ⏭
-                </button>
               </div>
-              <div className="flex-1 h-[6px] bg-[#111419] border border-[#232935] rounded relative">
-                <div className="h-full w-[65%] bg-gradient-to-r from-[#0070d6] to-[#56ccff] rounded shadow-[0_0_6px_#56ccff]" />
+              <div className="flex-1 h-[6px] rounded bg-surface-sunken">
+                <div className="h-full w-[65%] rounded bg-accent" />
               </div>
-              <span
-                className="text-[10px] text-[#5a6a82]"
-                style={{ fontFamily: "var(--font-mono)" }}
-                aria-hidden="true"
-              >
+              <span className="type-caption text-ink-muted" aria-hidden="true">
                 1:24
               </span>
             </div>

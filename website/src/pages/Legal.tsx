@@ -17,7 +17,7 @@ const maxPlan = plans[2];
 
 export function PrivacyPolicy() {
   return (
-    <Document title="Privacy" file="privacy_policy.txt">
+    <Document title="Privacy" file="Privacy">
       <Draft />
 
       <H>The short version</H>
@@ -189,7 +189,7 @@ export function PrivacyPolicy() {
 
 export function Terms() {
   return (
-    <Document title="Terms" file="terms.txt">
+    <Document title="Terms" file="Terms">
       <Draft />
 
       <H>What Metis is</H>
@@ -329,8 +329,8 @@ export function Terms() {
 
 function Draft() {
   return (
-    <div className="mb-6 border-l-4 border-[#000080] bg-[#ffffe1] px-4 py-3">
-      <p className="text-[12px] leading-relaxed text-black">
+    <div className="mb-6 border-l-4 border-[currentColor] bg-[#ffffe1] px-4 py-3">
+      <p className="text-[12px] leading-relaxed text-ink">
         <strong>Draft &mdash; not yet reviewed by a lawyer.</strong> This
         describes what the software actually does, which is the part worth
         getting right first. It is not a substitute for a policy checked against
@@ -354,22 +354,21 @@ function Document({
       <div className="mx-auto max-w-[820px]">
         <h1 className="type-title text-ink">{title}</h1>
 
-        <div className="mt-8 win95-window">
-          <div className="win95-titlebar">
-            <span>{file} &mdash; Notepad</span>
+        <div className="mt-8 card">
+          <div className="panel-title">
+            <span>{file}</span>
             <Link
               to="/"
               aria-label="Back to the home page"
-              className="flex h-3.5 w-4 items-center justify-center border border-white border-r-[#808080] border-b-[#808080] bg-[#c0c0c0] text-[8px] font-bold text-black no-underline"
+              className="ml-auto grid h-7 w-7 place-items-center rounded-full text-[15px] leading-none text-ink-muted transition-colors hover:bg-surface-sunken hover:text-ink no-underline"
             >
               &times;
             </Link>
           </div>
 
-          <div className="bg-[#c0c0c0] p-3">
+          <div className="bg-surface p-3">
             <div
-              className="win95-field space-y-3 p-6 text-[13px] leading-relaxed text-black [&_li]:ml-5 [&_li]:list-disc [&_p]:max-w-[74ch] [&_ul]:space-y-1.5"
-              style={{ fontFamily: "var(--font-system)" }}
+              className="rounded-lg border border-line bg-surface px-3 py-2 space-y-3 p-6 text-[13px] leading-relaxed text-ink [&_li]:ml-5 [&_li]:list-disc [&_p]:max-w-[74ch] [&_ul]:space-y-1.5"
             >
               {children}
             </div>
@@ -391,9 +390,9 @@ function Document({
 }
 
 function H({ children }: { children: React.ReactNode }) {
-  return <h2 className="!mt-7 text-[15px] font-bold text-black first:!mt-0">{children}</h2>;
+  return <h2 className="!mt-7 text-[15px] font-bold text-ink first:!mt-0">{children}</h2>;
 }
 
 function H3({ children }: { children: React.ReactNode }) {
-  return <h3 className="!mt-5 text-[13px] font-bold text-[#000080]">{children}</h3>;
+  return <h3 className="!mt-5 text-[13px] font-bold text-accent">{children}</h3>;
 }

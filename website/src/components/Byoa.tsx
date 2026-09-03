@@ -60,15 +60,15 @@ export function Byoa() {
 
         <div className="mx-auto mt-12 max-w-[760px]">
           <Reveal delay={0.06}>
-            <div className="xp-window" style={{ transform: "rotate(-0.5deg)" }}>
-              <div className="xp-titlebar">
+            <div className="card" style={{ transform: "rotate(-0.5deg)" }}>
+              <div className="panel-title">
                 <span className="text-[12px]">Using your own AI account</span>
                 <button className="xp-button-close" aria-hidden="true" tabIndex={-1}>
                   &times;
                 </button>
               </div>
 
-              <div className="bg-[#ece9d8] p-6" style={{ fontFamily: "var(--font-system)" }}>
+              <div className="bg-surface-sunken p-6">
                 <ol className="space-y-5">
                   {steps.map((step) => (
                     <li key={step.n} className="flex gap-4">
@@ -77,8 +77,7 @@ export function Byoa() {
                       </span>
                       <div>
                         <h3
-                          className="text-[14px] font-bold text-[#003ca5]"
-                          style={{ fontFamily: "Trebuchet MS, sans-serif" }}
+                          className="text-[14px] font-bold text-accent"
                         >
                           {step.title}
                         </h3>
@@ -88,10 +87,9 @@ export function Byoa() {
                   ))}
                 </ol>
 
-                <div className="mt-6 border-t border-[#aca899] pt-5">
+                <div className="mt-6 border-t border-line pt-5">
                   <h3
-                    className="text-[14px] font-bold text-[#003ca5]"
-                    style={{ fontFamily: "Trebuchet MS, sans-serif" }}
+                    className="text-[14px] font-bold text-accent"
                   >
                     What happens to your key
                   </h3>
@@ -114,11 +112,11 @@ export function Byoa() {
                 </div>
               </div>
 
-              <div className="flex justify-end gap-2 border-t border-[#aca899] bg-[#ece9d8] px-4 py-3">
-                <a href="#pricing" className="xp-button-win text-[11px] no-underline">
+              <div className="flex justify-end gap-2 border-t border-line bg-surface-sunken px-4 py-3">
+                <a href="#pricing" className="press rounded-lg border border-line bg-surface px-3 py-1.5 text-[13px] text-[11px] no-underline">
                   Back to plans
                 </a>
-                <a href="#faq" className="xp-button-win text-[11px] no-underline">
+                <a href="#faq" className="press rounded-lg border border-line bg-surface px-3 py-1.5 text-[13px] text-[11px] no-underline">
                   Read the FAQ &gt;
                 </a>
               </div>

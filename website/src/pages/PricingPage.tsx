@@ -33,25 +33,24 @@ export function PricingPage() {
           </Reveal>
 
           <Reveal delay={0.06}>
-            <div className="mt-10 win95-window">
-              <div className="win95-titlebar">
-                <span>compare.xls</span>
+            <div className="mt-10 card">
+              <div className="panel-title">
+                <span>Compare the plans</span>
               </div>
 
-              <div className="overflow-x-auto bg-[#c0c0c0] p-3">
+              <div className="overflow-x-auto bg-surface p-3">
                 <table
                   className="w-full min-w-[640px] border-collapse text-left"
-                  style={{ fontFamily: "var(--font-system)" }}
                 >
                   <thead>
                     <tr>
-                      <th className="win95-field px-3 py-2 text-[12px] font-bold text-black">
+                      <th className="rounded-lg border border-line bg-surface px-3 py-2 px-3 py-2 text-[12px] font-bold text-ink">
                         Feature
                       </th>
                       {plans.map((plan) => (
                         <th
                           key={plan.id}
-                          className="win95-field px-3 py-2 text-center text-[12px] font-bold text-black"
+                          className="rounded-lg border border-line bg-surface px-3 py-2 px-3 py-2 text-center text-[12px] font-bold text-ink"
                         >
                           {plan.name}
                         </th>
@@ -63,7 +62,7 @@ export function PricingPage() {
                       <tr key={row.label} className="align-top">
                         <th
                           scope="row"
-                          className="border-b border-[#a0a0a0] px-3 py-2.5 text-[12px] font-normal text-black"
+                          className="border-b border-[#a0a0a0] px-3 py-2.5 text-[12px] font-normal text-ink"
                         >
                           {row.label}
                           {row.note && (
@@ -75,7 +74,7 @@ export function PricingPage() {
                         {plans.map((plan) => (
                           <td
                             key={plan.id}
-                            className="border-b border-[#a0a0a0] px-3 py-2.5 text-center text-[12px] text-black"
+                            className="border-b border-[#a0a0a0] px-3 py-2.5 text-center text-[12px] text-ink"
                           >
                             <Cell value={row.values[plan.id as PlanId]} />
                           </td>

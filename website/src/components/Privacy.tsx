@@ -75,23 +75,19 @@ export function Privacy() {
         </Reveal>
 
         <Reveal delay={0.06}>
-          <div className="mt-10 win95-window">
-            <div className="win95-titlebar">
-              <span>your_privacy.txt &mdash; Notepad</span>
-              <span className="flex h-3.5 w-4 items-center justify-center border border-white border-r-[#808080] border-b-[#808080] bg-[#c0c0c0] text-[8px] font-bold text-black">
-                &times;
-              </span>
+          <div className="mt-10 card">
+            <div className="panel-title">
+              <span>Your privacy</span>
             </div>
 
-            <div className="bg-[#c0c0c0] p-3">
+            <div className="bg-surface p-3">
               <div
-                className="win95-field p-5"
-                style={{ fontFamily: "var(--font-system)" }}
+                className="rounded-lg border border-line bg-surface px-3 py-2 p-5"
               >
                 <ul className="divide-y divide-[#d4d0c8]">
                   {answers.map((entry) => (
                     <li key={entry.question} className="py-4 first:pt-0 last:pb-0">
-                      <h3 className="text-[13px] font-bold text-black">{entry.question}</h3>
+                      <h3 className="text-[13px] font-bold text-ink">{entry.question}</h3>
                       <p className="mt-1.5 max-w-[80ch] text-[12px] leading-relaxed text-[#333]">
                         {entry.answer}
                       </p>

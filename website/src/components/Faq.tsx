@@ -127,16 +127,13 @@ export function Faq() {
 
         <div className="mx-auto mt-12 max-w-[780px]">
           <Reveal delay={0.06}>
-            <div className="win95-window">
-              <div className="win95-titlebar">
-                <span>questions.txt &mdash; Notepad</span>
-                <span className="flex h-3.5 w-4 items-center justify-center border border-white border-r-[#808080] border-b-[#808080] bg-[#c0c0c0] text-[8px] font-bold text-black">
-                  ?
-                </span>
+            <div className="card">
+              <div className="panel-title">
+                <span>Common questions</span>
               </div>
 
-              <div className="bg-[#c0c0c0] p-3" style={{ fontFamily: "var(--font-system)" }}>
-                <div className="win95-field divide-y divide-[#d4d0c8] p-1">
+              <div className="bg-surface p-3">
+                <div className="rounded-lg border border-line bg-surface px-3 py-2 divide-y divide-[#d4d0c8] p-1">
                   {faqs.map((faq, index) => (
                     <details
                       key={faq.q}
@@ -149,10 +146,10 @@ export function Faq() {
                       }}
                       className="group"
                     >
-                      <summary className="flex cursor-pointer list-none items-start gap-2.5 px-3 py-2.5 text-[13px] font-bold text-black hover:bg-[#000080] hover:text-white [&::-webkit-details-marker]:hidden">
+                      <summary className="flex cursor-pointer list-none items-start gap-2.5 px-3 py-2.5 text-[13px] font-bold text-ink hover:bg-accent hover:text-white [&::-webkit-details-marker]:hidden">
                         <span
                           aria-hidden="true"
-                          className="mt-[1px] shrink-0 font-mono text-[12px] text-[#000080] group-hover:text-white group-open:text-[#000080]"
+                          className="mt-[1px] shrink-0 font-mono text-[12px] text-accent group-hover:text-white group-open:text-accent"
                         >
                           {open === index ? "[-]" : "[+]"}
                         </span>

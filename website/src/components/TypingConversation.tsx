@@ -81,38 +81,27 @@ export function TypingConversation() {
 
         <Reveal delay={0.1}>
           <div
-            className="win95-window"
+            className="card"
             style={{ transform: "rotate(-0.5deg)" }}
           >
-            <div className="win95-titlebar">
-              <span className="truncate">metis_chat.exe</span>
-              <div className="flex gap-[2px]">
-                <span className="w-4 h-3.5 bg-[#c0c0c0] border border-white border-r-[#808080] border-b-[#808080] flex items-center justify-center text-[8px] text-black font-bold">
-                  _
-                </span>
-                <span className="w-4 h-3.5 bg-[#c0c0c0] border border-white border-r-[#808080] border-b-[#808080] flex items-center justify-center text-[8px] text-black font-bold">
-                  &times;
-                </span>
-              </div>
-            </div>
+            <div className="panel-title">
+              <span className="truncate">A conversation with Metis</span></div>
 
-            <div className="win95-field min-h-[160px] p-4 m-1 flex flex-col gap-3">
+            <div className="rounded-lg border border-line bg-surface px-3 py-2 min-h-[160px] p-4 m-1 flex flex-col gap-3">
               {/* User message */}
               <div className="flex gap-2 items-start">
                 <span
-                  className="shrink-0 text-[11px] font-bold text-[#000080]"
-                  style={{ fontFamily: "var(--font-system)" }}
+                  className="shrink-0 text-[11px] font-bold text-accent"
                 >
                   You&gt;
                 </span>
                 <span
-                  className="text-[12px] text-black leading-relaxed"
-                  style={{ fontFamily: "var(--font-system)" }}
+                  className="text-[12px] text-ink leading-relaxed"
                 >
                   {phase === "user" ? (
                     <>
                       {displayed}
-                      <span className="blink text-[#000080]">▌</span>
+                      <span className="blink text-accent">▌</span>
                     </>
                   ) : (
                     convo.user
@@ -124,19 +113,17 @@ export function TypingConversation() {
               {(phase === "metis" || phase === "pause") && (
                 <div className="flex gap-2 items-start">
                   <span
-                    className="shrink-0 text-[11px] font-bold text-[#008080]"
-                    style={{ fontFamily: "var(--font-system)" }}
+                    className="shrink-0 text-[11px] font-bold text-accent"
                   >
                     Metis&gt;
                   </span>
                   <span
-                    className="text-[12px] text-black leading-relaxed"
-                    style={{ fontFamily: "var(--font-system)" }}
+                    className="text-[12px] text-ink leading-relaxed"
                   >
                     {phase === "metis" ? (
                       <>
                         {displayed}
-                        <span className="blink text-[#008080]">▌</span>
+                        <span className="blink text-accent">▌</span>
                       </>
                     ) : (
                       convo.metis
@@ -147,16 +134,14 @@ export function TypingConversation() {
             </div>
 
             {/* Status bar */}
-            <div className="bg-[#c0c0c0] px-2 py-0.5 flex justify-between border-t-2 border-[#808080]">
+            <div className="bg-surface px-2 py-0.5 flex justify-between border-t-2 border-line">
               <span
                 className="text-[10px] text-[#333]"
-                style={{ fontFamily: "var(--font-system)" }}
               >
                 {phase === "pause" ? "Ready" : "Typing..."}
               </span>
               <span
                 className="text-[10px] text-[#333]"
-                style={{ fontFamily: "var(--font-system)" }}
               >
                 {convoIdx + 1}/{conversations.length}
               </span>

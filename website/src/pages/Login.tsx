@@ -94,7 +94,7 @@ export function Login() {
     <Shell title={mode === "in" ? "Sign in to Metis" : "Create a Metis account"}>
       <form onSubmit={submit} className="flex flex-col gap-4">
         <label className="flex flex-col gap-1.5">
-          <span className="text-[12px] font-bold text-black">Email address</span>
+          <span className="text-[12px] font-bold text-ink">Email address</span>
           <input
             type="email"
             required
@@ -102,13 +102,12 @@ export function Login() {
             value={email}
             onChange={(event) => setEmail(event.target.value)}
             placeholder="you@example.com"
-            className="win95-field px-2 py-1.5 text-[13px] text-black outline-none"
-            style={{ fontFamily: "var(--font-system)" }}
+            className="rounded-lg border border-line bg-surface px-3 py-2 px-2 py-1.5 text-[13px] text-ink outline-none"
           />
         </label>
 
         <label className="flex flex-col gap-1.5">
-          <span className="text-[12px] font-bold text-black">Password</span>
+          <span className="text-[12px] font-bold text-ink">Password</span>
           <input
             type="password"
             required
@@ -116,8 +115,7 @@ export function Login() {
             autoComplete={mode === "in" ? "current-password" : "new-password"}
             value={password}
             onChange={(event) => setPassword(event.target.value)}
-            className="win95-field px-2 py-1.5 text-[13px] text-black outline-none"
-            style={{ fontFamily: "var(--font-system)" }}
+            className="rounded-lg border border-line bg-surface px-3 py-2 px-2 py-1.5 text-[13px] text-ink outline-none"
           />
         </label>
 
@@ -126,7 +124,7 @@ export function Login() {
         </div>
 
         <div className="flex items-center gap-2">
-          <button type="submit" disabled={busy} className="win95-button press px-6 py-1.5">
+          <button type="submit" disabled={busy} className="press rounded-lg border border-line bg-surface px-3 py-1.5 text-[13px] press px-6 py-1.5">
             {busy ? "Working…" : mode === "in" ? "Sign in" : "Create account"}
           </button>
           <button
@@ -135,7 +133,7 @@ export function Login() {
               setMode(mode === "in" ? "up" : "in");
               setError(null);
             }}
-            className="win95-button press px-4 py-1.5"
+            className="press rounded-lg border border-line bg-surface px-3 py-1.5 text-[13px] press px-4 py-1.5"
           >
             {mode === "in" ? "I need an account" : "I already have one"}
           </button>
@@ -171,18 +169,18 @@ function Shell({ title, children }: { title: string; children: React.ReactNode }
   return (
     <main className="relative z-10 mx-auto flex min-h-[70vh] max-w-[1180px] items-center px-5 py-24">
       <div className="mx-auto w-full max-w-[460px]">
-        <div className="win95-window">
-          <div className="win95-titlebar">
+        <div className="card">
+          <div className="panel-title">
             <span>{title}</span>
             <Link
               to="/"
               aria-label="Back to the home page"
-              className="flex h-3.5 w-4 items-center justify-center border border-white border-r-[#808080] border-b-[#808080] bg-[#c0c0c0] text-[8px] font-bold text-black no-underline"
+              className="ml-auto grid h-7 w-7 place-items-center rounded-full text-[15px] leading-none text-ink-muted transition-colors hover:bg-surface-sunken hover:text-ink no-underline"
             >
               &times;
             </Link>
           </div>
-          <div className="bg-[#c0c0c0] p-5" style={{ fontFamily: "var(--font-system)" }}>
+          <div className="bg-surface p-5">
             {children}
           </div>
         </div>

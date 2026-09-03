@@ -11,8 +11,8 @@ export function FinalCta({
     <section className="py-24 sm:py-32">
       <div className="mx-auto max-w-[640px] px-5">
         <Reveal>
-          <div className="xp-window" style={{ transform: "rotate(-0.8deg)" }}>
-            <div className="xp-titlebar">
+          <div className="card" style={{ transform: "rotate(-0.8deg)" }}>
+            <div className="panel-title">
               <span className="text-[12px]">
                 Metis Setup &mdash; Join the Waitlist
               </span>
@@ -25,7 +25,7 @@ export function FinalCta({
               </button>
             </div>
 
-            <div className="flex bg-[#ece9d8]">
+            <div className="flex bg-surface-sunken">
               {/* XP wizard left banner */}
               <div className="hidden sm:flex w-[140px] shrink-0 flex-col justify-between p-4 bg-gradient-to-b from-[#1085d2] to-[#002f96]">
                 <div>
@@ -47,14 +47,12 @@ export function FinalCta({
               {/* Wizard content */}
               <div className="flex-1 p-6">
                 <h2
-                  className="text-[16px] font-bold text-[#003ca5]"
-                  style={{ fontFamily: "Trebuchet MS, sans-serif" }}
+                  className="text-[16px] font-bold text-accent"
                 >
                   Get it the day it opens
                 </h2>
                 <p
                   className="mt-2 text-[12px] text-[#333] leading-relaxed"
-                  style={{ fontFamily: "var(--font-system)" }}
                 >
                   One email when the download is ready. Nothing else, and no
                   forwarding your address anywhere.
@@ -67,16 +65,16 @@ export function FinalCta({
             </div>
 
             {/* Wizard footer */}
-            <div className="bg-[#ece9d8] border-t border-[#aca899] px-4 py-3 flex justify-end gap-2">
+            <div className="bg-surface-sunken border-t border-line px-4 py-3 flex justify-end gap-2">
               <span
-                className="xp-button-win text-[11px] opacity-50 !cursor-default"
+                className="press rounded-lg border border-line bg-surface px-3 py-1.5 text-[13px] text-[11px] opacity-50 !cursor-default"
                 aria-hidden="true"
               >
                 &lt; Back
               </span>
               <a
                 href="#join"
-                className="xp-button-win text-[11px] no-underline"
+                className="press rounded-lg border border-line bg-surface px-3 py-1.5 text-[13px] text-[11px] no-underline"
               >
                 Next &gt;
               </a>

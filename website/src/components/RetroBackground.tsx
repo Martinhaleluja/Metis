@@ -1,5 +1,21 @@
 import type { ReactElement } from "react";
 
+/**
+ * The doodles behind the page — cursors, floppies, folders, CDs, hourglasses.
+ *
+ * Deliberately kept when the rest of the retro costume was removed. They were
+ * the one part of it people liked, and they are decoration rather than chrome:
+ * unlike the bevelled windows and the taskbar, they never got between a reader
+ * and what they were trying to do.
+ *
+ * Nothing here needed recolouring for the new palette. Every glyph draws in
+ * `currentColor` under a single `text-ink` container, so changing the ink token
+ * moved all forty-five of them at once — which is exactly what the hard-coded
+ * hex literals elsewhere in the site made impossible.
+ *
+ * The opacities stay at 0.08–0.14. They are watermarks; anything heavier and
+ * they start competing with the text.
+ */
 const items = [
   // Cursors
   { x: 5, y: 12, rotate: -15, opacity: 0.14, size: 32, type: "cursor" },

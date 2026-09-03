@@ -14,32 +14,32 @@
   color-scheme: light;
 
   --page: #ffffff;
-  --surface: #f5f5f7;
-  --surface-sunken: #ececec;
+  /* A surface is a raised thing on the page, so it is lighter than the page
+     is, not darker. It was #f5f5f7 -- a grey card on a white page -- which
+     only made sense while every card was pretending to be a Win95 window. */
+  --surface: #ffffff;
+  --surface-sunken: #f5f5f7;
   --ink: #1d1d1f;
   --ink-muted: #6e6e73;
   --line: #d2d2d7;
 
-  --accent: #0078d4;
-  --accent-hover: #005a9e;
+  /* The blue the site used before the retro detour. #0078d4 is Microsoft's,
+     which was the point of it then and is the wrong association now. */
+  --accent: #0071e3;
+  --accent-hover: #005bbb;
   --accent-contrast: #ffffff;
-  --accent-wash: #e8f4fd;
+  --accent-wash: #eef6ff;
 
   --sky: #56ccff;
   --sky-soft: #caeeff;
   --danger: #d70015;
 
-  --win-gray: #c0c0c0;
-  --win-teal: #008080;
-  --win-navy: #000080;
-
-  --material: rgb(255 255 255 / 0.85);
+  --material: rgb(255 255 255 / 0.72);
   --material-blur: blur(20px) saturate(180%);
   --material-edge: rgb(255 255 255 / 0.6);
 
   --shadow-card: 0 1px 2px rgb(0 0 0 / 0.05), 0 8px 20px -8px rgb(0 0 0 / 0.1);
   --shadow-float: 0 2px 6px rgb(0 0 0 / 0.08), 0 16px 48px -16px rgb(0 0 0 / 0.15);
-  --shadow-retro: 3px 3px 0 #000;
 }
 
 @theme inline {
@@ -56,9 +56,6 @@
   --color-sky: var(--sky);
   --color-sky-soft: var(--sky-soft);
   --color-danger: var(--danger);
-  --color-win-gray: var(--win-gray);
-  --color-win-teal: var(--win-teal);
-  --color-win-navy: var(--win-navy);
 
   --font-display: "Outfit Variable", ui-sans-serif, system-ui, sans-serif;
   --font-sans: "Work Sans Variable", ui-sans-serif, system-ui, sans-serif;
@@ -158,187 +155,70 @@ body {
 }
 
 /* -------------------------------------------------------
-   Windows 95/98 Chrome
+   Surfaces
+
+   What replaced three blocks of operating-system chrome.
+
+   The site used to be dressed as Windows: bevelled 95 windows, XP Luna
+   title bars, a WMP11 frame, and a fake minimise/close pair on every
+   card. It was a costume, and it made ordinary things -- a price, a
+   plan, a sign-in form -- harder to read than they needed to be.
+
+   What is left is one card and one glass panel. Both use the tokens
+   above, so a palette change reaches them, which the 116 hard-coded hex
+   literals the chrome relied on never allowed.
    ------------------------------------------------------- */
 
-.win95-window {
-  background-color: #c0c0c0;
-  color: #000;
-  border-top: 2px solid #fff;
-  border-left: 2px solid #fff;
-  border-right: 2px solid #808080;
-  border-bottom: 2px solid #808080;
-  box-shadow: 1px 1px 0 0 #000, inset -1px -1px 0 0 #dfdfdf;
-  padding: 3px;
+.card {
+  background-color: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-container);
+  box-shadow: var(--shadow-card);
 }
 
-.win95-titlebar {
-  background: linear-gradient(90deg, #000080, #1084d0);
-  color: #fff;
-  font-family: var(--font-system);
-  font-weight: 700;
-  font-size: 12px;
-  padding: 3px 6px;
+/* A panel's heading strip. This is where a Win95 title bar used to be — navy
+   gradient, white bold text, and a pair of fake minimise/close boxes that did
+   nothing and were announced to screen readers as loose punctuation. What a
+   heading needs to do is name the thing below it, so that is all this does. */
+.panel-title {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  user-select: none;
+  gap: 0.5rem;
+  padding: 0.875rem 1.25rem 0;
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 0.9375rem;
+  letter-spacing: -0.01em;
+  color: var(--ink);
 }
 
-.win95-button {
-  background-color: #c0c0c0;
-  border-top: 2px solid #fff;
-  border-left: 2px solid #fff;
-  border-right: 2px solid #808080;
-  border-bottom: 2px solid #808080;
-  box-shadow: 1px 1px 0 0 #000;
-  color: #000;
-  font-family: var(--font-system);
-  font-size: 12px;
-  font-weight: 700;
-  padding: 2px 8px;
-  cursor: pointer;
+/* A card that is the primary thing on its row. Lifted rather than
+   outlined, because a heavier border next to a lighter one reads as a
+   different component instead of as the same one emphasised. */
+.card-raised {
+  background-color: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-container);
+  box-shadow: var(--shadow-float);
 }
 
-.win95-button:active {
-  border-top-color: #808080;
-  border-left-color: #808080;
-  border-right-color: #fff;
-  border-bottom-color: #fff;
-  box-shadow: inset 1px 1px 0 0 #000;
-  padding: 3px 7px 1px 9px;
+/* The floating bar the navigation and the notch mock both sit in. Same
+   material language as the desktop app's own glass, so the site and the
+   product read as one thing rather than two. */
+.glass {
+  background-color: var(--material);
+  backdrop-filter: var(--material-blur);
+  -webkit-backdrop-filter: var(--material-blur);
+  border: 1px solid var(--material-edge);
+  box-shadow: var(--shadow-float);
 }
 
-.win95-field {
-  background-color: #fff;
-  color: #000;
-  border-top: 2px solid #808080;
-  border-left: 2px solid #808080;
-  border-right: 2px solid #fff;
-  border-bottom: 2px solid #fff;
-  box-shadow: inset 1px 1px 0 0 #000;
-}
-
-/* -------------------------------------------------------
-   Windows XP Luna
-   ------------------------------------------------------- */
-
-.xp-window {
-  background-color: #ece9d8;
-  border: 3px solid #0054e3;
-  border-top-width: 0;
-  border-radius: 8px 8px 0 0;
-  box-shadow: 0 6px 20px rgb(0 0 0 / 0.15);
-  overflow: hidden;
-}
-
-.xp-titlebar {
-  background: linear-gradient(to bottom, #0054e3, #2b7afc 9%, #0054e3 18%, #003ca5 92%, #002375);
-  color: #fff;
-  font-family: "Trebuchet MS", var(--font-system);
-  font-weight: 700;
-  text-shadow: 1px 1px 2px #002375;
-  padding: 6px 12px;
-  border-radius: 7px 7px 0 0;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  user-select: none;
-}
-
-.xp-button-close {
-  background: linear-gradient(to bottom, #f37c5f, #e14e2c 10%, #d83d1b 40%, #c42907 90%, #a21a00);
-  border: 1px solid #7c1200;
-  box-shadow: inset 1px 1px 1px #ff9e87, 0 1px 2px rgba(0, 0, 0, 0.3);
-  border-radius: 3px;
-  width: 21px;
-  height: 21px;
-  color: white;
-  display: grid;
-  place-items: center;
-  font-weight: 900;
-  font-size: 11px;
-  cursor: pointer;
-}
-
-.xp-button-win {
-  background: linear-gradient(to bottom, #fcfcfc, #e0e0e0 40%, #ccc);
-  border: 1.5px solid #0054e3;
-  color: #003ca5;
-  font-weight: 700;
-  border-radius: 3px;
-  padding: 3px 12px;
-  box-shadow: inset 0 1px 0 white, 0 1px 1px rgba(0, 0, 0, 0.15);
-  cursor: pointer;
-}
-
-.xp-button-win:active {
-  background: #d4d0c8;
-  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.2);
-}
-
-/* -------------------------------------------------------
-   WMP 11 Dark Frame
-   ------------------------------------------------------- */
-
-.wmp11-frame {
-  background: linear-gradient(180deg, #1e2430, #0d0f14);
-  border: 1px solid #333d4f;
-  border-radius: 12px;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.35),
-    inset 0 1px 0 rgba(255, 255, 255, 0.06);
-  overflow: hidden;
-}
-
-.wmp11-titlebar {
-  background: linear-gradient(90deg, #1d222b, #15181e);
-  border-bottom: 1px solid #282f3a;
-  padding: 8px 12px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  font-family: var(--font-system);
-  font-size: 11px;
-  color: #8a9bbc;
-  user-select: none;
-}
-
-.wmp11-controls {
-  background: linear-gradient(180deg, #1c212a, #0b0c0f);
-  border-top: 1px solid #2c3444;
-  padding: 10px 16px;
-}
-
-.wmp11-play {
-  background: radial-gradient(
-    circle at center,
-    #5bbaff,
-    #0070d6 50%,
-    #004d9c 90%,
-    #002d61
-  );
-  border: 2px solid #8ccaff;
-  box-shadow: 0 0 8px rgba(86, 204, 255, 0.5),
-    inset 0 1px 3px rgba(255, 255, 255, 0.4);
-  width: 44px;
-  height: 44px;
-  border-radius: 50%;
-  color: white;
-  display: grid;
-  place-items: center;
-  cursor: pointer;
-  transition: filter 0.15s, transform 0.1s;
-}
-
-.wmp11-play:hover {
-  filter: brightness(1.15);
-  box-shadow: 0 0 12px rgba(86, 204, 255, 0.7),
-    inset 0 1px 3px rgba(255, 255, 255, 0.4);
-}
-
-.wmp11-play:active {
-  transform: scale(0.96);
-  filter: brightness(0.9);
+/* The dark counterpart, for the notch shown in situ on the site. */
+.glass-dark {
+  background-color: rgb(10 10 12 / 0.86);
+  backdrop-filter: blur(24px) saturate(140%);
+  -webkit-backdrop-filter: blur(24px) saturate(140%);
+  border: 1px solid rgb(255 255 255 / 0.12);
 }
 
 /* -------------------------------------------------------

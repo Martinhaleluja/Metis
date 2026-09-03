@@ -24,14 +24,12 @@ import { Reveal } from "./Reveal";
 const features = [
   {
     icon: Eye,
-    winTitle: "what_it_sees.txt",
     title: "It sees what you see",
     body: "Ask about anything on your screen. Metis looks once, when you ask, and answers about what is actually in front of you.",
     tilt: -1.2,
   },
   {
     icon: Microphone,
-    winTitle: "talking_to_it.txt",
     title: "Talk to it, or type",
     body: "Hold a keyboard shortcut from anywhere in Windows and speak, or just say its name. Type instead if you would rather.",
     shortcut: ["Ctrl", "Shift", "1"],
@@ -39,28 +37,24 @@ const features = [
   },
   {
     icon: SpeakerHigh,
-    winTitle: "out_loud.txt",
     title: "It answers out loud",
     body: "You hear the answer while your eyes stay on the work. Turn it off and read instead — some people prefer that.",
     tilt: 1.5,
   },
   {
     icon: PencilLine,
-    winTitle: "on_your_screen.txt",
     title: "It draws on your screen",
     body: "Arrows and highlights appear over the buttons you need, then fade. It shows you where to click. It never clicks for you.",
     tilt: -0.7,
   },
   {
     icon: UserCircle,
-    winTitle: "always_there.txt",
     title: "Always one word away",
     body: "Metis lives in a small bar at the top of your screen. It stays out of the way until you ask, and it remembers your name.",
     tilt: 0.5,
   },
   {
     icon: HardDrives,
-    winTitle: "your_machine.txt",
     title: "It can run with no internet",
     body: "Point Metis at a model running on your own computer and nothing you say or show it ever leaves the machine.",
     tilt: -1.0,
@@ -86,39 +80,25 @@ export function Capabilities() {
           {features.map((feat, i) => (
             <Reveal key={feat.title} delay={i * 0.06}>
               <div
-                className="win95-window h-full transition-transform hover:scale-[1.02]"
-                style={{ transform: `rotate(${feat.tilt}deg)` }}
+                className="card h-full transition-transform hover:scale-[1.02]"
               >
-                <div className="win95-titlebar">
-                  <span className="truncate">{feat.winTitle}</span>
-                  <div className="flex gap-[2px]">
-                    <span className="w-4 h-3.5 bg-[#c0c0c0] border border-white border-r-[#808080] border-b-[#808080] flex items-center justify-center text-[8px] text-black font-bold">
-                      _
-                    </span>
-                    <span className="w-4 h-3.5 bg-[#c0c0c0] border border-white border-r-[#808080] border-b-[#808080] flex items-center justify-center text-[8px] text-black font-bold">
-                      &times;
-                    </span>
-                  </div>
-                </div>
-                <div className="p-5 bg-[#c0c0c0]">
+                <div className="p-5 bg-surface">
                   <div className="flex items-start gap-4">
-                    <span className="shrink-0 grid h-10 w-10 place-items-center rounded bg-white border border-[#808080] shadow-[inset_1px_1px_0_#dfdfdf]">
+                    <span className="shrink-0 grid h-10 w-10 place-items-center rounded-xl bg-accent-wash border border-line">
                       <feat.icon
                         size={20}
                         weight="bold"
-                        className="text-[#000080]"
+                        className="text-accent"
                       />
                     </span>
                     <div>
                       <h3
-                        className="text-[14px] font-bold text-black"
-                        style={{ fontFamily: "var(--font-system)" }}
+                        className="text-[14px] font-bold text-ink"
                       >
                         {feat.title}
                       </h3>
                       <p
                         className="mt-1.5 text-[12px] text-[#333] leading-relaxed"
-                        style={{ fontFamily: "var(--font-system)" }}
                       >
                         {feat.body}
                       </p>
@@ -127,7 +107,7 @@ export function Capabilities() {
                           {feat.shortcut.map((key) => (
                             <kbd
                               key={key}
-                              className="win95-button text-[10px] !py-0.5 !px-2 !cursor-default"
+                              className="press rounded-lg border border-line bg-surface px-3 py-1.5 text-[13px] text-[10px] !py-0.5 !px-2 !cursor-default"
                             >
                               {key}
                             </kbd>

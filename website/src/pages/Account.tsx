@@ -163,7 +163,7 @@ export function Account() {
                   type="button"
                   title="Click to change avatar or upload photo"
                   onClick={() => setShowAvatarPicker((prev) => !prev)}
-                  className="flex h-16 w-16 items-center justify-center rounded-full border-2 border-[#000080] bg-[#e0e0ff] text-[32px] shadow-sm hover:scale-105 transition-transform overflow-hidden"
+                  className="flex h-16 w-16 items-center justify-center rounded-full border-2 border-[currentColor] bg-[#e0e0ff] text-[32px] shadow-sm hover:scale-105 transition-transform overflow-hidden"
                 >
                   {avatar.startsWith("data:") || avatar.startsWith("http") ? (
                     <img src={avatar} alt="Profile" className="h-full w-full object-cover" />
@@ -181,18 +181,18 @@ export function Account() {
                 />
 
                 {showAvatarPicker && (
-                  <div className="absolute top-20 left-0 z-50 flex flex-col gap-2 rounded border border-[#808080] bg-[#c0c0c0] p-2.5 shadow-lg w-[220px]">
+                  <div className="absolute top-20 left-0 z-50 flex flex-col gap-2 rounded border border-line bg-surface p-2.5 shadow-lg w-[220px]">
                     <button
                       type="button"
                       onClick={() => {
                         setShowAvatarPicker(false);
                         fileInputRef.current?.click();
                       }}
-                      className="win95-button press w-full py-1.5 text-[11.5px] font-bold text-center flex items-center justify-center gap-1.5"
+                      className="press rounded-lg border border-line bg-surface px-3 py-1.5 text-[13px] press w-full py-1.5 text-[11.5px] font-bold text-center flex items-center justify-center gap-1.5"
                     >
                       <span>📁</span> Upload Photo...
                     </button>
-                    <div className="border-t border-[#808080] my-1" />
+                    <div className="border-t border-line my-1" />
                     <span className="text-[10px] text-[#444] font-bold">Or pick an icon:</span>
                     <div className="flex flex-wrap gap-1.5">
                       {AVATARS.map((av) => (
@@ -200,7 +200,7 @@ export function Account() {
                           key={av}
                           type="button"
                           onClick={() => handleSelectAvatar(av)}
-                          className="h-7 w-7 rounded text-[16px] hover:bg-white flex items-center justify-center border border-transparent hover:border-[#808080]"
+                          className="h-7 w-7 rounded text-[16px] hover:bg-white flex items-center justify-center border border-transparent hover:border-line"
                         >
                           {av}
                         </button>
@@ -218,23 +218,23 @@ export function Account() {
                         type="text"
                         value={displayName}
                         onChange={(e) => setDisplayName(e.target.value)}
-                        className="win95-field px-2 py-0.5 text-[14px] font-bold text-black outline-none"
+                        className="rounded-lg border border-line bg-surface px-3 py-2 px-2 py-0.5 text-[14px] font-bold text-ink outline-none"
                       />
                       <button
                         type="button"
                         onClick={handleSaveName}
-                        className="win95-button press px-2 py-0.5 text-[11px]"
+                        className="press rounded-lg border border-line bg-surface px-3 py-1.5 text-[13px] press px-2 py-0.5 text-[11px]"
                       >
                         Save
                       </button>
                     </div>
                   ) : (
                     <div className="flex items-center gap-2">
-                      <span className="text-[18px] font-bold text-black">{displayName}</span>
+                      <span className="text-[18px] font-bold text-ink">{displayName}</span>
                       <button
                         type="button"
                         onClick={() => setIsEditingName(true)}
-                        className="text-[11px] text-[#000080] underline hover:text-blue-800"
+                        className="text-[11px] text-accent underline hover:text-blue-800"
                       >
                         Edit
                       </button>
@@ -278,7 +278,7 @@ export function Account() {
               <button
                 type="button"
                 onClick={() => void signOut(navigate)}
-                className="win95-button press px-4 py-1.5 text-[11.5px]"
+                className="press rounded-lg border border-line bg-surface px-3 py-1.5 text-[13px] press px-4 py-1.5 text-[11.5px]"
               >
                 Sign out
               </button>
@@ -305,9 +305,9 @@ export function Account() {
       <div className="mb-6">
         <Window title="Your plan">
           {data?.subscription && (
-            <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded border border-[#000080] bg-[#e8f0fe] p-3 text-[12px]">
+            <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded border border-[currentColor] bg-[#e8f0fe] p-3 text-[12px]">
               <div>
-                <span className="font-bold text-[#000080]">
+                <span className="font-bold text-accent">
                   Active Subscription: Metis {plan.name}
                 </span>
                 <span className="ml-2 text-[#444]">
@@ -321,7 +321,7 @@ export function Account() {
                 href="https://sandbox.polar.sh/purchases"
                 target="_blank"
                 rel="noreferrer"
-                className="win95-button press px-3 py-1 text-[11px] font-bold text-black"
+                className="press rounded-lg border border-line bg-surface px-3 py-1.5 text-[13px] press px-3 py-1 text-[11px] font-bold text-ink"
               >
                 Manage Billing &amp; Invoices ↗
               </a>
@@ -342,22 +342,22 @@ export function Account() {
                 <div
                   key={option.id}
                   className={`flex h-full flex-col justify-between rounded border-2 p-4 ${
-                    isCurrent ? "border-[#000080] bg-[#f0f4ff]" : "border-[#808080] bg-white"
+                    isCurrent ? "border-[currentColor] bg-[#f0f4ff]" : "border-line bg-white"
                   }`}
                 >
                   <div>
                     <div className="flex items-start justify-between gap-2">
-                      <span className="text-[13px] font-bold uppercase tracking-wide text-[#000080]">
+                      <span className="text-[13px] font-bold uppercase tracking-wide text-accent">
                         Metis {option.name}
                       </span>
                       {isCurrent && (
-                        <span className="shrink-0 rounded bg-[#000080] px-2 py-0.5 text-[9.5px] font-bold text-white">
+                        <span className="shrink-0 rounded bg-accent px-2 py-0.5 text-[9.5px] font-bold text-white">
                           CURRENT
                         </span>
                       )}
                     </div>
 
-                    <p className="mt-2 text-[22px] font-bold text-black">
+                    <p className="mt-2 text-[22px] font-bold text-ink">
                       {priceLabel(option)}
                       <span className="text-[12px] font-normal text-[#666]">
                         {option.priceUsd === 0 ? "" : "/mo"}
@@ -382,7 +382,7 @@ export function Account() {
                     <button
                       type="button"
                       disabled
-                      className="win95-button mt-4 w-full py-1.5 text-[11.5px] font-bold opacity-60"
+                      className="press rounded-lg border border-line bg-surface px-3 py-1.5 text-[13px] mt-4 w-full py-1.5 text-[11.5px] font-bold opacity-60"
                     >
                       ✓ Your Current Plan
                     </button>
@@ -390,7 +390,7 @@ export function Account() {
                     <button
                       type="button"
                       disabled
-                      className="win95-button mt-4 w-full py-1.5 text-[11.5px] font-bold opacity-50"
+                      className="press rounded-lg border border-line bg-surface px-3 py-1.5 text-[13px] mt-4 w-full py-1.5 text-[11.5px] font-bold opacity-50"
                     >
                       Included Tier
                     </button>
@@ -399,7 +399,7 @@ export function Account() {
                       type="button"
                       disabled={isCheckingOut}
                       onClick={() => void handleStartCheckout(option.id as PaidPlanId)}
-                      className="win95-button press mt-4 w-full py-1.5 text-[11.5px] font-bold text-[#000080]"
+                      className="press rounded-lg border border-line bg-surface px-3 py-1.5 text-[13px] press mt-4 w-full py-1.5 text-[11.5px] font-bold text-accent"
                     >
                       {isCheckingOut ? "Opening checkout…" : `Upgrade to ${option.name}`}
                     </button>
@@ -410,9 +410,9 @@ export function Account() {
           </div>
 
           {isStaff && (
-            <div className="mt-5 border-t border-[#808080] pt-3">
+            <div className="mt-5 border-t border-line pt-3">
               <details className="text-[11px] text-[#555]">
-                <summary className="cursor-pointer font-bold text-[#000080]">
+                <summary className="cursor-pointer font-bold text-accent">
                   Developer Utility: Force-switch test plan (bypasses checkout)
                 </summary>
                 <div className="mt-2 flex flex-wrap items-center gap-2">
@@ -423,7 +423,7 @@ export function Account() {
                       type="button"
                       disabled={opt.id === currentPlanId || switchingPlan}
                       onClick={() => void handleSelectPlan(opt.id)}
-                      className="win95-button press px-2.5 py-1 text-[10.5px]"
+                      className="press rounded-lg border border-line bg-surface px-3 py-1.5 text-[13px] press px-2.5 py-1 text-[10.5px]"
                     >
                       {switchingPlan ? "…" : `Set ${opt.name}`}
                     </button>
@@ -440,18 +440,18 @@ export function Account() {
         <Window title={`Plan Details — Metis ${plan.name}`}>
           <div className="flex items-baseline justify-between gap-4">
             <div>
-              <p className="text-[18px] font-bold text-black">Metis {plan.name}</p>
+              <p className="text-[18px] font-bold text-ink">Metis {plan.name}</p>
               <p className="mt-0.5 text-[12px] text-[#444]">{plan.aiSummary}</p>
             </div>
-            <p className="shrink-0 text-[16px] font-bold text-black">
+            <p className="shrink-0 text-[16px] font-bold text-ink">
               {priceLabel(plan)}
               {plan.priceUsd > 0 && <span className="text-[11px] font-normal">/mo</span>}
             </p>
           </div>
 
-          <div className="mt-4 border-t border-[#808080] pt-4">
+          <div className="mt-4 border-t border-line pt-4">
             {data?.subscription ? (
-              <p className="text-[12px] text-black">
+              <p className="text-[12px] text-ink">
                 {data.subscription.status} via {data.subscription.provider}
                 {data.subscription.current_period_end && (
                   <>
@@ -495,7 +495,7 @@ export function Account() {
             cap={limits?.max_agent_steps_per_month ?? 0}
           />
 
-          <p className="mt-4 border-t border-[#808080] pt-3 text-[11px] leading-relaxed text-[#444]">
+          <p className="mt-4 border-t border-line pt-3 text-[11px] leading-relaxed text-[#444]">
             Resets on the 1st. Answers on a model running on your own computer
             are never counted, on any plan.
           </p>
@@ -546,19 +546,19 @@ function Meter({
       ? "#b71c1c"
       : fraction >= 0.75
         ? "#e65100"
-        : "#000080";
+        : "currentColor";
 
   return (
     <div className="mb-4 last:mb-0">
       <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5">
-        <span className="text-[12px] text-black">{label}</span>
+        <span className="text-[12px] text-ink">{label}</span>
         <span className="text-[11.5px] text-[#444]">
           {unlimited ? "Unlimited" : `${used}${unit} of ${cap}${unit}`}
         </span>
       </div>
 
       <div
-        className="win95-field mt-1.5 flex h-5 items-center gap-[2px] p-[3px]"
+        className="rounded-lg border border-line bg-surface px-3 py-2 mt-1.5 flex h-5 items-center gap-[2px] p-[3px]"
         role="progressbar"
         aria-label={label}
         aria-valuenow={unlimited ? undefined : used}
@@ -675,10 +675,10 @@ function Connections({
       </p>
 
       {connections.length > 0 && (
-        <ul className="mt-4 divide-y divide-[#808080] border-y border-[#808080]">
+        <ul className="mt-4 divide-y divide-line border-y border-line">
           {connections.map((connection) => (
             <li key={connection.provider} className="flex items-center justify-between gap-4 py-2">
-              <span className="text-[12px] text-black">
+              <span className="text-[12px] text-ink">
                 <strong>
                   {connectableProviders.find((entry) => entry.key === connection.provider)?.label
                     ?? connection.provider}
@@ -691,7 +691,7 @@ function Connections({
                 type="button"
                 disabled={busy}
                 onClick={() => void disconnect(connection.provider)}
-                className="win95-button press px-3 py-1 text-[11px]"
+                className="press rounded-lg border border-line bg-surface px-3 py-1.5 text-[13px] press px-3 py-1 text-[11px]"
               >
                 Disconnect
               </button>
@@ -702,12 +702,11 @@ function Connections({
 
       <form onSubmit={connect} className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-end">
         <label className="flex flex-col gap-1.5">
-          <span className="text-[11px] font-bold text-black">Provider</span>
+          <span className="text-[11px] font-bold text-ink">Provider</span>
           <select
             value={provider}
             onChange={(event) => setProvider(event.target.value)}
-            className="win95-field px-2 py-1.5 text-[12px] text-black outline-none"
-            style={{ fontFamily: "var(--font-system)" }}
+            className="rounded-lg border border-line bg-surface px-3 py-2 px-2 py-1.5 text-[12px] text-ink outline-none"
           >
             {connectableProviders.map((entry) => (
               <option key={entry.key} value={entry.key}>
@@ -718,7 +717,7 @@ function Connections({
         </label>
 
         <label className="flex flex-1 flex-col gap-1.5">
-          <span className="text-[11px] font-bold text-black">API key</span>
+          <span className="text-[11px] font-bold text-ink">API key</span>
           <input
             type="password"
             value={apiKey}
@@ -726,12 +725,11 @@ function Connections({
             autoComplete="off"
             spellCheck={false}
             placeholder={connectableProviders.find((entry) => entry.key === provider)?.placeholder}
-            className="win95-field px-2 py-1.5 text-[12px] text-black outline-none"
-            style={{ fontFamily: "var(--font-mono)" }}
+            className="rounded-lg border border-line bg-surface px-3 py-2 px-2 py-1.5 text-[12px] text-ink outline-none"
           />
         </label>
 
-        <button type="submit" disabled={busy} className="win95-button press px-5 py-1.5">
+        <button type="submit" disabled={busy} className="press rounded-lg border border-line bg-surface px-3 py-1.5 text-[13px] press px-5 py-1.5">
           {busy ? "Testing…" : "Connect"}
         </button>
       </form>
@@ -751,11 +749,11 @@ async function signOut(navigate: ReturnType<typeof useNavigate>) {
 
 function Window({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <div className="win95-window">
-      <div className="win95-titlebar">
+    <div className="card">
+      <div className="panel-title">
         <span>{title}</span>
       </div>
-      <div className="bg-[#c0c0c0] p-5" style={{ fontFamily: "var(--font-system)" }}>
+      <div className="bg-surface p-5">
         {children}
       </div>
     </div>

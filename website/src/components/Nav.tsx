@@ -4,22 +4,30 @@ import { useAuth } from "../lib/auth";
 import { supportMailto } from "../lib/support";
 
 /**
- * Taskbar buttons. The anchors are absolute rather than bare fragments so they
- * work from /pricing and /account too, where there is no #privacy to scroll to
- * on the current page.
+ * The site's navigation.
+ *
+ * This was a Windows XP taskbar — a blue gradient bar pinned to the top, a
+ * green Start button, taskbar-style section buttons and a system tray with a
+ * live clock. It was the single loudest piece of the retro costume, and none of
+ * it was reusable: there was no class to restyle, only inline gradients, so it
+ * is rewritten rather than adjusted.
+ *
+ * What replaced it is a floating glass bar using the same material as the
+ * desktop app's notch, so the site and the product read as the same thing.
+ *
+ * The anchors stay absolute rather than bare fragments so they work from
+ * /pricing and /account too, where there is no #privacy on the current page to
+ * scroll to.
  */
 const links = [
-  { href: "/#showcase", label: "See it work" },
   { href: "/#capabilities", label: "What it does" },
+  { href: "/#showcase", label: "See it work" },
   { href: "/#privacy", label: "Privacy" },
 ];
 
-const taskbarButton =
-  "h-[30px] px-3 flex items-center text-[12px] text-white/90 font-semibold rounded border " +
-  "transition-colors bg-[#3b7ddd]/30 border-[#2860b5]/50 " +
-  "shadow-[inset_0_1px_0_rgba(255,255,255,0.1)] hover:bg-[#5a9af3]/40 no-underline";
-
-const systemFont = { fontFamily: "Segoe UI, Tahoma, sans-serif" };
+const linkClass =
+  "px-3 py-2 text-[13.5px] font-medium text-ink-muted rounded-lg no-underline " +
+  "transition-colors hover:text-ink hover:bg-surface-sunken";
 
 export function Nav() {
   const auth = useAuth();
@@ -28,7 +36,7 @@ export function Nav() {
   const menuRef = useRef<HTMLDivElement>(null);
 
   // The account id goes into the support email only when there is one. `useAuth`
-  // is already being asked here for the tray button, so this costs nothing
+  // is already being asked here for the account button, so this costs nothing
   // extra, and the id is read from the session rather than the token beside it.
   const support = supportMailto(
     auth.status === "signed-in" ? auth.session.user.id : undefined,
@@ -42,166 +50,106 @@ export function Nav() {
   useEffect(() => {
     if (!menuOpen) return;
 
-    function onKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape") setMenuOpen(false);
-    }
-
-    function onPointerDown(event: MouseEvent) {
+    const onPointerDown = (event: PointerEvent) => {
       if (!menuRef.current?.contains(event.target as Node)) setMenuOpen(false);
-    }
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setMenuOpen(false);
+    };
 
+    document.addEventListener("pointerdown", onPointerDown);
     document.addEventListener("keydown", onKeyDown);
-    document.addEventListener("mousedown", onPointerDown);
     return () => {
+      document.removeEventListener("pointerdown", onPointerDown);
       document.removeEventListener("keydown", onKeyDown);
-      document.removeEventListener("mousedown", onPointerDown);
     };
   }, [menuOpen]);
 
   return (
-    <header className="fixed inset-x-0 top-0 z-50">
-      <div
-        className="flex h-[48px] items-center px-2 shadow-lg border-t border-[#5ba0f5]"
-        style={{
-          background: "linear-gradient(to bottom, #3168d5, #4889e4 30%, #2050bc)",
-        }}
-      >
-        {/* ------------------------- Start ------------------------------
-            On a wide screen this is simply the way home, and the links sit
-            beside it. On a narrow one it opens a Start menu holding the same
-            links — which is where a taskbar keeps them, and the reason this
-            site is drawn as a taskbar at all.
+    <header className="fixed inset-x-0 top-0 z-50 px-4 pt-4 sm:px-5">
+      <div className="glass mx-auto flex h-[60px] max-w-[1180px] items-center gap-2 rounded-[18px] px-3 sm:px-4">
+        <Link
+          to="/"
+          className="flex items-center gap-2.5 px-1 no-underline"
+          aria-label="Metis home"
+        >
+          <span
+            aria-hidden="true"
+            className="h-[26px] w-[26px] rounded-full bg-accent"
+          />
+          <span className="type-heading text-[16px] text-ink">Metis</span>
+        </Link>
 
-            The alternative, and what was here before, was `hidden md:flex` on
-            the nav and nothing in its place: below 768px the site had no
-            navigation whatsoever. Pricing, privacy and everything else were
-            reachable only by knowing the URL. */}
-        <div className="relative" ref={menuRef}>
-          <Link
-            to="/"
-            onClick={(event) => {
-              // Only below md, where this button is doing the menu's job.
-              if (window.matchMedia("(min-width: 768px)").matches) return;
-              event.preventDefault();
-              setMenuOpen((open) => !open);
-            }}
-            aria-haspopup="true"
-            aria-expanded={menuOpen}
-            className="flex items-center gap-2 h-[34px] rounded-r-full pl-2 pr-4 border border-[#0e7c0e] transition-all hover:brightness-110 active:brightness-90"
-            style={{
-              background: "linear-gradient(to bottom, #3c9b3c, #1d6e1d)",
-              boxShadow: "inset 0 1px 0 rgba(255,255,255,0.35)",
-            }}
-          >
-            <img
-              src="/metis-mark.png"
-              alt=""
-              width={22}
-              height={22}
-              className="drop-shadow-sm"
-            />
-            <span
-              className="text-white font-bold text-[14px] italic drop-shadow-[0_1px_1px_rgba(0,0,0,0.3)]"
-              style={{ fontFamily: "Trebuchet MS, sans-serif" }}
-            >
-              start
-            </span>
-          </Link>
-
-          {menuOpen && (
-            <nav
-              aria-label="Menu"
-              className="absolute left-0 top-[42px] flex w-[248px] overflow-hidden border-2 border-[#dfdfdf] bg-[#c0c0c0] shadow-[4px_4px_0_rgba(0,0,0,0.35)] md:hidden"
-              style={{ borderRightColor: "#404040", borderBottomColor: "#404040" }}
-            >
-              {/* The vertical banner down the left of a real Start menu. */}
-              <div
-                className="flex w-[26px] shrink-0 items-end justify-center pb-3"
-                style={{ background: "linear-gradient(to bottom, #1a55c0, #0a2a70)" }}
-                aria-hidden="true"
-              >
-                {/* Anchored to the bottom rather than padded from the top, so
-                    the word cannot be clipped when the menu is short. */}
-                <span className="whitespace-nowrap text-[12px] font-bold italic text-white/80 [writing-mode:vertical-rl] [transform:rotate(180deg)]">
-                  Metis
-                </span>
-              </div>
-
-              <ul className="flex-1 py-1.5">
-                <StartItem to="/">Home</StartItem>
-                <StartItem to="/pricing">Pricing</StartItem>
-                {links.map((link) => (
-                  <StartItem key={link.href} href={link.href}>
-                    {link.label}
-                  </StartItem>
-                ))}
-
-                <StartItem href={support}>Support</StartItem>
-
-                <li className="my-1.5 border-t border-[#808080] border-b border-b-white" />
-
-                {auth.status === "signed-in" ? (
-                  <StartItem to="/account">Your account</StartItem>
-                ) : (
-                  <StartItem href="/#join">Join the waitlist</StartItem>
-                )}
-              </ul>
-            </nav>
-          )}
-        </div>
-
-        {/* Separator */}
-        <div className="w-px h-6 mx-2 bg-[#1a50b0] shadow-[1px_0_0_rgba(255,255,255,0.15)]" />
-
-        {/* Nav links as taskbar buttons */}
-        <nav aria-label="Sections" className="hidden items-center gap-1 flex-1 md:flex">
-          <Link to="/pricing" className={taskbarButton} style={systemFont}>
+        <nav
+          aria-label="Sections"
+          className="ml-6 hidden flex-1 items-center gap-1 md:flex"
+        >
+          <Link to="/pricing" className={linkClass}>
             Pricing
           </Link>
           {links.map((link) => (
-            <a key={link.href} href={link.href} className={taskbarButton} style={systemFont}>
+            <a key={link.href} href={link.href} className={linkClass}>
               {link.label}
             </a>
           ))}
-          {/* Last, because it is the button you want when the others have not
-              worked. It opens a mail client with the browser, the build and —
-              only if somebody is signed in — the account id already written in. */}
-          <a href={support} className={taskbarButton} style={systemFont}>
+          <a href={support} className={linkClass}>
             Support
           </a>
         </nav>
 
-        {/* System tray area */}
-        <div className="ml-auto flex items-center gap-3">
+        <div className="ml-auto flex items-center gap-2">
           {auth.status === "signed-in" ? (
             <Link
               to="/account"
-              className="h-[30px] px-4 flex items-center text-[12px] text-white font-bold rounded border transition-colors bg-[#3b7ddd]/40 border-[#2860b5]/50 shadow-[inset_0_1px_0_rgba(255,255,255,0.15)] hover:bg-[#5a9af3]/50 no-underline"
-              style={systemFont}
+              className="press rounded-full bg-accent px-4 py-2 text-[13.5px] font-semibold text-accent-contrast no-underline transition-colors hover:bg-accent-hover"
             >
-              Account
+              Your account
             </Link>
           ) : (
             <a
               href="/#join"
-              className="h-[30px] px-4 flex items-center text-[12px] text-white font-bold rounded border transition-colors bg-[#3b7ddd]/40 border-[#2860b5]/50 shadow-[inset_0_1px_0_rgba(255,255,255,0.15)] hover:bg-[#5a9af3]/50"
-              style={systemFont}
+              className="press rounded-full bg-accent px-4 py-2 text-[13.5px] font-semibold text-accent-contrast no-underline transition-colors hover:bg-accent-hover"
             >
-              Join Waitlist
+              Get Metis
             </a>
           )}
-          <div
-            className="hidden sm:flex h-[30px] px-3 items-center text-[11px] text-white/70 rounded border-l border-[#1040a0] shadow-[inset_1px_0_0_rgba(255,255,255,0.1)]"
-            style={{
-              ...systemFont,
-              background: "linear-gradient(to bottom, #1a55c0, #1545a5)",
-            }}
-            aria-hidden="true"
-          >
-            {new Date().toLocaleTimeString([], {
-              hour: "2-digit",
-              minute: "2-digit",
-            })}
+
+          {/* Below md the sections collapse into a menu. It is a real button
+              with aria-expanded rather than the old Start button, which
+              announced itself as nothing at all. */}
+          <div className="relative md:hidden" ref={menuRef}>
+            <button
+              type="button"
+              aria-label="Menu"
+              aria-expanded={menuOpen}
+              onClick={() => setMenuOpen((open) => !open)}
+              className="flex h-9 w-9 items-center justify-center rounded-lg border border-line bg-surface text-ink"
+            >
+              <span aria-hidden="true" className="text-[15px] leading-none">
+                {menuOpen ? "\u00d7" : "\u2261"}
+              </span>
+            </button>
+
+            {menuOpen && (
+              <div
+                className="card absolute right-0 top-11 w-56 overflow-hidden p-1"
+                role="menu"
+              >
+                <MenuItem to="/">Home</MenuItem>
+                <MenuItem to="/pricing">Pricing</MenuItem>
+                {links.map((link) => (
+                  <MenuItem key={link.href} href={link.href}>
+                    {link.label}
+                  </MenuItem>
+                ))}
+                <MenuItem href={support}>Support</MenuItem>
+                {auth.status === "signed-in" ? (
+                  <MenuItem to="/account">Your account</MenuItem>
+                ) : (
+                  <MenuItem href="/#join">Join the waitlist</MenuItem>
+                )}
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -210,14 +158,10 @@ export function Nav() {
 }
 
 /**
- * One row of the Start menu.
- *
- * 44px tall rather than the 20-odd pixels a real Windows menu used, because
- * this one is being tapped with a thumb: below the standard minimum touch
- * target the retro accuracy stops being charming and starts being a menu you
- * cannot hit.
+ * A row in the small-screen menu. Deliberately 44px tall: it is a touch target,
+ * and the rest of the bar's sizing is for a pointer.
  */
-function StartItem({
+function MenuItem({
   to,
   href,
   children,
@@ -227,20 +171,19 @@ function StartItem({
   children: React.ReactNode;
 }) {
   const className =
-    "flex h-[44px] items-center px-4 text-[13px] font-semibold text-black no-underline " +
-    "hover:bg-[#000080] hover:text-white focus-visible:bg-[#000080] focus-visible:text-white";
+    "flex h-11 items-center rounded-lg px-3 text-[14px] text-ink no-underline hover:bg-surface-sunken";
+
+  if (to) {
+    return (
+      <Link to={to} className={className} role="menuitem">
+        {children}
+      </Link>
+    );
+  }
 
   return (
-    <li>
-      {to ? (
-        <Link to={to} className={className} style={systemFont}>
-          {children}
-        </Link>
-      ) : (
-        <a href={href} className={className} style={systemFont}>
-          {children}
-        </a>
-      )}
-    </li>
+    <a href={href} className={className} role="menuitem">
+      {children}
+    </a>
   );
 }

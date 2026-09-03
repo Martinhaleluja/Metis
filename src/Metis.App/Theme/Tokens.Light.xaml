@@ -1,4 +1,4 @@
-﻿<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
     <!--
         Metis light tokens. A low-contrast system in the macOS idiom: one white
@@ -176,4 +176,48 @@
     <SolidColorBrush x:Key="BabyBlueBrush" Color="{StaticResource Accent}" />
     <SolidColorBrush x:Key="BabyBlueStrongBrush" Color="{StaticResource AccentStrong}" />
     <SolidColorBrush x:Key="InkBrush" Color="{StaticResource Canvas}" />
+
+    <!-- Glassmorphism & Aurora Gradient Tokens -->
+    <Color x:Key="NotchGlassSpecularTop">#66FFFFFF</Color>
+    <Color x:Key="NotchGlassSpecularBottom">#26000000</Color>
+    <Color x:Key="NotchGlassBackdrop">#B3F2F2F7</Color>
+    <Color x:Key="NotchGlassSheen">#33FFFFFF</Color>
+
+    <LinearGradientBrush x:Key="NotchGlassBorderBrush" StartPoint="0,0" EndPoint="0,1">
+        <GradientStop Offset="0" Color="#66FFFFFF" />
+        <GradientStop Offset="0.3" Color="#33FFFFFF" />
+        <GradientStop Offset="1" Color="#1A000000" />
+    </LinearGradientBrush>
+
+    <LinearGradientBrush x:Key="NotchGlassSheenBrush" StartPoint="0,0" EndPoint="0,1">
+        <GradientStop Offset="0" Color="#4DFFFFFF" />
+        <GradientStop Offset="0.15" Color="#1AFFFFFF" />
+        <GradientStop Offset="1" Color="#00FFFFFF" />
+    </LinearGradientBrush>
+
+    <LinearGradientBrush x:Key="GradientCyanBlue" StartPoint="0,0" EndPoint="1,1">
+        <GradientStop Offset="0" Color="#00B4D8" />
+        <GradientStop Offset="1" Color="#0077B6" />
+    </LinearGradientBrush>
+
+    <LinearGradientBrush x:Key="GradientPinkOrange" StartPoint="0,0" EndPoint="1,1">
+        <GradientStop Offset="0" Color="#FF3366" />
+        <GradientStop Offset="1" Color="#FF6B35" />
+    </LinearGradientBrush>
+
+    <LinearGradientBrush x:Key="GradientEmeraldTeal" StartPoint="0,0" EndPoint="1,1">
+        <GradientStop Offset="0" Color="#00C897" />
+        <GradientStop Offset="1" Color="#00B4D8" />
+    </LinearGradientBrush>
+
+    <LinearGradientBrush x:Key="GradientVioletMagenta" StartPoint="0,0" EndPoint="1,1">
+        <GradientStop Offset="0" Color="#7928CA" />
+        <GradientStop Offset="1" Color="#FF0080" />
+    </LinearGradientBrush>
+
+    <SolidColorBrush x:Key="AuroraGreenBrush" Color="#34C759" />
+    <SolidColorBrush x:Key="AuroraCyanBrush" Color="#32ADE6" />
+    <SolidColorBrush x:Key="AuroraBlueBrush" Color="#007AFF" />
+    <SolidColorBrush x:Key="AuroraPinkBrush" Color="#FF2D55" />
+    <SolidColorBrush x:Key="AuroraOrangeBrush" Color="#FF9500" />
 </ResourceDictionary>

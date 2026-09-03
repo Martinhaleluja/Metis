@@ -47,7 +47,7 @@ export function UpgradeButton({
   // actually being asked here.
   if (plan.id === "free") {
     return (
-      <Link to="/login" className={`win95-button ${base}`}>
+      <Link to="/login" className={`press rounded-full border border-line bg-surface px-4 py-2 font-semibold ${base}`}>
         {plan.ctaLabel}
       </Link>
     );
@@ -55,7 +55,7 @@ export function UpgradeButton({
 
   if (!billingIsLive) {
     return (
-      <a href="/#join" className={`win95-button ${base}`}>
+      <a href="/#join" className={`press rounded-full border border-line bg-surface px-4 py-2 font-semibold ${base}`}>
         Plans open soon &mdash; join the waitlist
       </a>
     );
@@ -69,7 +69,7 @@ export function UpgradeButton({
     return (
       <Link
         to={`/login?next=${encodeURIComponent(next)}`}
-        className={`win95-button ${base}`}
+        className={`press rounded-full border border-line bg-surface px-4 py-2 font-semibold ${base}`}
       >
         {plan.ctaLabel}
       </Link>
@@ -103,7 +103,7 @@ export function UpgradeButton({
         type="button"
         disabled={pending}
         onClick={() => void buy()}
-        className={`win95-button ${base}`}
+        className={`press rounded-full border border-line bg-surface px-4 py-2 font-semibold ${base}`}
       >
         {pending ? "Opening checkout…" : plan.ctaLabel}
       </button>
