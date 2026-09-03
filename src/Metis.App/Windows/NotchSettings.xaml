@@ -757,6 +757,82 @@
                             </StackPanel>
                         </Border>
 
+                        <!-- Dictation, which had no controls here at all.
+                             Push-to-talk sends its recording straight to the AI
+                             provider, so it works with no setup. Continuous
+                             listening cannot: it has to turn audio into text
+                             locally to check for the wake word before any turn
+                             starts, and "Native" has no implementation that
+                             does that. The only place to choose otherwise was
+                             PreferencesWindow, which was built and never shown,
+                             so every user was stuck on Native and continuous
+                             listening simply failed for all of them. -->
+                        <Border Style="{StaticResource SettingCard}">
+                            <StackPanel>
+                                <TextBlock Text="DICTATION &amp; SPEECH TO TEXT" Style="{StaticResource SettingLabel}" />
+                                <TextBlock Style="{StaticResource SettingBody}" Margin="0,6,0,8"
+                                           Text="How Metis turns your voice into text. Push-to-talk works on any setting; continuous listening needs AssemblyAI or Whisper." />
+                                <ComboBox x:Name="SpeechToTextProviderBox" Height="30"
+                                          SelectionChanged="SpeechToTextProviderBox_OnSelectionChanged">
+                                    <ComboBoxItem Content="Native" />
+                                    <ComboBoxItem Content="AssemblyAI" />
+                                    <ComboBoxItem Content="Whisper.cpp" />
+                                </ComboBox>
+
+                                <StackPanel x:Name="NativeSttPanel" Margin="0,10,0,0">
+                                    <TextBlock Style="{StaticResource SettingBody}"
+                                               Text="Your recording goes straight to your AI provider, which transcribes it while it answers. Nothing to set up, but continuous listening is unavailable." />
+                                </StackPanel>
+
+                                <StackPanel x:Name="AssemblyAiPanel" Margin="0,10,0,0" Visibility="Collapsed">
+                                    <TextBlock Text="API Key" Style="{StaticResource SettingBody}" Margin="0,0,0,3" />
+                                    <Border Background="{DynamicResource NotchFieldBrush}" BorderBrush="{DynamicResource NotchFieldEdgeBrush}"
+                                            BorderThickness="1" CornerRadius="8" Padding="10,6">
+                                        <PasswordBox x:Name="AssemblyAiApiKeyBox" Background="Transparent" BorderThickness="0"
+                                                     Foreground="{DynamicResource NotchTextBrush}" />
+                                    </Border>
+                                    <TextBlock Text="Model" Style="{StaticResource SettingBody}" Margin="0,8,0,3" />
+                                    <Border Background="{DynamicResource NotchFieldBrush}" BorderBrush="{DynamicResource NotchFieldEdgeBrush}"
+                                            BorderThickness="1" CornerRadius="8" Padding="10,6">
+                                        <TextBox x:Name="AssemblyAiModelBox" Background="Transparent" BorderThickness="0"
+                                                 Foreground="{DynamicResource NotchTextBrush}" />
+                                    </Border>
+                                    <Border Style="{StaticResource SettingChip}" Margin="0,10,0,0" Tag="AssemblyAI" MouseLeftButtonUp="RemoveKey_OnClick">
+                                        <TextBlock Text="Remove Stored Key" FontSize="10.5" Foreground="{DynamicResource NotchDangerInkBrush}" />
+                                    </Border>
+                                </StackPanel>
+
+                                <StackPanel x:Name="WhisperPanel" Margin="0,10,0,0" Visibility="Collapsed">
+                                    <TextBlock Style="{StaticResource SettingBody}" Margin="0,0,0,6"
+                                               Text="Runs on this computer, so nothing leaves it. Metis does not ship whisper.cpp — point these at your own copy." />
+                                    <TextBlock Text="whisper-cli.exe" Style="{StaticResource SettingBody}" Margin="0,0,0,3" />
+                                    <Border Background="{DynamicResource NotchFieldBrush}" BorderBrush="{DynamicResource NotchFieldEdgeBrush}"
+                                            BorderThickness="1" CornerRadius="8" Padding="10,6">
+                                        <TextBox x:Name="WhisperCppExecutablePathBox" Background="Transparent" BorderThickness="0"
+                                                 Foreground="{DynamicResource NotchTextBrush}" />
+                                    </Border>
+                                    <TextBlock Text="Model file (.bin)" Style="{StaticResource SettingBody}" Margin="0,8,0,3" />
+                                    <Border Background="{DynamicResource NotchFieldBrush}" BorderBrush="{DynamicResource NotchFieldEdgeBrush}"
+                                            BorderThickness="1" CornerRadius="8" Padding="10,6">
+                                        <TextBox x:Name="WhisperCppModelPathBox" Background="Transparent" BorderThickness="0"
+                                                 Foreground="{DynamicResource NotchTextBrush}" />
+                                    </Border>
+                                </StackPanel>
+
+                                <!-- "Is dictation working?" should be answerable
+                                     without guessing. This records a few seconds
+                                     and shows what came back. -->
+                                <StackPanel Orientation="Horizontal" Margin="0,12,0,0">
+                                    <Border x:Name="TestDictationChip" Style="{StaticResource SettingChip}"
+                                            MouseLeftButtonUp="TestDictation_OnClick">
+                                        <TextBlock Text="Test dictation 🎤" FontSize="11" Foreground="{DynamicResource NotchTextBrush}" />
+                                    </Border>
+                                </StackPanel>
+                                <TextBlock x:Name="DictationStatus" Style="{StaticResource SettingBody}" Margin="0,8,0,0"
+                                           TextWrapping="Wrap" />
+                            </StackPanel>
+                        </Border>
+
                         <Border Style="{StaticResource SettingCard}">
                             <StackPanel>
                                 <TextBlock Text="MICROPHONE &amp; INPUT" Style="{StaticResource SettingLabel}" />

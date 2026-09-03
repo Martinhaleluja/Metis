@@ -1058,6 +1058,52 @@ public sealed class MetisRuntime : IDisposable
         return result;
     }
 
+    /// <summary>
+    /// Records a short stretch and returns what the configured speech-to-text
+    /// route made of it.
+    ///
+    /// This exists because "I do not even know if dictation is working" was a
+    /// real report, and it was a fair one: every other way of finding out
+    /// requires asking Metis a question and then guessing whether a bad answer
+    /// came from the microphone, the transcription or the model. This isolates
+    /// the first two.
+    ///
+    /// It goes through the same TranscribeAsync the wake-word loop uses, so a
+    /// route that cannot transcribe says so here in the same words rather than
+    /// failing differently in a place the user cannot see.
+    /// </summary>
+    public async Task<string?> TestDictationAsync(CancellationToken cancellationToken = default)
+    {
+        ThrowIfDisposed();
+
+        if (_recorder.IsRecording)
+        {
+            throw new InvalidOperationException("Metis is already recording. Finish that first.");
+        }
+
+        _recorder.Start(Settings.PreferredMicrophoneId);
+        try
+        {
+            await Task.Delay(TimeSpan.FromSeconds(3), cancellationToken);
+        }
+        catch
+        {
+            _recorder.Cancel();
+            throw;
+        }
+
+        var recording = await _recorder.StopAsync(cancellationToken);
+        if (recording is null || recording.Duration < TimeSpan.FromMilliseconds(400))
+        {
+            return null;
+        }
+
+        // Deliberately not the push-to-talk path. That one hands the audio to
+        // the model, so a working result would prove only that the model can
+        // hear -- not that the transcription this setting selects can.
+        return await TranscribeAsync(recording, cancellationToken);
+    }
+
     public async Task<ProviderTestResult> TestAssemblyAiAsync(
         CancellationToken cancellationToken = default)
     {
@@ -1299,9 +1345,20 @@ public sealed class MetisRuntime : IDisposable
             return;
         }
 
-        if (!Settings.SpeechEnabled && Settings.SpeechToTextProvider == "Native")
+        // Continuous listening has to turn audio into text locally, before any
+        // turn starts, to check for the wake word -- there is no model call yet
+        // for it to lean on the way push-to-talk does. "Native" has no
+        // implementation that can do that, so it was previously discovered only
+        // by trying: three silent ~5-second recording segments, each failing for
+        // the same unfixable reason, before the retry loop's own message
+        // finally explained it. This check says so immediately instead. It used
+        // to test !Settings.SpeechEnabled, which is whether spoken *responses*
+        // play -- unrelated to whether a speech-to-text provider is configured,
+        // so a user with responses enabled and the default provider still fell
+        // straight into the broken retry loop.
+        if (Settings.SpeechToTextProvider is not ("AssemblyAI" or "Whisper.cpp"))
         {
-            SetStatus("Set up speech to text in Setup before using continuous listening.");
+            SetStatus("Continuous listening needs AssemblyAI or Whisper.cpp — open Setup, Voice & input, and choose one.");
             return;
         }
 
@@ -1475,12 +1532,36 @@ public sealed class MetisRuntime : IDisposable
             return result.Text;
         }
 
-        var whisper = await _whisperCpp.TranscribeAsync(
-            ResolveLocalPath(Settings.WhisperCppExecutablePath),
-            ResolveLocalPath(Settings.WhisperCppModelPath),
-            recording,
-            cancellationToken);
-        return whisper.Text;
+        if (Settings.SpeechToTextProvider == "Whisper.cpp")
+        {
+            var whisper = await _whisperCpp.TranscribeAsync(
+                ResolveLocalPath(Settings.WhisperCppExecutablePath),
+                ResolveLocalPath(Settings.WhisperCppModelPath),
+                recording,
+                cancellationToken);
+            return whisper.Text;
+        }
+
+        // "Native" -- the default, and the only other value Normalize allows --
+        // has no implementation here. It works for push-to-talk and Inspect,
+        // where the recorded audio goes straight to the model, which transcribes
+        // it as part of answering. It cannot work here: this path exists to
+        // decide *whether to call the model at all*, by checking a segment of
+        // audio for the wake word before any turn starts, so there has to be
+        // real text before the model is ever involved.
+        //
+        // This used to fall through to whisper.cpp unconditionally, silently
+        // treating "Native" as "Whisper.cpp" for continuous listening only.
+        // whisper.cpp and its model are not part of the installer's payload
+        // (see Metis.App.csproj), so on an installed build with the default
+        // provider this failed on every single segment -- three retries, about
+        // fifteen seconds, before the existing failure handling below finally
+        // explained why. Failing immediately, with the real reason, is both
+        // faster and honest about what "Native" does and does not cover.
+        throw new InvalidOperationException(
+            "Continuous listening needs AssemblyAI or Whisper.cpp — open Setup, Voice & input, " +
+            "and choose one. Push-to-talk and Inspect do not need this: their recording goes " +
+            "straight to your AI provider.");
     }
 
     public async Task ClearMemoryAsync(CancellationToken cancellationToken = default)
@@ -1520,9 +1601,14 @@ public sealed class MetisRuntime : IDisposable
             return;
         }
 
-        if (!HasConfiguredProviderKey())
+        // CanAnswer and HasConfiguredProviderKey gate on the same condition, but
+        // this one used to hardcode "add an API key" regardless of why the
+        // route was refused -- so someone who was simply signed out, on a
+        // Metis gateway route with no key of their own, was told to go paste a
+        // credential that had nothing to do with the actual problem.
+        if (!CanAnswer(out var voiceRefusalReason))
         {
-            ReportError($"Add a {ProviderDisplayName(Settings.AiProvider)} API key in Setup before using voice input.");
+            ReportError(voiceRefusalReason);
             return;
         }
 
@@ -1570,9 +1656,14 @@ public sealed class MetisRuntime : IDisposable
             return;
         }
 
-        if (!HasConfiguredProviderKey())
+        // CanAnswer and HasConfiguredProviderKey gate on the same condition, but
+        // this one used to hardcode "add an API key" regardless of why the
+        // route was refused -- so someone who was simply signed out, on a
+        // Metis gateway route with no key of their own, was told to go paste a
+        // credential that had nothing to do with the actual problem.
+        if (!CanAnswer(out var voiceRefusalReason))
         {
-            ReportError($"Add a {ProviderDisplayName(Settings.AiProvider)} API key in Setup before using voice input.");
+            ReportError(voiceRefusalReason);
             return;
         }
 
@@ -1786,9 +1877,14 @@ public sealed class MetisRuntime : IDisposable
             return;
         }
 
-        if (!HasConfiguredProviderKey())
+        // CanAnswer and HasConfiguredProviderKey gate on the same condition, but
+        // this one used to hardcode "add an API key" regardless of why the
+        // route was refused -- so someone who was simply signed out, on a
+        // Metis gateway route with no key of their own, was told to go paste a
+        // credential that had nothing to do with the actual problem.
+        if (!CanAnswer(out var voiceRefusalReason))
         {
-            ReportError($"Add a {ProviderDisplayName(Settings.AiProvider)} API key in Setup before using voice input.");
+            ReportError(voiceRefusalReason);
             return;
         }
 

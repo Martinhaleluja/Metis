@@ -755,6 +755,50 @@ public partial class NotchSettings : UserControl
         ContentSizeChanged?.Invoke(this, EventArgs.Empty);
     }
 
+    /// <summary>
+    /// Shows only the fields the chosen speech-to-text route actually uses.
+    /// </summary>
+    private void UpdateDictationPanels()
+    {
+        var provider = SelectedText(SpeechToTextProviderBox, "Native");
+        NativeSttPanel.Visibility = provider == "Native" ? Visibility.Visible : Visibility.Collapsed;
+        AssemblyAiPanel.Visibility = provider == "AssemblyAI" ? Visibility.Visible : Visibility.Collapsed;
+        WhisperPanel.Visibility = provider == "Whisper.cpp" ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    private void SpeechToTextProviderBox_OnSelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_loading) return;
+        UpdateDictationPanels();
+    }
+
+    /// <summary>
+    /// Records a few seconds and shows what came back, so "is dictation
+    /// working?" has an answer on screen rather than being something the user
+    /// has to infer from a question that went nowhere.
+    /// </summary>
+    private async void TestDictation_OnClick(object sender, MouseButtonEventArgs e)
+    {
+        e.Handled = true;
+        if (_runtime is null) return;
+
+        try
+        {
+            DictationStatus.Text = "Listening for three seconds — say something…";
+            var heard = await _runtime.TestDictationAsync();
+            DictationStatus.Text = string.IsNullOrWhiteSpace(heard)
+                ? "Nothing was heard. Check the microphone above and try again."
+                : $"Heard: “{heard}”";
+        }
+        catch (Exception exception)
+        {
+            DictationStatus.Text = exception.Message;
+        }
+    }
+
+    private static string Fallback(string? value, string fallback) =>
+        string.IsNullOrWhiteSpace(value) ? fallback : value.Trim();
+
     private void AiProviderBox_OnSelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         if (_loading) return;
@@ -875,6 +919,13 @@ public partial class NotchSettings : UserControl
             SpeechEnabledCheck.IsChecked = s.SpeechEnabled;
             SpeakErrorsCheck.IsChecked = s.SpeakErrorsAloud;
             SelectCombo(GeminiVoiceBox, s.VoiceName);
+
+            SelectCombo(SpeechToTextProviderBox, s.SpeechToTextProvider);
+            AssemblyAiModelBox.Text = s.AssemblyAiModel;
+            WhisperCppExecutablePathBox.Text = s.WhisperCppExecutablePath;
+            WhisperCppModelPathBox.Text = s.WhisperCppModelPath;
+            UpdateDictationPanels();
+            DictationStatus.Text = string.Empty;
 
             try
             {
@@ -1521,6 +1572,10 @@ public partial class NotchSettings : UserControl
                 SpeechEnabled = _section == "Voice" ? SpeechEnabledCheck.IsChecked == true : current.SpeechEnabled,
                 SpeakErrorsAloud = _section == "Voice" ? SpeakErrorsCheck.IsChecked == true : current.SpeakErrorsAloud,
                 VoiceName = _section == "Voice" ? SelectedText(GeminiVoiceBox, current.VoiceName) : current.VoiceName,
+                SpeechToTextProvider = _section == "Voice" ? SelectedText(SpeechToTextProviderBox, current.SpeechToTextProvider) : current.SpeechToTextProvider,
+                AssemblyAiModel = _section == "Voice" ? Fallback(AssemblyAiModelBox.Text, current.AssemblyAiModel) : current.AssemblyAiModel,
+                WhisperCppExecutablePath = _section == "Voice" ? Fallback(WhisperCppExecutablePathBox.Text, current.WhisperCppExecutablePath) : current.WhisperCppExecutablePath,
+                WhisperCppModelPath = _section == "Voice" ? Fallback(WhisperCppModelPathBox.Text, current.WhisperCppModelPath) : current.WhisperCppModelPath,
                 PreferredMicrophoneId = _section == "Voice" ? MicrophoneBox.SelectedValue as string ?? current.PreferredMicrophoneId : current.PreferredMicrophoneId,
 
                 UserSkillsEnabled = _section == "Skills" ? UserSkillsCheck.IsChecked == true : current.UserSkillsEnabled,
@@ -1561,6 +1616,16 @@ public partial class NotchSettings : UserControl
                 OpenAiApiKeyBox.Password = string.Empty;
                 ClaudeApiKeyBox.Password = string.Empty;
                 OpenRouterApiKeyBox.Password = string.Empty;
+            }
+            else if (_section == "Voice")
+            {
+                // The key lives in Windows Credential Manager, not in settings,
+                // so it goes through the same path every other provider's does.
+                _runtime.SaveAdditionalProviderSecrets(
+                    null, null, NullIfBlank(AssemblyAiApiKeyBox.Password), null);
+
+                await _runtime.SaveSettingsAsync(updated, null, null);
+                AssemblyAiApiKeyBox.Password = string.Empty;
             }
             else
             {

@@ -74,6 +74,51 @@ public sealed class NotchSettingsMarkupTests
     public void The_companion_can_be_changed_from_settings(string name) =>
         Assert.Contains(LoadMarkup().Descendants(), element => NameOf(element) == name);
 
+    /// <summary>
+    /// Dictation can be configured from the shipping settings surface.
+    ///
+    /// None of these existed here. The speech-to-text provider could only be
+    /// changed in PreferencesWindow, which was built and never shown, so every
+    /// user was pinned to "Native" -- which has no local transcription and
+    /// therefore cannot do the wake-word detection continuous listening is
+    /// built on. The feature was unreachable and unfixable at the same time.
+    /// </summary>
+    [Theory]
+    [InlineData("SpeechToTextProviderBox")]
+    [InlineData("AssemblyAiApiKeyBox")]
+    [InlineData("AssemblyAiModelBox")]
+    [InlineData("WhisperCppExecutablePathBox")]
+    [InlineData("WhisperCppModelPathBox")]
+    [InlineData("TestDictationChip")]
+    [InlineData("DictationStatus")]
+    public void Dictation_can_be_configured_from_settings(string name) =>
+        Assert.Contains(LoadMarkup().Descendants(), element => NameOf(element) == name);
+
+    /// <summary>
+    /// The three speech-to-text routes the runtime actually branches on, in the
+    /// order a user should meet them: the one needing no setup first.
+    /// </summary>
+    [Fact]
+    public void The_speech_to_text_routes_match_what_the_runtime_handles() =>
+        Assert.Equal(
+            ["Native", "AssemblyAI", "Whisper.cpp"],
+            ComboValues(LoadMarkup(), "SpeechToTextProviderBox"));
+
+    /// <summary>
+    /// Each route's fields sit in the panel that route reveals, so choosing a
+    /// provider shows exactly the fields it needs and none that it does not.
+    /// </summary>
+    [Fact]
+    public void Dictation_fields_live_in_their_matching_route_panels()
+    {
+        var document = LoadMarkup();
+
+        AssertDescendsFrom(document, "AssemblyAiApiKeyBox", "AssemblyAiPanel");
+        AssertDescendsFrom(document, "AssemblyAiModelBox", "AssemblyAiPanel");
+        AssertDescendsFrom(document, "WhisperCppExecutablePathBox", "WhisperPanel");
+        AssertDescendsFrom(document, "WhisperCppModelPathBox", "WhisperPanel");
+    }
+
     [Fact]
     public void Provider_fields_live_in_their_matching_capability_panels()
     {
@@ -149,6 +194,14 @@ public sealed class NotchSettingsMarkupTests
         var path = Path.Combine(AppContext.BaseDirectory, "Fixtures", "NotchSettings.xaml");
         return XDocument.Load(path, LoadOptions.SetLineInfo);
     }
+
+    private static string[] ComboValues(XDocument document, string comboName) =>
+        FindNamed(document, comboName)
+            .Elements(Presentation + "ComboBoxItem")
+            .Select(item => (string?)item.Attribute("Content"))
+            .Where(value => value is not null)
+            .Cast<string>()
+            .ToArray();
 
     private static void AssertDescendsFrom(XDocument document, string childName, string ancestorName)
     {
