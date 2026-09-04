@@ -33,11 +33,11 @@
 
         <Style x:Key="DrawerScroller" TargetType="ScrollViewer">
             <Setter Property="HorizontalScrollBarVisibility" Value="Disabled" />
-            <Setter Property="VerticalScrollBarVisibility" Value="Auto" />
+            <Setter Property="VerticalScrollBarVisibility" Value="Disabled" />
         </Style>
     </UserControl.Resources>
 
-    <Grid Background="{DynamicResource NotchSurfaceBrush}" Width="540" Margin="0,4,0,10">
+    <Grid Background="Transparent" Width="540" Margin="0,4,0,10">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
@@ -54,7 +54,7 @@
 
             <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
                 <Border x:Name="NewAgentButton" Style="{StaticResource DrawerChipButton}"
-                        Background="{DynamicResource AccentBrush}" Margin="0,0,8,0"
+                        Background="{DynamicResource GradientCyanBlue}" Margin="0,0,8,0"
                         ToolTip="Start a background helper task"
                         MouseLeftButtonUp="NewAgent_OnClick">
                     <StackPanel Orientation="Horizontal">
@@ -71,7 +71,7 @@
         </Grid>
 
         <!-- Tasks List -->
-        <ScrollViewer Grid.Row="1" MaxHeight="440" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
+        <ScrollViewer Grid.Row="1" MaxHeight="440" VerticalScrollBarVisibility="Disabled" HorizontalScrollBarVisibility="Disabled"
                       Padding="14,0,14,6">
             <StackPanel>
                 <!-- Free Tier Gating Banner -->
@@ -228,7 +228,7 @@
                                             </Grid>
 
                                             <!-- Scrollable Step List for 100+ steps -->
-                                            <ScrollViewer MaxHeight="160" VerticalScrollBarVisibility="Auto"
+                                            <ScrollViewer MaxHeight="160" VerticalScrollBarVisibility="Disabled"
                                                           HorizontalScrollBarVisibility="Disabled">
                                                 <ItemsControl ItemsSource="{Binding Steps}">
                                                     <ItemsControl.ItemTemplate>

@@ -33,8 +33,8 @@ public partial class NotchWindow : Window
     private const int SmXVirtualScreen = 76;
     private const int SmYVirtualScreen = 77;
 
-    private const double ExpandedHeight = 34;
-    private const double TuckedWidth = 104;
+    private const double ExpandedHeight = 28;
+    private const double TuckedWidth = 90;
 
     /// <summary>
     /// How wide the notch becomes when it is the chat. Wide enough for a
@@ -69,7 +69,7 @@ public partial class NotchWindow : Window
     /// section that fits and one that scrolls, and every section was scrolling.
     /// </summary>
     private double PageShare =>
-        IsSettingsOpen || IsWelcomeOpen
+        IsSettingsOpen || IsWelcomeOpen || IsSpawnAgentOpen || IsAgentDrawerOpen
             ? NotchGeometry.TallPageShare
             : NotchGeometry.WorkAreaShare;
 
@@ -114,7 +114,7 @@ public partial class NotchWindow : Window
     /// visible so the user always knows Metis is there and has something to
     /// pull down.
     /// </summary>
-    private const double TuckedHiddenAmount = 22;
+    private const double TuckedHiddenAmount = 20;
 
     private static readonly Duration Shape = new(TimeSpan.FromMilliseconds(420));
     private static readonly Duration Fade = new(TimeSpan.FromMilliseconds(200));
@@ -136,24 +136,7 @@ public partial class NotchWindow : Window
     /// <summary>The height the body is currently animating towards.</summary>
     private double _bodyHeightTarget = ExpandedHeight;
 
-    /// <summary>
-    /// The width the body is currently animating towards.
-    ///
-    /// The counterpart to <see cref="_bodyHeightTarget"/>, and new: the notch
-    /// tracked what it was growing to vertically and not horizontally, which is
-    /// why the window's width had to be guessed from a chain of per-page tests
-    /// instead of simply being asked.
-    /// </summary>
-    private double _bodyWidthTarget = TuckedWidth;
 
-    /// <summary>
-    /// Pulls the host window in after the body has finished narrowing.
-    ///
-    /// One timer, restarted rather than replaced, because the notch re-measures
-    /// on hover, on leave and on every page change: a fresh timer per call would
-    /// leave a queue of them all trying to resize the same window at once.
-    /// </summary>
-    private readonly DispatcherTimer _widthSettle = new();
 
     /// <summary>Raised when the user pulls the notch down or clicks it.</summary>
     public event EventHandler? OpenRequested;
@@ -241,6 +224,16 @@ public partial class NotchWindow : Window
         }
     }
 
+    private void HideOtherPanelsExcept(UIElement active)
+    {
+        if (active != ChatHost) { ChatHost.BeginAnimation(OpacityProperty, null); ChatHost.Visibility = Visibility.Collapsed; IsChatOpen = false; }
+        if (active != SettingsHost) { SettingsHost.BeginAnimation(OpacityProperty, null); SettingsHost.Visibility = Visibility.Collapsed; IsSettingsOpen = false; }
+        if (active != AgentDrawerHost) { AgentDrawerHost.BeginAnimation(OpacityProperty, null); AgentDrawerHost.Visibility = Visibility.Collapsed; IsAgentDrawerOpen = false; }
+        if (active != AuthHost) { AuthHost.BeginAnimation(OpacityProperty, null); AuthHost.Visibility = Visibility.Collapsed; IsAuthOpen = false; }
+        if (active != WelcomeHost) { WelcomeHost.BeginAnimation(OpacityProperty, null); WelcomeHost.Visibility = Visibility.Collapsed; IsWelcomeOpen = false; }
+        if (active != SpawnAgentHost) { SpawnAgentHost.BeginAnimation(OpacityProperty, null); SpawnAgentHost.Visibility = Visibility.Collapsed; IsSpawnAgentOpen = false; }
+    }
+
     /// <summary>
     /// Unfolds the notch into the chat. The notch does not become a window: it
     /// stays the same object pinned to the same edge and simply grows, which is
@@ -263,15 +256,7 @@ public partial class NotchWindow : Window
             return;
         }
 
-        if (IsAgentDrawerOpen)
-        {
-            CloseAgentDrawer();
-        }
-
-        if (IsSpawnAgentOpen)
-        {
-            CloseSpawnAgentPanel();
-        }
+        HideOtherPanelsExcept(ChatHost);
 
         DebugLog?.Invoke("Notch chat opening.");
         IsChatOpen = true;
@@ -301,7 +286,7 @@ public partial class NotchWindow : Window
         var target = ChatTargetHeight();
         GrowWindowFor(target);
 
-        AnimateBodyWidth(ChatWidth, Shape,
+        Animate(NotchBody, WidthProperty, ChatWidth, Shape,
             new BackEase { Amplitude = 0.16, EasingMode = EasingMode.EaseOut });
         AnimateBodyHeight(target);
         Animate(NotchDrop, TranslateTransform.YProperty, 0, Shape,
@@ -309,6 +294,7 @@ public partial class NotchWindow : Window
         Animate(ChatHost, OpacityProperty, 1, Fade, null, beginAfter: 90);
 
         _isShown = true;
+        PulseAurora();
         KeepOnTop?.Invoke();
         FocusChat();
         ReportChatOnceSettled();
@@ -404,6 +390,8 @@ public partial class NotchWindow : Window
 
         ChatHost.BeginAnimation(OpacityProperty, fade);
 
+        Animate(NotchBody, WidthProperty, TuckedWidth, Shape,
+            new CubicEase { EasingMode = EasingMode.EaseOut });
         AnimateBodyHeight(ExpandedHeight);
         Tuck();
         ShrinkWindowAfterFold();
@@ -441,6 +429,8 @@ public partial class NotchWindow : Window
             return;
         }
 
+        HideOtherPanelsExcept(AuthHost);
+
         DebugLog?.Invoke("Notch first-run panel opening.");
         IsAuthOpen = true;
         _retractTimer.Stop();
@@ -468,7 +458,7 @@ public partial class NotchWindow : Window
         var target = AuthTargetHeight();
         GrowWindowFor(target);
 
-        AnimateBodyWidth(AuthWidth, Shape,
+        Animate(NotchBody, WidthProperty, AuthWidth, Shape,
             new BackEase { Amplitude = 0.16, EasingMode = EasingMode.EaseOut });
         AnimateBodyHeight(target);
         Animate(NotchDrop, TranslateTransform.YProperty, 0, Shape,
@@ -476,6 +466,7 @@ public partial class NotchWindow : Window
         Animate(AuthHost, OpacityProperty, 1, Fade, null, beginAfter: 90);
 
         _isShown = true;
+        PulseAurora();
         KeepOnTop?.Invoke();
         FocusAuth();
     }
@@ -508,10 +499,7 @@ public partial class NotchWindow : Window
 
         AuthHost.BeginAnimation(OpacityProperty, fade);
 
-        // Back to the resting width as well as the resting height. The chat
-        // never has to do this because it closes to the same width it opened
-        // from; the auth panel does not.
-        AnimateBodyWidth(TuckedWidth, Shape,
+        Animate(NotchBody, WidthProperty, TuckedWidth, Shape,
             new CubicEase { EasingMode = EasingMode.EaseOut });
         AnimateBodyHeight(ExpandedHeight);
         Tuck();
@@ -565,7 +553,7 @@ public partial class NotchWindow : Window
     /// <summary>The settings panel, so the shell can attach it once at startup.</summary>
     public NotchSettings Settings => SettingsHost;
 
-    private const double SettingsWidth = 640;
+    private const double SettingsWidth = 960;
 
     /// <summary>Whether the first-run welcome is showing.</summary>
     public bool IsWelcomeOpen { get; private set; }
@@ -658,15 +646,7 @@ public partial class NotchWindow : Window
             return;
         }
 
-        if (IsChatOpen)
-        {
-            CloseChat();
-        }
-
-        if (IsSpawnAgentOpen)
-        {
-            CloseSpawnAgentPanel();
-        }
+        HideOtherPanelsExcept(AgentDrawerHost);
 
         IsAgentDrawerOpen = true;
         _retractTimer.Stop();
@@ -692,7 +672,7 @@ public partial class NotchWindow : Window
         var target = AgentDrawerTargetHeight();
         GrowWindowFor(target);
 
-        AnimateBodyWidth(AgentDrawerWidth, Shape,
+        Animate(NotchBody, WidthProperty, AgentDrawerWidth, Shape,
             new BackEase { Amplitude = 0.16, EasingMode = EasingMode.EaseOut });
         AnimateBodyHeight(target);
         Animate(NotchDrop, TranslateTransform.YProperty, 0, Shape,
@@ -728,20 +708,7 @@ public partial class NotchWindow : Window
             return;
         }
 
-        if (IsChatOpen)
-        {
-            CloseChat();
-        }
-
-        if (IsAgentDrawerOpen)
-        {
-            CloseAgentDrawer();
-        }
-
-        if (IsSpawnAgentOpen)
-        {
-            CloseSpawnAgentPanel();
-        }
+        HideOtherPanelsExcept(SettingsHost);
 
         IsSettingsOpen = true;
         _retractTimer.Stop();
@@ -768,7 +735,7 @@ public partial class NotchWindow : Window
         var target = SettingsTargetHeight();
         GrowWindowFor(target);
 
-        AnimateBodyWidth(SettingsWidth, Shape,
+        Animate(NotchBody, WidthProperty, SettingsWidth, Shape,
             new BackEase { Amplitude = 0.16, EasingMode = EasingMode.EaseOut });
         AnimateBodyHeight(target);
         Animate(NotchDrop, TranslateTransform.YProperty, 0, Shape,
@@ -828,7 +795,7 @@ public partial class NotchWindow : Window
         var target = WelcomeTargetHeight();
         GrowWindowFor(target);
 
-        AnimateBodyWidth(WelcomeWidth, Shape,
+        Animate(NotchBody, WidthProperty, WelcomeWidth, Shape,
             new BackEase { Amplitude = 0.16, EasingMode = EasingMode.EaseOut });
         AnimateBodyHeight(target);
         Animate(NotchDrop, TranslateTransform.YProperty, 0, Shape,
@@ -863,6 +830,12 @@ public partial class NotchWindow : Window
         };
 
         WelcomeHost.BeginAnimation(OpacityProperty, fade);
+
+        Animate(NotchBody, WidthProperty, TuckedWidth, Shape,
+            new CubicEase { EasingMode = EasingMode.EaseOut });
+        AnimateBodyHeight(ExpandedHeight);
+        Tuck();
+        ShrinkWindowAfterFold();
     }
 
     private double WelcomeTargetHeight() =>
@@ -941,7 +914,7 @@ public partial class NotchWindow : Window
 
         SettingsHost.BeginAnimation(OpacityProperty, fade);
 
-        AnimateBodyWidth(TuckedWidth, Shape,
+        Animate(NotchBody, WidthProperty, TuckedWidth, Shape,
             new CubicEase { EasingMode = EasingMode.EaseOut });
         AnimateBodyHeight(ExpandedHeight);
         Tuck();
@@ -1053,7 +1026,7 @@ public partial class NotchWindow : Window
 
         AgentDrawerHost.BeginAnimation(OpacityProperty, fade);
 
-        AnimateBodyWidth(TuckedWidth, Shape,
+        Animate(NotchBody, WidthProperty, TuckedWidth, Shape,
             new CubicEase { EasingMode = EasingMode.EaseOut });
         AnimateBodyHeight(ExpandedHeight);
         Tuck();
@@ -1087,7 +1060,7 @@ public partial class NotchWindow : Window
 
     // =========================== Spawn Agent Panel ===========================
 
-    private const double SpawnAgentWidth = 540;
+    private const double SpawnAgentWidth = 640;
 
     public bool IsSpawnAgentOpen { get; private set; }
 
@@ -1182,7 +1155,7 @@ public partial class NotchWindow : Window
         var target = SpawnAgentTargetHeight();
         GrowWindowFor(target);
 
-        AnimateBodyWidth(SpawnAgentWidth, Shape,
+        Animate(NotchBody, WidthProperty, SpawnAgentWidth, Shape,
             new BackEase { Amplitude = 0.16, EasingMode = EasingMode.EaseOut });
         AnimateBodyHeight(target);
         Animate(NotchDrop, TranslateTransform.YProperty, 0, Shape,
@@ -1227,7 +1200,7 @@ public partial class NotchWindow : Window
 
         SpawnAgentHost.BeginAnimation(OpacityProperty, fade);
 
-        AnimateBodyWidth(TuckedWidth, Shape,
+        Animate(NotchBody, WidthProperty, TuckedWidth, Shape,
             new CubicEase { EasingMode = EasingMode.EaseOut });
         AnimateBodyHeight(ExpandedHeight);
         Tuck();
@@ -1349,9 +1322,7 @@ public partial class NotchWindow : Window
         // composer pinned beneath it, and nesting one scroller inside another is
         // how the mouse wheel ends up captured by the wrong one.
         PageScroll.MaxHeight = MaxBodyHeight;
-        PageScroll.VerticalScrollBarVisibility = IsChatOpen
-            ? ScrollBarVisibility.Disabled
-            : ScrollBarVisibility.Auto;
+        PageScroll.VerticalScrollBarVisibility = ScrollBarVisibility.Disabled;
 
         Animate(NotchBody, HeightProperty, target, Shape,
             new CubicEase { EasingMode = EasingMode.EaseOut });
@@ -1375,51 +1346,6 @@ public partial class NotchWindow : Window
             && PageScroll.VerticalOffset < PageScroll.ScrollableHeight - 1;
 
         ScrollEdge.Visibility = scrollable ? Visibility.Visible : Visibility.Collapsed;
-    }
-
-    /// <summary>
-    /// The single way the notch's width ever changes.
-    ///
-    /// Every page used to animate <c>NotchBody.Width</c> to its own constant and
-    /// separately hope the host window had been made wide enough by a chain of
-    /// tests elsewhere. First run was missing from that chain, so its wizard was
-    /// drawn forty pixels wider than the window containing it and lost the
-    /// difference off both sides. Widening the window here, from the same number
-    /// the body is given, removes the opportunity for the two to disagree.
-    ///
-    /// The width is clamped to the screen for the same reason the height is: a
-    /// page narrowed to fit still reads, and one whose right edge is past the
-    /// monitor does not.
-    /// </summary>
-    private void AnimateBodyWidth(
-        double to,
-        Duration duration,
-        IEasingFunction? easing,
-        double beginAfter = 0)
-    {
-        var target = NotchGeometry.BodyWidth(to, SystemParameters.PrimaryScreenWidth);
-        var wasWider = target < _bodyWidthTarget;
-        _bodyWidthTarget = target;
-
-        if (!wasWider)
-        {
-            // Growing: widen the window first. A WPF window clips its content
-            // rather than scrolling it, so anything past the edge while the body
-            // is still growing is simply not drawn.
-            PositionOverTopEdge();
-            Animate(NotchBody, WidthProperty, target, duration, easing, beginAfter);
-            return;
-        }
-
-        // Narrowing: the body is still wide for the length of the animation, so
-        // the window has to stay wide with it and come in afterwards. Pulling it
-        // in now would cut the motion off at the new edge.
-        Animate(NotchBody, WidthProperty, target, duration, easing, beginAfter);
-
-        _widthSettle.Stop();
-        _widthSettle.Interval = duration.TimeSpan
-            + TimeSpan.FromMilliseconds(beginAfter + 120);
-        _widthSettle.Start();
     }
 
     /// <summary>
@@ -1455,10 +1381,10 @@ public partial class NotchWindow : Window
                 settle.Stop();
                 Height = Math.Max(PillWindowHeight, _bodyHeightTarget + WindowSlack);
 
-                // Width too. It used to be left at whatever the widest page had
-                // needed, which kept an invisible sheet across the top of the
-                // screen after the notch had folded away.
-                PositionOverTopEdge();
+                if (!IsPanelOpen)
+                {
+                    PositionOverTopEdge();
+                }
             }
             catch
             {
@@ -1517,7 +1443,7 @@ public partial class NotchWindow : Window
 
         // Wide enough for six controls, and it stays fully out so the tools are
         // reachable without hunting for the notch.
-        AnimateBodyWidth(ToolbarWidth, Shape, new BackEase { Amplitude = 0.2, EasingMode = EasingMode.EaseOut });
+        Animate(NotchBody, WidthProperty, ToolbarWidth, Shape, new BackEase { Amplitude = 0.2, EasingMode = EasingMode.EaseOut });
         AnimateBodyHeight(ExpandedHeight);
         Animate(NotchDrop, TranslateTransform.YProperty, 0, Shape, new CubicEase { EasingMode = EasingMode.EaseOut });
 
@@ -1887,20 +1813,6 @@ public partial class NotchWindow : Window
     {
         InitializeComponent();
 
-        _widthSettle.Tick += (_, _) =>
-        {
-            try
-            {
-                _widthSettle.Stop();
-                PositionOverTopEdge();
-            }
-            catch
-            {
-                // Resizing can throw while the window is closing. A notch that
-                // is slightly too wide is not worth taking the app down for.
-            }
-        };
-
         _retractTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(2.2) };
         _retractTimer.Tick += (_, _) =>
         {
@@ -1920,15 +1832,7 @@ public partial class NotchWindow : Window
             MakeToolWindow();
             PositionOverTopEdge();
             PrimeTraceTools();
-            EnableGlass();
         };
-
-        // The glass has to keep the notch's shape, and the notch changes shape
-        // constantly: it grows into a chat, a settings page, a toolbar, and
-        // shrinks back to a pill. Following the body's own size change is the
-        // only way the effect and the panel it sits behind stay the same shape
-        // through an animation rather than only at the ends of one.
-        NotchBody.SizeChanged += (_, _) => ShapeGlass();
 
         Closing += (_, args) =>
         {
@@ -2020,7 +1924,7 @@ public partial class NotchWindow : Window
         var maxBound = Math.Max(minBound, Width - 24);
         var target = Math.Clamp(NotchContent.DesiredSize.Width + HorizontalPadding, minBound, maxBound);
 
-        AnimateBodyWidth(target, Shape, new BackEase { Amplitude = 0.22, EasingMode = EasingMode.EaseOut });
+        Animate(NotchBody, WidthProperty, target, Shape, new BackEase { Amplitude = 0.22, EasingMode = EasingMode.EaseOut });
         AnimateBodyHeight(ExpandedHeight);
         Animate(NotchDrop, TranslateTransform.YProperty, 0, Shape, new CubicEase { EasingMode = EasingMode.EaseOut });
         Animate(NotchContent, OpacityProperty, 1, Fade, null, beginAfter: _isShown ? 0 : 120);
@@ -2052,9 +1956,9 @@ public partial class NotchWindow : Window
 
         Animate(NotchContent, OpacityProperty, 0, Fade, null);
         Animate(Grabber, OpacityProperty, 1, Fade, null, beginAfter: 120);
-        AnimateBodyWidth(TuckedWidth, Shape,
+        Animate(NotchBody, WidthProperty, TuckedWidth, Shape,
             new CubicEase { EasingMode = EasingMode.EaseInOut }, beginAfter: 100);
-        Animate(NotchDrop, TranslateTransform.YProperty, _hovered ? -8 : -TuckedHiddenAmount, Shape,
+        Animate(NotchDrop, TranslateTransform.YProperty, _hovered ? -4 : -TuckedHiddenAmount, Shape,
             new CubicEase { EasingMode = EasingMode.EaseInOut }, beginAfter: 100);
     }
 
@@ -2068,6 +1972,7 @@ public partial class NotchWindow : Window
         }
 
         _hovered = true;
+        PulseAurora();
         Animate(HoverControls, OpacityProperty, 1, Fade, null);
 
         // Never peek while the toolbar is up. The peek shrinks the notch to its
@@ -2079,7 +1984,7 @@ public partial class NotchWindow : Window
             // Peek further out on hover so the notch invites the pull and displays buttons/dots
             var activeCount = _runtime?.AgentTasks?.GetActiveTasks().Count ?? 0;
             var hoverWidth = activeCount > 0 ? 250 : 200;
-            AnimateBodyWidth(hoverWidth, Shape, new CubicEase { EasingMode = EasingMode.EaseOut });
+            Animate(NotchBody, WidthProperty, hoverWidth, Shape, new CubicEase { EasingMode = EasingMode.EaseOut });
             Animate(NotchDrop, TranslateTransform.YProperty, -4, Shape, new CubicEase { EasingMode = EasingMode.EaseOut });
         }
     }
@@ -2313,85 +2218,24 @@ public partial class NotchWindow : Window
 
         var primary = SystemParameters.PrimaryScreenWidth;
 
-        // The window is only as wide as the shape the notch is currently in.
-        //
-        // That used to be load-bearing: the transparent margin was a solid sheet
-        // as far as the mouse was concerned, so an oversized window quietly ate
-        // clicks aimed at the windows underneath. The root grid no longer paints
-        // a hit-testable background and PassThroughIsWorking checks that at
-        // runtime, so this is now good manners rather than a workaround — but a
-        // window no bigger than it needs to be is still the right shape for
-        // something that lives permanently on top of everything else.
-        // Derived from the width the body is actually going to, rather than
-        // from a chain of per-page tests. The chain omitted first run, so the
-        // 640px welcome wizard was drawn inside a 560px window and lost forty
-        // pixels off each side -- the "most UI elements are cut out" report.
-        // There is no chain left to forget a page from now.
-        Width = NotchGeometry.WindowWidth(_bodyWidthTarget, primary);
+        var panelWindowWidth = IsChatOpen ? ChatWindowWidth
+            : IsAuthOpen ? AuthWindowWidth
+            : IsSettingsOpen ? (SettingsWidth + WindowSlack)
+            : IsAgentDrawerOpen ? (AgentDrawerWidth + WindowSlack)
+            : IsSpawnAgentOpen ? (SpawnAgentWidth + WindowSlack)
+            : IsWelcomeOpen ? (WelcomeWidth + WindowSlack)
+            : PillWindowWidth;
+
+        Width = Math.Min(panelWindowWidth, primary);
         Left = origin.X + ((primary - Width) / 2);
         Top = origin.Y;
     }
 
-    /// <summary>Whether the platform accepted the acrylic effect.</summary>
-    private bool _glassEnabled;
-
     /// <summary>
-    /// Asks Windows for real acrylic behind the notch.
-    ///
-    /// The tint is the theme's own notch colour at partial alpha, so light and
-    /// dark keep their own character rather than both becoming the same grey
-    /// pane. If the platform declines -- an older Windows, or one where the
-    /// undocumented entry point has moved -- the ordinary opaque brush stays
-    /// exactly as it was and the window keeps its full rectangle, because a
-    /// notch clipped to a shape it is not drawing glass in would cut off its
-    /// own drop shadow.
+    /// Flare / pulse placeholder.
     /// </summary>
-    private void EnableGlass()
+    public void PulseAurora()
     {
-        var tint = TryFindResource("NotchBody") is MediaColor themed
-            ? themed
-            : MediaColor.FromRgb(0x0A, 0x0A, 0x0C);
-
-        // Alpha is the whole readable/glassy trade-off. Much below this the
-        // wallpaper starts to win against the text on top; much above it there
-        // is no point having asked for glass.
-        _glassEnabled = NotchAcrylic.Enable(
-            this, MediaColor.FromArgb(0xB0, tint.R, tint.G, tint.B));
-
-        if (_glassEnabled)
-        {
-            NotchBody.Background = new SolidColorBrush(
-                MediaColor.FromArgb(0x14, tint.R, tint.G, tint.B));
-            ShapeGlass();
-        }
-        else
-        {
-            NotchAcrylic.ClearShape(this);
-        }
-
-        DebugLog?.Invoke(_glassEnabled
-            ? "Notch glass: acrylic enabled."
-            : "Notch glass: the platform declined acrylic; using the opaque notch.");
-    }
-
-    /// <summary>
-    /// Clips the window, and so the acrylic in it, to the body's rounded bounds.
-    /// </summary>
-    private void ShapeGlass()
-    {
-        if (!_glassEnabled || NotchBody.ActualWidth <= 0)
-        {
-            return;
-        }
-
-        var origin = NotchBody.TranslatePoint(new System.Windows.Point(0, 0), this);
-
-        // The body's own radius, so the glass corners match the panel's rather
-        // than being a rounded rectangle of some other roundness behind it.
-        NotchAcrylic.ShapeTo(
-            this,
-            new Rect(origin.X, origin.Y, NotchBody.ActualWidth, NotchBody.ActualHeight),
-            NotchBody.CornerRadius.BottomLeft);
     }
 
     private void MakeToolWindow()

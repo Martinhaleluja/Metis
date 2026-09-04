@@ -44,13 +44,13 @@ export function PricingPage() {
                 >
                   <thead>
                     <tr>
-                      <th className="rounded-lg border border-line bg-surface px-3 py-2 px-3 py-2 text-[12px] font-bold text-ink">
+                      <th className="rounded-lg border border-line bg-surface px-3 py-2 px-3 py-2 text-[14px] font-bold text-ink">
                         Feature
                       </th>
                       {plans.map((plan) => (
                         <th
                           key={plan.id}
-                          className="rounded-lg border border-line bg-surface px-3 py-2 px-3 py-2 text-center text-[12px] font-bold text-ink"
+                          className="rounded-lg border border-line bg-surface px-3 py-2 px-3 py-2 text-center text-[14px] font-bold text-ink"
                         >
                           {plan.name}
                         </th>
@@ -62,11 +62,11 @@ export function PricingPage() {
                       <tr key={row.label} className="align-top">
                         <th
                           scope="row"
-                          className="border-b border-[#a0a0a0] px-3 py-2.5 text-[12px] font-normal text-ink"
+                          className="border-b border-line px-3 py-2.5 text-[14px] font-normal text-ink"
                         >
                           {row.label}
                           {row.note && (
-                            <span className="mt-0.5 block text-[10.5px] leading-snug text-[#555]">
+                            <span className="mt-0.5 block text-[14px] leading-snug text-ink-muted">
                               {row.note}
                             </span>
                           )}
@@ -74,7 +74,7 @@ export function PricingPage() {
                         {plans.map((plan) => (
                           <td
                             key={plan.id}
-                            className="border-b border-[#a0a0a0] px-3 py-2.5 text-center text-[12px] text-ink"
+                            className="border-b border-line px-3 py-2.5 text-center text-[14px] text-ink"
                           >
                             <Cell value={row.values[plan.id as PlanId]} />
                           </td>
@@ -105,7 +105,7 @@ export function PricingPage() {
 function Cell({ value }: { value: string | boolean }) {
   if (value === true) {
     return (
-      <span className="font-bold text-[#006400]" aria-label="Included">
+      <span className="font-bold text-leaf" aria-label="Included">
         &#10003;
       </span>
     );
@@ -113,7 +113,7 @@ function Cell({ value }: { value: string | boolean }) {
 
   if (value === false) {
     return (
-      <span className="text-[#888]" aria-label="Not included">
+      <span className="text-ink-muted" aria-label="Not included">
         &mdash;
       </span>
     );

@@ -44,12 +44,12 @@ function ProviderMark({ mark }: { mark: Mark }) {
           </svg>
         ) : (
           // No trademark-safe glyph exists for this one, so the name carries it.
-          <span className="text-[10px] font-bold text-accent">AI</span>
+          <span className="text-[14px] font-bold text-accent">AI</span>
         )}
       </span>
       <span>
-        <span className="block text-[13px] font-bold text-ink">{mark.name}</span>
-        <span className="mt-0.5 block text-[11px] leading-snug text-[#444]">{mark.note}</span>
+        <span className="block text-[14px] font-bold text-ink">{mark.name}</span>
+        <span className="mt-0.5 block text-[14px] leading-snug text-ink-muted">{mark.note}</span>
       </span>
     </li>
   );
@@ -76,7 +76,7 @@ function ProviderWindow({
 
       <div className="bg-surface p-5">
         <h3 className="text-[15px] font-bold text-ink">{heading}</h3>
-        <p className="mt-1.5 text-[12px] leading-relaxed text-[#333]">{blurb}</p>
+        <p className="mt-1.5 text-[14px] leading-relaxed text-ink-muted">{blurb}</p>
 
         <ul className="mt-4 space-y-2">
           {marks.map((mark) => (
@@ -84,7 +84,7 @@ function ProviderWindow({
           ))}
         </ul>
 
-        <p className="mt-4 border-t border-line pt-3 text-[11px] leading-snug text-[#333]">
+        <p className="mt-4 border-t border-line pt-3 text-[14px] leading-snug text-ink-muted">
           {footer}
         </p>
       </div>

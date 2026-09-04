@@ -133,7 +133,7 @@ export function Faq() {
               </div>
 
               <div className="bg-surface p-3">
-                <div className="rounded-lg border border-line bg-surface px-3 py-2 divide-y divide-[#d4d0c8] p-1">
+                <div className="rounded-lg border border-line bg-surface px-3 py-2 divide-y divide-line p-1">
                   {faqs.map((faq, index) => (
                     <details
                       key={faq.q}
@@ -146,16 +146,16 @@ export function Faq() {
                       }}
                       className="group"
                     >
-                      <summary className="flex cursor-pointer list-none items-start gap-2.5 px-3 py-2.5 text-[13px] font-bold text-ink hover:bg-accent hover:text-white [&::-webkit-details-marker]:hidden">
+                      <summary className="flex cursor-pointer list-none items-start gap-2.5 px-3 py-2.5 text-[14px] font-bold text-ink hover:bg-accent hover:text-white [&::-webkit-details-marker]:hidden">
                         <span
                           aria-hidden="true"
-                          className="mt-[1px] shrink-0 font-mono text-[12px] text-accent group-hover:text-white group-open:text-accent"
+                          className="mt-[1px] shrink-0 font-mono text-[14px] text-accent group-hover:text-white group-open:text-accent"
                         >
                           {open === index ? "[-]" : "[+]"}
                         </span>
                         <span>{faq.q}</span>
                       </summary>
-                      <div className="px-3 pt-0.5 pb-4 pl-[38px] text-[12px] leading-relaxed text-[#222]">
+                      <div className="px-3 pt-0.5 pb-4 pl-[38px] text-[14px] leading-relaxed text-ink-muted">
                         {faq.a}
                       </div>
                     </details>

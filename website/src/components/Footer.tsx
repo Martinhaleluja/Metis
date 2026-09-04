@@ -19,8 +19,11 @@ export function Footer() {
     auth.status === "signed-in" ? auth.session.user.id : undefined,
   );
 
+  // Padded to the 44px touch floor. These are a list of destinations on a
+  // phone, not words inside a sentence, so the exception that covers inline
+  // links in body copy does not apply to them.
   const linkClass =
-    "text-[13.5px] text-ink-muted no-underline transition-colors hover:text-ink";
+    "inline-flex min-h-[44px] items-center text-[14px] text-ink-muted no-underline transition-colors hover:text-ink";
 
   return (
     <footer className="mt-24 border-t border-line bg-surface-sunken">
@@ -28,7 +31,7 @@ export function Footer() {
         <div className="flex items-center gap-2.5">
           <span
             aria-hidden="true"
-            className="h-[22px] w-[22px] rounded-full bg-accent"
+            className="h-[24px] w-[24px] rounded-lg bg-gradient-to-br from-accent to-grape"
           />
           <span className="type-heading text-[15px] text-ink">Metis</span>
         </div>

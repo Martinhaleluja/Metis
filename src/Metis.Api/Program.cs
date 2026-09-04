@@ -33,7 +33,15 @@ var config = GatewayConfig.FromEnvironment();
 builder.Services.AddSingleton(config);
 builder.Services.AddMemoryCache();
 builder.Services.AddHttpClient<SupabaseGateway>();
-builder.Services.AddHttpClient("providers", client => client.Timeout = TimeSpan.FromSeconds(120));
+builder.Services.AddHttpClient("providers", client => client.Timeout = TimeSpan.FromSeconds(120))
+    .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler
+    {
+        PooledConnectionLifetime = TimeSpan.FromMinutes(15),
+        PooledConnectionIdleTimeout = TimeSpan.FromMinutes(2),
+        EnableMultipleHttp2Connections = true,
+        KeepAlivePingDelay = TimeSpan.FromSeconds(30),
+        KeepAlivePingTimeout = TimeSpan.FromSeconds(15)
+    });
 
 // The payment processor gets its own client rather than borrowing the provider
 // one. Creating a checkout session is a small call with a person standing in
@@ -424,7 +432,8 @@ app.MapPost("/v1/assist", async (
         screenshot = null;
     }
 
-    var model = ManagedAccess.ChooseModel(body.Model, limits, rules, account.IsStaff);
+    var candidateModels = ManagedAccess.CandidateModels(body.Model, limits, rules, account.IsStaff);
+    var model = candidateModels[0];
     var provider = "google";
     var apiKey = gatewayConfig.KeyFor(provider);
     if (apiKey is null)
@@ -486,18 +495,20 @@ app.MapPost("/v1/assist", async (
         if (body.Stream)
         {
             await StreamTurnAsync(
-                context, http, apiKey, model, payload, requestId,
+                context, http, apiKey, candidateModels, payload, requestId,
                 new AssistAllowance(
                     usage.SpendUsd, limits.MonthlyBudgetUsd, usage.ResetsUtc,
                     usage.RequestCount + 1, usage.DictationMinutes, usage.AgentSteps),
+                usedModel => model = usedModel,
                 report => (inputTokens, thoughtTokens, outputTokens) = report,
                 reason => status = reason,
                 cancellationToken);
             return Results.Empty;
         }
 
-        var (text, report, failure) = await CompleteTurnAsync(
-            http, apiKey, model, payload, cancellationToken);
+        var (text, report, failure, usedModel) = await CompleteTurnAsync(
+            http, apiKey, candidateModels, payload, cancellationToken);
+        model = usedModel;
 
         if (failure is not null)
         {
@@ -643,7 +654,8 @@ app.MapPost("/v1/agent-step", async (
         return Problem(decision.StatusCode, decision.Kind!, decision.Message!);
     }
 
-    var model = ManagedAccess.ChooseModel(request.Model, limits, rules, account.IsStaff);
+    var candidateModels = ManagedAccess.CandidateModels(request.Model, limits, rules, account.IsStaff);
+    var model = candidateModels[0];
     var provider = "google";
     var apiKey = gatewayConfig.KeyFor(provider);
     if (apiKey is null)
@@ -676,13 +688,21 @@ app.MapPost("/v1/agent-step", async (
         // Not streamed. The agent shows nothing while a step is being decided,
         // so a stream would buy latency nobody can see and cost a second frame
         // reader to maintain.
-        var (text, report, failure) = await CompleteTurnAsync(
-            http, apiKey, model, payload, cancellationToken);
+        var (text, report, failure, usedModel) = await CompleteTurnAsync(
+            http, apiKey, candidateModels, payload, cancellationToken);
+        model = usedModel;
 
         if (failure is not null)
         {
-            status = failure;
-            return Problem(502, "provider", "The AI provider refused the request.");
+            var (failureStatus, providerBody) = ProviderFailures.Split(failure);
+            status = failureStatus;
+
+            log.LogError(
+                "Upstream provider refused an agent step for model {Model}: {Status}. Provider said: {Body}",
+                model, failureStatus, providerBody);
+
+            var (kind, message) = ProviderFailures.Describe(ProviderFailures.StatusCode(failureStatus));
+            return Problem(502, kind, message);
         }
 
         (inputTokens, thoughtTokens, outputTokens) = report;
@@ -1087,10 +1107,11 @@ static async Task StreamTurnAsync(
     HttpContext context,
     HttpClient http,
     string apiKey,
-    string model,
+    IReadOnlyList<string> candidateModels,
     string payload,
     string requestId,
     AssistAllowance allowance,
+    Action<string> onModelUsed,
     Action<(int Input, int Thought, int Output)> onUsage,
     Action<string> onStatus,
     CancellationToken cancellationToken)
@@ -1105,80 +1126,108 @@ static async Task StreamTurnAsync(
     // callback is optional by contract.
     context.Response.Headers["X-Accel-Buffering"] = "no";
 
-    using var upstream = new HttpRequestMessage(
-        HttpMethod.Post,
-        $"https://generativelanguage.googleapis.com/v1beta/models/{Uri.EscapeDataString(model)}:streamGenerateContent?alt=sse")
-    {
-        Content = new StringContent(payload, Encoding.UTF8, "application/json")
-    };
-    upstream.Headers.Add("x-goog-api-key", apiKey);
+    HttpResponseMessage? response = null;
+    string activeModel = candidateModels.Count > 0 ? candidateModels[0] : "gemini-3.1-flash-lite";
+    int lastStatus = 0;
 
-    using var response = await http.SendAsync(upstream, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
-    if (!response.IsSuccessStatusCode)
+    foreach (var candidate in candidateModels)
     {
-        var upstreamStatus = (int)response.StatusCode;
+        activeModel = candidate;
+        var upstream = new HttpRequestMessage(
+            HttpMethod.Post,
+            $"https://generativelanguage.googleapis.com/v1beta/models/{Uri.EscapeDataString(candidate)}:streamGenerateContent?alt=sse")
+        {
+            Content = new StringContent(payload, Encoding.UTF8, "application/json")
+        };
+        upstream.Headers.Add("x-goog-api-key", apiKey);
+
+        response = await http.SendAsync(upstream, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+        if (response.IsSuccessStatusCode)
+        {
+            onModelUsed(activeModel);
+            break;
+        }
+
+        lastStatus = (int)response.StatusCode;
+        if (lastStatus is 503 or 429 or 500 or 502 or 504)
+        {
+            response.Dispose();
+            response = null;
+            continue;
+        }
+
+        break;
+    }
+
+    if (response is null || !response.IsSuccessStatusCode)
+    {
+        var upstreamStatus = response is not null ? (int)response.StatusCode : lastStatus;
         onStatus($"provider_{upstreamStatus}");
 
         var (kind, message) = ProviderFailures.Describe(upstreamStatus);
         await WriteFrameAsync(context, new AssistStreamFrame(
             "error", Kind: kind, Message: message), cancellationToken);
         await WriteFrameAsync(context, new AssistStreamFrame("done"), cancellationToken);
+        response?.Dispose();
         return;
     }
 
-    var input = 0;
-    var thought = 0;
-    var output = 0;
-
-    using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
-    using var reader = new StreamReader(stream, Encoding.UTF8);
-
-    while (!reader.EndOfStream && !cancellationToken.IsCancellationRequested)
+    using (response)
     {
-        var line = await reader.ReadLineAsync(cancellationToken);
-        if (string.IsNullOrWhiteSpace(line) || !line.StartsWith("data:", StringComparison.Ordinal))
-        {
-            continue;
-        }
+        var input = 0;
+        var thought = 0;
+        var output = 0;
 
-        var json = line[5..].Trim();
-        if (json.Length == 0 || json == "[DONE]")
-        {
-            continue;
-        }
+        using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
+        using var reader = new StreamReader(stream, Encoding.UTF8);
 
-        try
+        while (!reader.EndOfStream && !cancellationToken.IsCancellationRequested)
         {
-            using var chunk = JsonDocument.Parse(json);
-            var root = chunk.RootElement;
-
-            if (root.TryGetProperty("usageMetadata", out var meta))
+            var line = await reader.ReadLineAsync(cancellationToken);
+            if (string.IsNullOrWhiteSpace(line) || !line.StartsWith("data:", StringComparison.Ordinal))
             {
-                input = ReadInt(meta, "promptTokenCount", input);
-                thought = ReadInt(meta, "thoughtsTokenCount", thought);
-                output = ReadInt(meta, "candidatesTokenCount", output);
+                continue;
             }
 
-            var text = ReadCandidateText(root);
-            if (!string.IsNullOrEmpty(text))
+            var json = line[5..].Trim();
+            if (json.Length == 0 || json == "[DONE]")
             {
-                await WriteFrameAsync(context, new AssistStreamFrame("delta", text), cancellationToken);
+                continue;
+            }
+
+            try
+            {
+                using var chunk = JsonDocument.Parse(json);
+                var root = chunk.RootElement;
+
+                if (root.TryGetProperty("usageMetadata", out var meta))
+                {
+                    input = ReadInt(meta, "promptTokenCount", input);
+                    thought = ReadInt(meta, "thoughtsTokenCount", thought);
+                    output = ReadInt(meta, "candidatesTokenCount", output);
+                }
+
+                var text = ReadCandidateText(root);
+                if (!string.IsNullOrEmpty(text))
+                {
+                    await WriteFrameAsync(context, new AssistStreamFrame("delta", text), cancellationToken);
+                }
+            }
+            catch (JsonException)
+            {
+                // A malformed frame is skipped rather than ending the turn. The
+                // client's reader does the same, so the two halves agree about what
+                // an unreadable chunk means.
             }
         }
-        catch (JsonException)
-        {
-            // A malformed frame is skipped rather than ending the turn. The
-            // client's reader does the same, so the two halves agree about what
-            // an unreadable chunk means.
-        }
+
+        onUsage((input, thought, output));
+        await WriteFrameAsync(
+            context,
+            new AssistStreamFrame("usage", Usage: new AssistUsage(input, thought, output), Allowance: allowance),
+            cancellationToken);
+        await WriteFrameAsync(context, new AssistStreamFrame("done"), cancellationToken);
     }
-
-    onUsage((input, thought, output));
-    await WriteFrameAsync(
-        context,
-        new AssistStreamFrame("usage", Usage: new AssistUsage(input, thought, output), Allowance: allowance),
-        cancellationToken);
-    await WriteFrameAsync(context, new AssistStreamFrame("done"), cancellationToken);
 }
 
 static async Task WriteFrameAsync(HttpContext context, AssistStreamFrame frame, CancellationToken cancellationToken)
@@ -1191,44 +1240,55 @@ static async Task WriteFrameAsync(HttpContext context, AssistStreamFrame frame, 
     await context.Response.Body.FlushAsync(cancellationToken);
 }
 
-static async Task<(string? Text, (int Input, int Thought, int Output) Usage, string? Failure)> CompleteTurnAsync(
+static async Task<(string? Text, (int Input, int Thought, int Output) Usage, string? Failure, string Model)> CompleteTurnAsync(
     HttpClient http,
     string apiKey,
-    string model,
+    IReadOnlyList<string> candidateModels,
     string payload,
     CancellationToken cancellationToken)
 {
-    using var upstream = new HttpRequestMessage(
-        HttpMethod.Post,
-        $"https://generativelanguage.googleapis.com/v1beta/models/{Uri.EscapeDataString(model)}:generateContent")
+    string? lastFailure = null;
+    string activeModel = candidateModels.Count > 0 ? candidateModels[0] : "gemini-3.1-flash-lite";
+
+    foreach (var candidate in candidateModels)
     {
-        Content = new StringContent(payload, Encoding.UTF8, "application/json")
-    };
+        activeModel = candidate;
+        using var upstream = new HttpRequestMessage(
+            HttpMethod.Post,
+            $"https://generativelanguage.googleapis.com/v1beta/models/{Uri.EscapeDataString(candidate)}:generateContent")
+        {
+            Content = new StringContent(payload, Encoding.UTF8, "application/json")
+        };
 
-    // The key goes in a header rather than the query string, so it cannot end up
-    // in a proxy log or an error page along with the URL.
-    upstream.Headers.Add("x-goog-api-key", apiKey);
+        // The key goes in a header rather than the query string, so it cannot end up
+        // in a proxy log or an error page along with the URL.
+        upstream.Headers.Add("x-goog-api-key", apiKey);
 
-    using var response = await http.SendAsync(upstream, cancellationToken);
-    var raw = await response.Content.ReadAsStringAsync(cancellationToken);
+        using var response = await http.SendAsync(upstream, cancellationToken);
+        var raw = await response.Content.ReadAsStringAsync(cancellationToken);
 
-    if (!response.IsSuccessStatusCode)
-    {
-        // The status travels in the failure string so the caller can classify
-        // it, and the body travels with it so the caller can log the reason.
-        // Both used to be discarded here, which is why the one sentence that
-        // reached the user could not say anything.
-        return (null, (0, 0, 0), $"provider_{(int)response.StatusCode}|{ProviderFailures.Truncate(raw, 600)}");
+        if (!response.IsSuccessStatusCode)
+        {
+            var code = (int)response.StatusCode;
+            lastFailure = $"provider_{code}|{ProviderFailures.Truncate(raw, 600)}";
+            if (code is 503 or 429 or 500 or 502 or 504)
+            {
+                continue;
+            }
+            return (null, (0, 0, 0), lastFailure, activeModel);
+        }
+
+        using var document = JsonDocument.Parse(raw);
+        var root = document.RootElement;
+
+        var usage = root.TryGetProperty("usageMetadata", out var meta)
+            ? (ReadInt(meta, "promptTokenCount", 0), ReadInt(meta, "thoughtsTokenCount", 0), ReadInt(meta, "candidatesTokenCount", 0))
+            : (0, 0, 0);
+
+        return (ReadCandidateText(root), usage, null, activeModel);
     }
 
-    using var document = JsonDocument.Parse(raw);
-    var root = document.RootElement;
-
-    var usage = root.TryGetProperty("usageMetadata", out var meta)
-        ? (ReadInt(meta, "promptTokenCount", 0), ReadInt(meta, "thoughtsTokenCount", 0), ReadInt(meta, "candidatesTokenCount", 0))
-        : (0, 0, 0);
-
-    return (ReadCandidateText(root), usage, null);
+    return (null, (0, 0, 0), lastFailure, activeModel);
 }
 
 static int ReadInt(JsonElement element, string name, int fallback) =>
@@ -1343,7 +1403,8 @@ public static class GeminiPayload
                 // number every provider in the desktop app uses, so a managed
                 // answer is not quietly shorter than a bring-your-own-key one.
                 maxOutputTokens = AssistantPromptKernel.MaxPlanTokens,
-                responseMimeType = "application/json"
+                responseMimeType = "application/json",
+                thinkingConfig = new { thinkingBudget = 0 }
             }
         });
     }
@@ -1399,7 +1460,8 @@ public static class GeminiPayload
                 // not useless to whatever the agent loop grows into next.
                 responseMimeType = string.Equals(responseFormat, "text", StringComparison.OrdinalIgnoreCase)
                     ? "text/plain"
-                    : "application/json"
+                    : "application/json",
+                thinkingConfig = new { thinkingBudget = 1024 }
             }
         };
 

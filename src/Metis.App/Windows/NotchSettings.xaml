@@ -107,17 +107,18 @@
             </Setter>
         </Style>
 
-        <!-- A plan, as a row. A Button so the keyboard and a screen reader can
+        <!-- A plan, as a card. A Button so the keyboard and a screen reader can
              both reach it; the template keeps the card look. -->
         <Style x:Key="PlanRow" TargetType="Button">
             <Setter Property="Cursor" Value="Hand" />
             <Setter Property="HorizontalContentAlignment" Value="Stretch" />
-            <Setter Property="Margin" Value="0,0,0,8" />
+            <Setter Property="Margin" Value="4,0,4,0" />
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="Button">
-                        <Border x:Name="Row" CornerRadius="10" Padding="14,12"
+                        <Border x:Name="Row" CornerRadius="12" Padding="14,14"
                                 BorderThickness="1.5"
+                                MinHeight="136"
                                 Background="{DynamicResource NotchFieldBrush}"
                                 BorderBrush="{TemplateBinding BorderBrush}">
                             <ContentPresenter />
@@ -225,7 +226,7 @@
 
         <Style x:Key="SettingScroller" TargetType="ScrollViewer">
             <Setter Property="HorizontalScrollBarVisibility" Value="Disabled" />
-            <Setter Property="VerticalScrollBarVisibility" Value="Auto" />
+            <Setter Property="VerticalScrollBarVisibility" Value="Disabled" />
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="ScrollViewer">
@@ -249,9 +250,7 @@
         </Style>
     </UserControl.Resources>
 
-    <Border Background="{DynamicResource NotchBubbleBrush}"
-            BorderBrush="{DynamicResource NotchScrollThumbBrush}"
-            BorderThickness="1" CornerRadius="14" Padding="18,14">
+    <Grid Margin="18,12,18,14">
         <StackPanel>
             <!-- Header -->
             <Grid Margin="0,0,0,12">
@@ -343,109 +342,133 @@
                             </ItemsControl.ItemTemplate>
                         </ItemsControl>
                     </StackPanel>
-
                     <!-- =========================== Account ============================ -->
                     <StackPanel x:Name="AccountPage" Visibility="Collapsed">
-                        <!-- Profile Header -->
-                        <Border Style="{StaticResource SettingCard}">
-                            <Grid>
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="Auto" />
-                                    <ColumnDefinition Width="*" />
-                                </Grid.ColumnDefinitions>
+                        <!-- Top Row: Profile Card on Left, Monthly Usage Meters on Right -->
+                        <Grid Margin="0,0,0,10">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="1.15*" />
+                                <ColumnDefinition Width="0.85*" />
+                            </Grid.ColumnDefinitions>
 
-                                <Grid Grid.Column="0" Margin="0,0,16,0" VerticalAlignment="Center">
-                                    <Border x:Name="AvatarCircle" Width="52" Height="52" CornerRadius="26"
-                                            Background="{DynamicResource NotchAccentBedBrush}"
-                                            BorderBrush="{DynamicResource AccentBrush}" BorderThickness="2"
-                                            Cursor="Hand" ToolTip="Click to choose your avatar"
-                                            MouseLeftButtonUp="Avatar_OnClick">
-                                        <TextBlock x:Name="AvatarEmoji" Text="🦊" FontSize="26"
-                                                   HorizontalAlignment="Center" VerticalAlignment="Center" />
-                                    </Border>
+                            <!-- Profile Header -->
+                            <Border Grid.Column="0" Style="{StaticResource SettingCard}" Margin="0,0,6,0">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+
+                                    <Grid Grid.Column="0" Margin="0,0,16,0" VerticalAlignment="Center">
+                                        <Border x:Name="AvatarCircle" Width="52" Height="52" CornerRadius="26"
+                                                Background="{DynamicResource NotchAccentBedBrush}"
+                                                BorderBrush="{DynamicResource AccentBrush}" BorderThickness="2"
+                                                Cursor="Hand" ToolTip="Click to choose your avatar"
+                                                MouseLeftButtonUp="Avatar_OnClick">
+                                            <TextBlock x:Name="AvatarEmoji" Text="🦊" FontSize="26"
+                                                       HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                        </Border>
+                                    </Grid>
+
+                                    <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                        <TextBox x:Name="AccountNameBox" FontSize="15" FontWeight="Bold"
+                                                 Background="Transparent" BorderThickness="0"
+                                                 Padding="0" MaxLength="60"
+                                                 Foreground="{DynamicResource NotchTextBrush}"
+                                                 CaretBrush="{DynamicResource AccentBrush}"
+                                                 AutomationProperties.Name="Your name"
+                                                 ToolTip="Click to change what Metis calls you"
+                                                 KeyDown="AccountName_OnKeyDown"
+                                                 LostFocus="AccountName_OnLostFocus" />
+                                        <StackPanel Orientation="Horizontal" Margin="0,3,0,0">
+                                            <TextBlock x:Name="AccountEmail" Text="local.tester@metis.internal" FontSize="11.5"
+                                                       Foreground="{DynamicResource NotchMutedBrush}" VerticalAlignment="Center" />
+                                            <Border x:Name="VerifiedBadge" Background="{DynamicResource NotchAccentBedBrush}"
+                                                    BorderBrush="{DynamicResource AccentBrush}" BorderThickness="1"
+                                                    CornerRadius="8" Padding="6,1" Margin="8,0,0,0" VerticalAlignment="Center">
+                                                <TextBlock Text="✓ Verified" FontSize="9.5" FontWeight="SemiBold"
+                                                           Foreground="{DynamicResource AccentBrush}" />
+                                            </Border>
+                                        </StackPanel>
+
+                                        <!-- Avatar Selection Tray -->
+                                        <WrapPanel x:Name="AvatarPickerTray" Margin="0,8,0,0" Visibility="Collapsed">
+                                            <Border Style="{StaticResource SwatchChip}" Tag="🦊" MouseLeftButtonUp="PickAvatar_OnClick"><TextBlock Text="🦊" FontSize="15" HorizontalAlignment="Center" VerticalAlignment="Center" /></Border>
+                                            <Border Style="{StaticResource SwatchChip}" Tag="🦉" MouseLeftButtonUp="PickAvatar_OnClick"><TextBlock Text="🦉" FontSize="15" HorizontalAlignment="Center" VerticalAlignment="Center" /></Border>
+                                            <Border Style="{StaticResource SwatchChip}" Tag="⚡" MouseLeftButtonUp="PickAvatar_OnClick"><TextBlock Text="⚡" FontSize="15" HorizontalAlignment="Center" VerticalAlignment="Center" /></Border>
+                                            <Border Style="{StaticResource SwatchChip}" Tag="🔮" MouseLeftButtonUp="PickAvatar_OnClick"><TextBlock Text="🔮" FontSize="15" HorizontalAlignment="Center" VerticalAlignment="Center" /></Border>
+                                            <Border Style="{StaticResource SwatchChip}" Tag="🚀" MouseLeftButtonUp="PickAvatar_OnClick"><TextBlock Text="🚀" FontSize="15" HorizontalAlignment="Center" VerticalAlignment="Center" /></Border>
+                                            <Border Style="{StaticResource SwatchChip}" Tag="🤖" MouseLeftButtonUp="PickAvatar_OnClick"><TextBlock Text="🤖" FontSize="15" HorizontalAlignment="Center" VerticalAlignment="Center" /></Border>
+                                            <Border Style="{StaticResource SwatchChip}" Tag="🎨" MouseLeftButtonUp="PickAvatar_OnClick"><TextBlock Text="🎨" FontSize="15" HorizontalAlignment="Center" VerticalAlignment="Center" /></Border>
+                                            <Border Style="{StaticResource SwatchChip}" Tag="🐼" MouseLeftButtonUp="PickAvatar_OnClick"><TextBlock Text="🐼" FontSize="15" HorizontalAlignment="Center" VerticalAlignment="Center" /></Border>
+                                            <Border Style="{StaticResource SwatchChip}" Tag="👑" MouseLeftButtonUp="PickAvatar_OnClick"><TextBlock Text="👑" FontSize="15" HorizontalAlignment="Center" VerticalAlignment="Center" /></Border>
+                                        </WrapPanel>
+
+                                        <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                                            <Border x:Name="SignInChip" Style="{StaticResource SettingChip}" MouseLeftButtonUp="SignIn_OnClick">
+                                                <TextBlock Text="Sign in" FontSize="11" Foreground="{DynamicResource NotchTextBrush}" />
+                                            </Border>
+                                            <Border x:Name="SignOutChip" Style="{StaticResource SettingChip}" MouseLeftButtonUp="SignOut_OnClick">
+                                                <TextBlock Text="Sign out" FontSize="11" Foreground="{DynamicResource NotchMutedBrush}" />
+                                            </Border>
+                                            <Border x:Name="ManageWebChip" Style="{StaticResource SettingChip}" Margin="8,0,0,0"
+                                                    Background="{DynamicResource NotchChipHoverBrush}" MouseLeftButtonUp="ManagePlan_OnClick">
+                                                <TextBlock Text="Manage on Web ↗" FontSize="11" Foreground="{DynamicResource NotchTextBrush}" />
+                                            </Border>
+                                        </StackPanel>
+                                    </StackPanel>
                                 </Grid>
+                            </Border>
 
-                                <StackPanel Grid.Column="1" VerticalAlignment="Center">
-                                    <!-- The name, editable in place.
-                                         It was a TextBlock, so the picture could
-                                         be changed from here and the name could
-                                         not — which is an odd half of a profile.
-                                         Borderless until you touch it, so the
-                                         header still reads as a heading rather
-                                         than as a form. -->
-                                    <TextBox x:Name="AccountNameBox" FontSize="15" FontWeight="Bold"
-                                             Background="Transparent" BorderThickness="0"
-                                             Padding="0" MaxLength="60"
-                                             Foreground="{DynamicResource NotchTextBrush}"
-                                             CaretBrush="{DynamicResource AccentBrush}"
-                                             AutomationProperties.Name="Your name"
-                                             ToolTip="Click to change what Metis calls you"
-                                             KeyDown="AccountName_OnKeyDown"
-                                             LostFocus="AccountName_OnLostFocus" />
-                                    <StackPanel Orientation="Horizontal" Margin="0,3,0,0">
-                                        <TextBlock x:Name="AccountEmail" Text="local.tester@metis.internal" FontSize="11.5"
-                                                   Foreground="{DynamicResource NotchMutedBrush}" VerticalAlignment="Center" />
-                                        <Border x:Name="VerifiedBadge" Background="{DynamicResource NotchAccentBedBrush}"
-                                                BorderBrush="{DynamicResource AccentBrush}" BorderThickness="1"
-                                                CornerRadius="8" Padding="6,1" Margin="8,0,0,0" VerticalAlignment="Center">
-                                            <TextBlock Text="✓ Verified" FontSize="9.5" FontWeight="SemiBold"
-                                                       Foreground="{DynamicResource AccentBrush}" />
-                                        </Border>
-                                    </StackPanel>
-
-                                    <!-- Avatar Selection Tray -->
-                                    <WrapPanel x:Name="AvatarPickerTray" Margin="0,10,0,0" Visibility="Collapsed">
-                                        <Border Style="{StaticResource SwatchChip}" Tag="🦊" MouseLeftButtonUp="PickAvatar_OnClick"><TextBlock Text="🦊" FontSize="15" HorizontalAlignment="Center" VerticalAlignment="Center" /></Border>
-                                        <Border Style="{StaticResource SwatchChip}" Tag="🦉" MouseLeftButtonUp="PickAvatar_OnClick"><TextBlock Text="🦉" FontSize="15" HorizontalAlignment="Center" VerticalAlignment="Center" /></Border>
-                                        <Border Style="{StaticResource SwatchChip}" Tag="⚡" MouseLeftButtonUp="PickAvatar_OnClick"><TextBlock Text="⚡" FontSize="15" HorizontalAlignment="Center" VerticalAlignment="Center" /></Border>
-                                        <Border Style="{StaticResource SwatchChip}" Tag="🔮" MouseLeftButtonUp="PickAvatar_OnClick"><TextBlock Text="🔮" FontSize="15" HorizontalAlignment="Center" VerticalAlignment="Center" /></Border>
-                                        <Border Style="{StaticResource SwatchChip}" Tag="🚀" MouseLeftButtonUp="PickAvatar_OnClick"><TextBlock Text="🚀" FontSize="15" HorizontalAlignment="Center" VerticalAlignment="Center" /></Border>
-                                        <Border Style="{StaticResource SwatchChip}" Tag="🤖" MouseLeftButtonUp="PickAvatar_OnClick"><TextBlock Text="🤖" FontSize="15" HorizontalAlignment="Center" VerticalAlignment="Center" /></Border>
-                                        <Border Style="{StaticResource SwatchChip}" Tag="🎨" MouseLeftButtonUp="PickAvatar_OnClick"><TextBlock Text="🎨" FontSize="15" HorizontalAlignment="Center" VerticalAlignment="Center" /></Border>
-                                        <Border Style="{StaticResource SwatchChip}" Tag="🐼" MouseLeftButtonUp="PickAvatar_OnClick"><TextBlock Text="🐼" FontSize="15" HorizontalAlignment="Center" VerticalAlignment="Center" /></Border>
-                                        <Border Style="{StaticResource SwatchChip}" Tag="👑" MouseLeftButtonUp="PickAvatar_OnClick"><TextBlock Text="👑" FontSize="15" HorizontalAlignment="Center" VerticalAlignment="Center" /></Border>
-                                    </WrapPanel>
-
-                                    <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
-                                        <Border x:Name="SignInChip" Style="{StaticResource SettingChip}" MouseLeftButtonUp="SignIn_OnClick">
-                                            <TextBlock Text="Sign in" FontSize="11" Foreground="{DynamicResource NotchTextBrush}" />
-                                        </Border>
-                                        <Border x:Name="SignOutChip" Style="{StaticResource SettingChip}" MouseLeftButtonUp="SignOut_OnClick">
-                                            <TextBlock Text="Sign out" FontSize="11" Foreground="{DynamicResource NotchMutedBrush}" />
-                                        </Border>
-                                        <Border x:Name="ManageWebChip" Style="{StaticResource SettingChip}" Margin="8,0,0,0"
-                                                Background="{DynamicResource NotchChipHoverBrush}" MouseLeftButtonUp="ManagePlan_OnClick">
-                                            <TextBlock Text="Manage on Web ↗" FontSize="11" Foreground="{DynamicResource NotchTextBrush}" />
-                                        </Border>
-                                    </StackPanel>
+                            <!-- Usage Card -->
+                            <Border Grid.Column="1" x:Name="UsageCard" Style="{StaticResource SettingCard}" Margin="6,0,0,0">
+                                <StackPanel>
+                                    <TextBlock Text="THIS MONTH" Style="{StaticResource SettingLabel}" />
+                                    <ItemsControl x:Name="UsageList" Margin="0,8,0,0">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <StackPanel Margin="0,0,0,8">
+                                                    <Grid>
+                                                        <TextBlock Text="{Binding Label}" FontSize="11"
+                                                                   Foreground="{DynamicResource NotchTextBrush}" />
+                                                        <TextBlock Text="{Binding Detail}" FontSize="11"
+                                                                   HorizontalAlignment="Right"
+                                                                   Foreground="{DynamicResource NotchMutedBrush}" />
+                                                    </Grid>
+                                                    <Grid Height="5" Margin="0,4,0,0">
+                                                        <Border Background="{DynamicResource NotchFieldBrush}"
+                                                                CornerRadius="2.5" />
+                                                        <Grid>
+                                                            <Grid.ColumnDefinitions>
+                                                                <ColumnDefinition Width="{Binding Used}" />
+                                                                <ColumnDefinition Width="{Binding Left}" />
+                                                            </Grid.ColumnDefinitions>
+                                                            <Border Background="{Binding FillBrush}" CornerRadius="2.5" />
+                                                        </Grid>
+                                                    </Grid>
+                                                </StackPanel>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                    <TextBlock x:Name="UsageDetail" Style="{StaticResource SettingBody}" />
                                 </StackPanel>
-                            </Grid>
-                        </Border>
+                            </Border>
+                        </Grid>
 
                         <!-- ====================== Choosing a plan ======================
-                             One row per plan, stacked, rather than three cards
-                             side by side.
-
-                             The columns version could not survive its own
-                             content: three cards across 640px leaves each about
-                             190px, so every description wrapped to three lines
-                             and needed a MinHeight to stop the cards ending at
-                             different depths. Narrow the notch, lengthen a
-                             sentence, or run at a larger system font and it
-                             fell apart again. Stacked rows have none of that —
-                             each one gets the full width, the price stays on
-                             the right, and the layout is the same at any size.
-
-                             The rows are Buttons so they can be tabbed to and
-                             announced; everything else in the notch that looks
-                             like a button but is a Border cannot be. -->
+                             Three plans in a horizontal 3-column grid, matching v3.15.0 and the web. -->
                         <Border Style="{StaticResource SettingCard}">
                             <StackPanel>
                                 <TextBlock Text="YOUR PLAN" Style="{StaticResource SettingLabel}" />
                                 <TextBlock x:Name="PlanSwitcherNote" Style="{StaticResource SettingBody}"
-                                           Margin="0,4,0,12" />
+                                           Margin="0,4,0,10" />
 
                                 <ItemsControl x:Name="PlanList">
+                                    <ItemsControl.ItemsPanel>
+                                        <ItemsPanelTemplate>
+                                            <UniformGrid Columns="3" Margin="-4,0,-4,0" />
+                                        </ItemsPanelTemplate>
+                                    </ItemsControl.ItemsPanel>
                                     <ItemsControl.ItemTemplate>
                                         <DataTemplate>
                                             <Button Style="{StaticResource PlanRow}" Tag="{Binding Key}"
@@ -453,39 +476,42 @@
                                                     AutomationProperties.Name="{Binding AutomationName}"
                                                     Click="SelectPlan_OnClick">
                                                 <Grid>
-                                                    <Grid.ColumnDefinitions>
-                                                        <ColumnDefinition Width="*" />
-                                                        <ColumnDefinition Width="Auto" />
-                                                    </Grid.ColumnDefinitions>
+                                                    <Grid.RowDefinitions>
+                                                        <RowDefinition Height="Auto" />
+                                                        <RowDefinition Height="Auto" />
+                                                        <RowDefinition Height="*" />
+                                                    </Grid.RowDefinitions>
 
-                                                    <StackPanel Grid.Column="0" Margin="0,0,12,0">
-                                                        <StackPanel Orientation="Horizontal">
-                                                            <TextBlock Text="{Binding Name}" FontSize="13.5"
-                                                                       FontWeight="SemiBold"
-                                                                       Foreground="{DynamicResource NotchTextBrush}" />
-                                                            <Border Background="{DynamicResource NotchAccentBedBrush}"
-                                                                    CornerRadius="7" Padding="7,1" Margin="8,0,0,0"
-                                                                    VerticalAlignment="Center"
-                                                                    Visibility="{Binding CurrentVisibility}">
-                                                                <TextBlock Text="YOUR PLAN" FontSize="8.5"
-                                                                           FontWeight="Bold"
-                                                                           Foreground="{DynamicResource AccentBrush}" />
-                                                            </Border>
-                                                        </StackPanel>
-                                                        <TextBlock Text="{Binding Summary}" FontSize="11"
-                                                                   TextWrapping="Wrap" Margin="0,4,0,0"
-                                                                   Foreground="{DynamicResource NotchMutedBrush}" />
-                                                    </StackPanel>
-
-                                                    <StackPanel Grid.Column="1" VerticalAlignment="Center"
-                                                                HorizontalAlignment="Right">
-                                                        <TextBlock Text="{Binding Price}" FontSize="17"
-                                                                   FontWeight="Bold" HorizontalAlignment="Right"
+                                                    <!-- Name & Current Plan badge -->
+                                                    <Grid Grid.Row="0" Margin="0,0,0,6">
+                                                        <TextBlock Text="{Binding Name}" FontSize="13.5"
+                                                                   FontWeight="SemiBold"
                                                                    Foreground="{DynamicResource NotchTextBrush}" />
-                                                        <TextBlock Text="{Binding Cadence}" FontSize="9.5"
-                                                                   HorizontalAlignment="Right"
+                                                        <Border Background="{DynamicResource NotchAccentBedBrush}"
+                                                                CornerRadius="7" Padding="6,1"
+                                                                HorizontalAlignment="Right"
+                                                                VerticalAlignment="Center"
+                                                                Visibility="{Binding CurrentVisibility}">
+                                                            <TextBlock Text="YOUR PLAN" FontSize="8"
+                                                                       FontWeight="Bold"
+                                                                       Foreground="{DynamicResource AccentBrush}" />
+                                                        </Border>
+                                                    </Grid>
+
+                                                    <!-- Price & Cadence -->
+                                                    <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,0,0,8" VerticalAlignment="Bottom">
+                                                        <TextBlock Text="{Binding Price}" FontSize="19"
+                                                                   FontWeight="Bold"
+                                                                   Foreground="{DynamicResource NotchTextBrush}" />
+                                                        <TextBlock Text="{Binding Cadence}" FontSize="10" Margin="4,0,0,2"
+                                                                   VerticalAlignment="Bottom"
                                                                    Foreground="{DynamicResource NotchFaintBrush}" />
                                                     </StackPanel>
+
+                                                    <!-- Summary -->
+                                                    <TextBlock Grid.Row="2" Text="{Binding Summary}" FontSize="10.5"
+                                                               TextWrapping="Wrap" LineHeight="15"
+                                                               Foreground="{DynamicResource NotchMutedBrush}" />
                                                 </Grid>
                                             </Button>
                                         </DataTemplate>
@@ -494,65 +520,24 @@
                             </StackPanel>
                         </Border>
 
-                        <!-- ======================= What you have used =======================
-                             One meter per thing the plan actually sells, in the
-                             units the pricing page uses.
-
-                             It used to be a single bar against a dollar budget,
-                             which is the one number a customer cannot act on:
-                             nobody knows whether $0.42 of Gemini is a lot. Talk
-                             messages, minutes and agent messages are countable
-                             by the person spending them.
-
-                             The bars are two star-width grid columns rather
-                             than a pixel Width, so they are correct at any
-                             notch size without a line of layout code. -->
-                        <Border x:Name="UsageCard" Style="{StaticResource SettingCard}">
-                            <StackPanel>
-                                <TextBlock Text="THIS MONTH" Style="{StaticResource SettingLabel}" />
-                                <ItemsControl x:Name="UsageList" Margin="0,10,0,0">
-                                    <ItemsControl.ItemTemplate>
-                                        <DataTemplate>
-                                            <StackPanel Margin="0,0,0,12">
-                                                <Grid>
-                                                    <TextBlock Text="{Binding Label}" FontSize="11.5"
-                                                               Foreground="{DynamicResource NotchTextBrush}" />
-                                                    <TextBlock Text="{Binding Detail}" FontSize="11.5"
-                                                               HorizontalAlignment="Right"
-                                                               Foreground="{DynamicResource NotchMutedBrush}" />
-                                                </Grid>
-                                                <Grid Height="6" Margin="0,6,0,0">
-                                                    <Border Background="{DynamicResource NotchFieldBrush}"
-                                                            CornerRadius="3" />
-                                                    <Grid>
-                                                        <Grid.ColumnDefinitions>
-                                                            <ColumnDefinition Width="{Binding Used}" />
-                                                            <ColumnDefinition Width="{Binding Left}" />
-                                                        </Grid.ColumnDefinitions>
-                                                        <Border Background="{Binding FillBrush}" CornerRadius="3" />
-                                                    </Grid>
-                                                </Grid>
-                                            </StackPanel>
-                                        </DataTemplate>
-                                    </ItemsControl.ItemTemplate>
-                                </ItemsControl>
-                                <TextBlock x:Name="UsageDetail" Style="{StaticResource SettingBody}" />
-                            </StackPanel>
-                        </Border>
-
-                        <!-- Plan Feature Checklist -->
+                        <!-- Plan Feature Checklist in 2 Columns -->
                         <Border Style="{StaticResource SettingCard}">
                             <StackPanel>
                                 <TextBlock Text="PLAN CAPABILITIES" Style="{StaticResource SettingLabel}" />
-                                <ItemsControl x:Name="FeatureList" Margin="0,10,0,0">
+                                <ItemsControl x:Name="FeatureList" Margin="0,8,0,0">
+                                    <ItemsControl.ItemsPanel>
+                                        <ItemsPanelTemplate>
+                                            <UniformGrid Columns="2" />
+                                        </ItemsPanelTemplate>
+                                    </ItemsControl.ItemsPanel>
                                     <ItemsControl.ItemTemplate>
                                         <DataTemplate>
-                                            <Grid Margin="0,0,0,6">
+                                            <Grid Margin="0,0,12,6">
                                                 <Grid.ColumnDefinitions>
-                                                    <ColumnDefinition Width="22" />
+                                                    <ColumnDefinition Width="20" />
                                                     <ColumnDefinition Width="*" />
                                                 </Grid.ColumnDefinitions>
-                                                <TextBlock Text="{Binding StatusSymbol}" FontSize="11.5"
+                                                <TextBlock Text="{Binding StatusSymbol}" FontSize="11"
                                                            Foreground="{Binding StatusBrush}" FontWeight="Bold" />
                                                 <TextBlock Grid.Column="1" Text="{Binding Label}" FontSize="11"
                                                            Foreground="{DynamicResource NotchTextBrush}" TextWrapping="Wrap" />
@@ -560,7 +545,7 @@
                                         </DataTemplate>
                                     </ItemsControl.ItemTemplate>
                                 </ItemsControl>
-                                <TextBlock x:Name="FeatureNote" Style="{StaticResource SettingBody}" Margin="0,4,0,0" />
+                                <TextBlock x:Name="FeatureNote" Style="{StaticResource SettingBody}" Margin="0,2,0,0" />
                             </StackPanel>
                         </Border>
                     </StackPanel>
@@ -890,89 +875,91 @@
 
                     <!-- ========================== Companion ========================== -->
                     <StackPanel x:Name="CompanionPage" Visibility="Collapsed">
-                        <Border Style="{StaticResource SettingCard}">
-                            <StackPanel>
-                                <TextBlock Text="WHEN IT APPEARS" Style="{StaticResource SettingLabel}" />
-                                <TextBlock Style="{StaticResource SettingBody}" Margin="0,8,0,0"
-                                           Text="Metis's companion arrives when there is something to show you and leaves afterwards. Turn this on if you would rather it stayed." />
-                                <CheckBox x:Name="CompanionAlwaysCheck" Margin="0,10,0,0"
-                                          Content="Keep the companion on screen all the time"
-                                          Foreground="{DynamicResource NotchTextBrush}" FontSize="12" />
-                            </StackPanel>
-                        </Border>
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
 
-                        <!-- Which character the companion is.
-                             Both forms have existed since the companion did, and
-                             the only picker for them lived in a window the
-                             application builds and never shows, so in the
-                             shipping app the choice could not be made at all,
-                             and everyone had whichever one was the default. -->
-                        <Border Style="{StaticResource SettingCard}">
-                            <StackPanel>
-                                <TextBlock Text="CHARACTER" Style="{StaticResource SettingLabel}" />
-                                <ItemsControl x:Name="CompanionCharacters" Margin="0,10,0,0">
-                                    <ItemsControl.ItemsPanel>
-                                        <ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate>
-                                    </ItemsControl.ItemsPanel>
-                                    <ItemsControl.ItemTemplate>
-                                        <DataTemplate>
-                                            <Button Style="{StaticResource ShapeButton}" Tag="{Binding Name}"
-                                                    AutomationProperties.Name="{Binding Name}"
-                                                    AutomationProperties.HelpText="{Binding Description}"
-                                                    Click="CompanionCharacter_OnClick">
-                                                <Path Data="{Binding Figure}" Stretch="Uniform"
-                                                      Width="28" Height="28"
-                                                      Fill="{DynamicResource NotchTextBrush}" />
-                                            </Button>
-                                        </DataTemplate>
-                                    </ItemsControl.ItemTemplate>
-                                </ItemsControl>
-                                <TextBlock x:Name="CompanionCharacterName" Style="{StaticResource SettingBody}"
-                                           Margin="0,10,0,0" />
-                            </StackPanel>
-                        </Border>
+                            <!-- Left Column: When it appears + Character -->
+                            <StackPanel Grid.Column="0" Margin="0,0,6,0">
+                                <Border Style="{StaticResource SettingCard}">
+                                    <StackPanel>
+                                        <TextBlock Text="WHEN IT APPEARS" Style="{StaticResource SettingLabel}" />
+                                        <TextBlock Style="{StaticResource SettingBody}" Margin="0,8,0,0"
+                                                   Text="Metis's companion arrives when there is something to show you and leaves afterwards. Turn this on if you would rather it stayed." />
+                                        <CheckBox x:Name="CompanionAlwaysCheck" Margin="0,10,0,0"
+                                                  Content="Keep the companion on screen all the time"
+                                                  Foreground="{DynamicResource NotchTextBrush}" FontSize="12" />
+                                    </StackPanel>
+                                </Border>
 
-                        <Border Style="{StaticResource SettingCard}">
-                            <StackPanel>
-                                <TextBlock Text="COLOUR" Style="{StaticResource SettingLabel}" />
-                                <ItemsControl x:Name="CompanionColours" Margin="0,10,0,0">
-                                    <ItemsControl.ItemsPanel>
-                                        <ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate>
-                                    </ItemsControl.ItemsPanel>
-                                    <ItemsControl.ItemTemplate>
-                                        <DataTemplate>
-                                            <Button Style="{StaticResource SwatchButton}" Tag="{Binding Name}"
-                                                    Background="{Binding Fill}" AutomationProperties.Name="{Binding Name}"
-                                                    Click="CompanionColour_OnClick" />
-                                        </DataTemplate>
-                                    </ItemsControl.ItemTemplate>
-                                </ItemsControl>
-                                <TextBlock x:Name="CompanionColourName" Style="{StaticResource SettingBody}" Margin="0,8,0,0" />
+                                <Border Style="{StaticResource SettingCard}">
+                                    <StackPanel>
+                                        <TextBlock Text="CHARACTER" Style="{StaticResource SettingLabel}" />
+                                        <ItemsControl x:Name="CompanionCharacters" Margin="0,10,0,0">
+                                            <ItemsControl.ItemsPanel>
+                                                <ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate>
+                                            </ItemsControl.ItemsPanel>
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate>
+                                                    <Button Style="{StaticResource ShapeButton}" Tag="{Binding Name}"
+                                                            AutomationProperties.Name="{Binding Name}"
+                                                            AutomationProperties.HelpText="{Binding Description}"
+                                                            Click="CompanionCharacter_OnClick">
+                                                        <Path Data="{Binding Figure}" Stretch="Uniform"
+                                                              Width="28" Height="28"
+                                                              Fill="{DynamicResource NotchTextBrush}" />
+                                                    </Button>
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+                                        <TextBlock x:Name="CompanionCharacterName" Style="{StaticResource SettingBody}"
+                                                   Margin="0,10,0,0" />
+                                    </StackPanel>
+                                </Border>
                             </StackPanel>
-                        </Border>
 
-                        <Border Style="{StaticResource SettingCard}">
-                            <StackPanel>
-                                <TextBlock Text="SIZE" Style="{StaticResource SettingLabel}" />
-                                <Slider x:Name="CompanionSizeSlider" Minimum="32" Maximum="112"
-                                        TickFrequency="8" IsSnapToTickEnabled="True" Margin="0,10,0,0" />
-                                <TextBlock x:Name="CompanionSizeLabel" Style="{StaticResource SettingBody}" Margin="0,4,0,0" />
-                            </StackPanel>
-                        </Border>
+                            <!-- Right Column: Colour + Size + Distance -->
+                            <StackPanel Grid.Column="1" Margin="6,0,0,0">
+                                <Border Style="{StaticResource SettingCard}">
+                                    <StackPanel>
+                                        <TextBlock Text="COLOUR" Style="{StaticResource SettingLabel}" />
+                                        <ItemsControl x:Name="CompanionColours" Margin="0,10,0,0">
+                                            <ItemsControl.ItemsPanel>
+                                                <ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate>
+                                            </ItemsControl.ItemsPanel>
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate>
+                                                    <Button Style="{StaticResource SwatchButton}" Tag="{Binding Name}"
+                                                            Background="{Binding Fill}" AutomationProperties.Name="{Binding Name}"
+                                                            Click="CompanionColour_OnClick" />
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+                                        <TextBlock x:Name="CompanionColourName" Style="{StaticResource SettingBody}" Margin="0,8,0,0" />
+                                    </StackPanel>
+                                </Border>
 
-                        <!-- How far the companion sits from the pointer.
-                             The setting existed and was enforced from the moment
-                             it was written; there was simply nowhere to change
-                             it, so everyone had the 25px default forever. -->
-                        <Border Style="{StaticResource SettingCard}">
-                            <StackPanel>
-                                <TextBlock Text="HOW CLOSE IT FOLLOWS" Style="{StaticResource SettingLabel}" />
-                                <Slider x:Name="CursorDistanceSlider" Minimum="0" Maximum="120"
-                                        TickFrequency="5" IsSnapToTickEnabled="True" Margin="0,10,0,0" />
-                                <TextBlock x:Name="CursorDistanceLabel" Style="{StaticResource SettingBody}"
-                                           Margin="0,4,0,0" />
+                                <Border Style="{StaticResource SettingCard}">
+                                    <StackPanel>
+                                        <TextBlock Text="SIZE &amp; DISTANCE" Style="{StaticResource SettingLabel}" />
+                                        <TextBlock Text="SIZE" FontSize="11" FontWeight="SemiBold"
+                                                   Foreground="{DynamicResource NotchMutedBrush}" Margin="0,8,0,0" />
+                                        <Slider x:Name="CompanionSizeSlider" Minimum="32" Maximum="112"
+                                                TickFrequency="8" IsSnapToTickEnabled="True" Margin="0,4,0,0" />
+                                        <TextBlock x:Name="CompanionSizeLabel" Style="{StaticResource SettingBody}" Margin="0,2,0,0" />
+
+                                        <TextBlock Text="HOW CLOSE IT FOLLOWS" FontSize="11" FontWeight="SemiBold"
+                                                   Foreground="{DynamicResource NotchMutedBrush}" Margin="0,10,0,0" />
+                                        <Slider x:Name="CursorDistanceSlider" Minimum="0" Maximum="120"
+                                                TickFrequency="5" IsSnapToTickEnabled="True" Margin="0,4,0,0" />
+                                        <TextBlock x:Name="CursorDistanceLabel" Style="{StaticResource SettingBody}"
+                                                   Margin="0,2,0,0" />
+                                    </StackPanel>
+                                </Border>
                             </StackPanel>
-                        </Border>
+                        </Grid>
                     </StackPanel>
 
                     <!-- =========================== Privacy =========================== -->
@@ -997,7 +984,8 @@
                                 <Border Background="{DynamicResource NotchFieldBrush}" BorderBrush="{DynamicResource NotchFieldEdgeBrush}"
                                         BorderThickness="1" CornerRadius="8" Padding="10,7" Margin="0,10,0,0">
                                     <TextBox x:Name="ExcludedAppsBox" Background="Transparent" BorderThickness="0" FontSize="12"
-                                             MinHeight="52" AcceptsReturn="True" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto"
+                                             MinHeight="52" AcceptsReturn="True" TextWrapping="Wrap"
+                                             VerticalScrollBarVisibility="Hidden" HorizontalScrollBarVisibility="Disabled"
                                              Foreground="{DynamicResource NotchTextBrush}" CaretBrush="{DynamicResource AccentBrush}" />
                                 </Border>
                                 <TextBlock Style="{StaticResource SettingBody}" Margin="0,6,0,0" Text="One program name per line." />
@@ -1181,5 +1169,5 @@
                 </Border>
             </Grid>
         </StackPanel>
-    </Border>
+    </Grid>
 </UserControl>

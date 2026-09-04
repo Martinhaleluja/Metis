@@ -1016,8 +1016,9 @@ public sealed class MetisRuntime : IDisposable
         _chatSessions = _chatStore.LoadAll().ToList();
         ConfigureCaptureProfile();
         _recorder.LevelChanged += OnAudioLevelChanged;
-        _pushToTalk.Pressed += OnPushToTalkPressed;
-        _pushToTalk.Released += OnPushToTalkReleased;
+        _pushToTalk.DictationPressed += OnDictationPressed;
+        _pushToTalk.DictationReleased += OnDictationReleased;
+        _pushToTalk.LiveListeningToggled += OnLiveListeningToggled;
         _pushToTalk.DirectAgentVoicePressed += OnDirectAgentVoicePressed;
         _pushToTalk.DirectAgentVoiceReleased += OnDirectAgentVoiceReleased;
         _pushToTalk.EmergencyStopPressed += OnEmergencyStopPressed;
@@ -1032,13 +1033,13 @@ public sealed class MetisRuntime : IDisposable
         {
             _pushToTalk.Start();
             SetStatus(HasConfiguredProviderKey()
-                ? "Ready — hold Ctrl+Alt to ask, Ctrl+Space to listen hands-free, Ctrl+Alt+Shift to point"
+                ? "Ready — Ctrl 3× for live conversation, tap then hold Ctrl to dictate, Ctrl+Alt for screen"
                 : "Setup required — add a Gemini or OpenAI API key");
         }
         catch (Exception exception)
         {
-            _log.Error("The global hold-to-talk shortcut could not start.", exception);
-            SetStatus("Metis started, but Ctrl+Shift+1 is unavailable. Open diagnostics for details.");
+            _log.Error("The global shortcut hook could not start.", exception);
+            SetStatus("Metis started, but global keyboard hook is unavailable. Open diagnostics for details.");
         }
         StartEntitlementRefreshTimer();
         _log.Info("Metis runtime initialized.");
@@ -1414,11 +1415,185 @@ public sealed class MetisRuntime : IDisposable
     }
 
     private CancellationTokenSource? _activeListening;
+    private CancellationTokenSource? _liveListeningCts;
 
     /// <summary>Whether Ctrl+Space listening is currently on.</summary>
     public bool IsActivelyListening => _activeListening is { IsCancellationRequested: false };
 
+    /// <summary>Whether hands-free live conversational mode (Ctrl 3×) is currently active.</summary>
+    public bool IsLiveListening => _liveListeningCts is { IsCancellationRequested: false };
+
     public event EventHandler<bool>? ActiveListeningChanged;
+    public event EventHandler<bool>? LiveListeningChanged;
+
+    public void ToggleLiveListening()
+    {
+        if (IsLiveListening)
+        {
+            StopLiveListening("Live conversation stopped.");
+            return;
+        }
+
+        if (!CanAnswer(out var voiceRefusalReason))
+        {
+            ReportError(voiceRefusalReason);
+            return;
+        }
+
+        if (IsActivelyListening)
+        {
+            StopActiveListening(string.Empty);
+        }
+
+        var cts = new CancellationTokenSource();
+        _liveListeningCts = cts;
+        LiveListeningChanged?.Invoke(this, true);
+        PlayCue(MetisSound.RecordingStarted);
+        SetStatus("Live conversation active — speak freely, press Ctrl 3× to stop");
+        SetActivity(MetisActivityKind.Listening, "Live conversation");
+        State.Force(AssistantState.Listening);
+        _log.Info("Live conversation listening started via triple-tap Ctrl.");
+        _ = RunLiveListeningLoopAsync(cts.Token);
+    }
+
+    public void StopLiveListening(string status)
+    {
+        var cts = _liveListeningCts;
+        _liveListeningCts = null;
+        if (cts is null)
+        {
+            return;
+        }
+
+        try
+        {
+            cts.Cancel();
+            cts.Dispose();
+        }
+        catch
+        {
+        }
+
+        _audioPlayback.Stop();
+        if (_recorder.IsRecording)
+        {
+            _recorder.Cancel();
+        }
+
+        LiveListeningChanged?.Invoke(this, false);
+        SetActivity(MetisActivityKind.Idle, string.Empty);
+        SetStatus(status);
+        PlayCue(MetisSound.Stopped);
+        State.Force(AssistantState.Idle);
+        _log.Info("Live conversation listening stopped.");
+    }
+
+    private async Task RunLiveListeningLoopAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            while (!cancellationToken.IsCancellationRequested)
+            {
+                if (_recorder.IsRecording || _audioPlayback.IsPlaying)
+                {
+                    await Task.Delay(150, cancellationToken).ConfigureAwait(false);
+                    continue;
+                }
+
+                SetActivity(MetisActivityKind.Listening, "Listening to you…");
+                State.Force(AssistantState.Listening);
+                _recorder.Start(Settings.PreferredMicrophoneId);
+
+                var speechDetected = false;
+                var lastSpeechTick = 0L;
+                var startTick = Environment.TickCount64;
+
+                void OnLiveLevel(object? sender, float level)
+                {
+                    if (level >= 0.05f)
+                    {
+                        speechDetected = true;
+                        lastSpeechTick = Environment.TickCount64;
+                    }
+                }
+
+                _recorder.LevelChanged += OnLiveLevel;
+                try
+                {
+                    while (!cancellationToken.IsCancellationRequested)
+                    {
+                        await Task.Delay(100, cancellationToken).ConfigureAwait(false);
+                        var now = Environment.TickCount64;
+
+                        // End of utterance detected (speech followed by 1.1s silence)
+                        if (speechDetected && (now - lastSpeechTick >= 1100))
+                        {
+                            break;
+                        }
+
+                        // Cycle empty buffer after 5s silence
+                        if (!speechDetected && (now - startTick >= 5000))
+                        {
+                            break;
+                        }
+
+                        // Maximum utterance limit (25s)
+                        if (speechDetected && (now - startTick >= 25000))
+                        {
+                            break;
+                        }
+                    }
+                }
+                finally
+                {
+                    _recorder.LevelChanged -= OnLiveLevel;
+                }
+
+                if (cancellationToken.IsCancellationRequested)
+                {
+                    _recorder.Cancel();
+                    break;
+                }
+
+                var recording = await _recorder.StopAsync(cancellationToken).ConfigureAwait(false);
+                if (!speechDetected || recording is null || recording.Duration < TimeSpan.FromMilliseconds(400))
+                {
+                    continue;
+                }
+
+                PlayCue(MetisSound.RequestSent);
+                MessageAdded?.Invoke(
+                    this,
+                    new AssistantMessage(
+                        AssistantRole.User,
+                        $"Live Voice ({recording.Duration.TotalSeconds:0.0}s)",
+                        DateTimeOffset.Now));
+
+                _pendingActivation = ActivationKind.PushToTalk;
+                _pendingPointer = null;
+
+                await RunTurnAsync(SpokenRequest.Placeholder, recording, cancellationToken).ConfigureAwait(false);
+
+                while (_audioPlayback.IsPlaying && !cancellationToken.IsCancellationRequested)
+                {
+                    await Task.Delay(100, cancellationToken).ConfigureAwait(false);
+                }
+
+                if (!cancellationToken.IsCancellationRequested)
+                {
+                    SetStatus("Live conversation active — speak freely, press Ctrl 3× to stop");
+                }
+            }
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch (Exception ex)
+        {
+            _log.Error("Live listening loop encountered an error", ex);
+            StopLiveListening("Live listening stopped after an error. Press Ctrl 3× to resume.");
+        }
+    }
 
     /// <summary>
     /// How long each stretch of speech is before it is transcribed and checked
@@ -1681,6 +1856,14 @@ public sealed class MetisRuntime : IDisposable
         SetStatus("Stopped");
     }
 
+    private void OnLiveListeningToggled(object? sender, EventArgs e)
+    {
+        if (!_disposed)
+        {
+            ToggleLiveListening();
+        }
+    }
+
     private void OnActiveListeningToggled(object? sender, EventArgs e)
     {
         if (!_disposed)
@@ -1689,60 +1872,171 @@ public sealed class MetisRuntime : IDisposable
         }
     }
 
-    private void OnPushToTalkPressed(object? sender, EventArgs e)
+    private void OnDictationPressed(object? sender, EventArgs e)
     {
         if (_disposed || _recorder.IsRecording || _turnGate.CurrentCount == 0)
         {
             return;
         }
 
-        // CanAnswer and HasConfiguredProviderKey gate on the same condition, but
-        // this one used to hardcode "add an API key" regardless of why the
-        // route was refused -- so someone who was simply signed out, on a
-        // Metis gateway route with no key of their own, was told to go paste a
-        // credential that had nothing to do with the actual problem.
-        if (!CanAnswer(out var voiceRefusalReason))
-        {
-            ReportError(voiceRefusalReason);
-            return;
-        }
-
         try
         {
+            _audioPlayback.Stop();
+            _turnCancellation?.Cancel();
+
             _pendingPointer = null;
             PlayCue(MetisSound.RecordingStarted);
             _recorder.Start(Settings.PreferredMicrophoneId);
             State.Force(AssistantState.Listening);
-            SetActivity(MetisActivityKind.Listening, "Listening");
-            SetStatus("Listening — release Ctrl+Shift+1 to ask");
+            SetActivity(MetisActivityKind.Listening, "Dictating…");
+            SetStatus("Dictating… (speak your text, release Ctrl to insert)");
         }
         catch (Exception exception)
         {
-            ReportException("Metis could not start the microphone", exception);
+            ReportException("Metis could not start dictation recording", exception);
         }
     }
 
-    private void OnPushToTalkReleased(object? sender, EventArgs e)
+    private void OnDictationReleased(object? sender, EventArgs e)
     {
         if (!_recorder.IsRecording)
         {
             return;
         }
 
-        _pendingActivation = ActivationKind.PushToTalk;
-        _pendingPointer = null;
         _ = Task.Run(async () =>
         {
             try
             {
-                await CompleteVoiceTurnAsync().ConfigureAwait(false);
+                await CompleteDictationAsync().ConfigureAwait(false);
             }
             catch (Exception ex)
             {
-                _log.Error("Voice turn failed unexpectedly", ex);
+                _log.Error("Dictation turn failed unexpectedly", ex);
             }
         });
     }
+
+    private async Task CompleteDictationAsync()
+    {
+        try
+        {
+            var recording = await _recorder.StopAsync();
+            if (recording is null || recording.Duration < TimeSpan.FromMilliseconds(250))
+            {
+                State.Force(AssistantState.Idle);
+                SetActivity(MetisActivityKind.Idle, string.Empty);
+                SetStatus("Dictation too short — tap then hold Ctrl and speak clearly");
+                return;
+            }
+
+            PlayCue(MetisSound.RequestSent);
+            State.Force(AssistantState.Thinking);
+            SetActivity(MetisActivityKind.Thinking, "Transcribing…");
+            SetStatus("Transcribing dictation…");
+
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+            var text = await TranscribeAudioForDictationAsync(recording, cts.Token);
+
+            if (string.IsNullOrWhiteSpace(text))
+            {
+                State.Force(AssistantState.Idle);
+                SetActivity(MetisActivityKind.Idle, string.Empty);
+                SetStatus("No speech transcribed — check your microphone or STT settings");
+                return;
+            }
+
+            var inserted = await TextInputInjector.InsertTextAsync(text, cts.Token);
+            if (inserted)
+            {
+                PlayCue(MetisSound.TaskComplete);
+                State.Force(AssistantState.Success);
+                SetActivity(MetisActivityKind.Complete, "Inserted");
+                SetStatus($"Dictated: “{text}”");
+                _log.Info($"Dictation successfully inserted into active window: \"{text}\"");
+            }
+            else
+            {
+                SetStatus($"Could not insert text: “{text}”");
+            }
+
+            await Task.Delay(1200);
+            State.Force(AssistantState.Idle);
+            SetActivity(MetisActivityKind.Idle, string.Empty);
+        }
+        catch (Exception ex)
+        {
+            ReportException("Metis could not finish dictation", ex);
+        }
+    }
+
+    private async Task<string?> TranscribeAudioForDictationAsync(RecordedAudio recording, CancellationToken cancellationToken)
+    {
+        try
+        {
+            if (Settings.SpeechToTextProvider == "AssemblyAI")
+            {
+                var result = await _assemblyAi.TranscribeAsync(
+                    RequireAssemblyAiApiKey(), Settings.AssemblyAiModel, recording, cancellationToken);
+                return result.Text?.Trim();
+            }
+
+            if (Settings.SpeechToTextProvider == "Whisper.cpp")
+            {
+                var whisper = await _whisperCpp.TranscribeAsync(
+                    ResolveLocalPath(Settings.WhisperCppExecutablePath),
+                    ResolveLocalPath(Settings.WhisperCppModelPath),
+                    recording,
+                    cancellationToken);
+                return whisper.Text?.Trim();
+            }
+        }
+        catch (Exception ex)
+        {
+            _log.Info($"SpeechToTextProvider failed for dictation: {ex.Message}; falling back to model transcription");
+        }
+
+        try
+        {
+            var req = new GeminiRequest(
+                "Transcribe the spoken audio verbatim. Return ONLY the transcription text, nothing else. Do not add quotes, explanation, or markdown formatting.",
+                RecordedAudioWav: recording.WavBytes);
+
+            var geminiKey = _secretStore.ReadGeminiApiKey();
+            var openAiKey = _secretStore.ReadOpenAiApiKey();
+
+            if (Settings.AiProvider == "Gemini" && !string.IsNullOrWhiteSpace(geminiKey))
+            {
+                var resp = await _gemini.GenerateAsync(geminiKey, Settings.ReasoningModel, req, onTextDelta: null, cancellationToken);
+                return resp.Text?.Trim().Trim('"', '`');
+            }
+
+            if (Settings.AiProvider == "OpenAI" && !string.IsNullOrWhiteSpace(openAiKey))
+            {
+                var resp = await _openAi.GenerateAsync(
+                    openAiKey,
+                    Settings.OpenAiReasoningModel,
+                    Settings.OpenAiTranscriptionModel,
+                    req,
+                    onTextDelta: null,
+                    cancellationToken);
+                var t = !string.IsNullOrWhiteSpace(resp.Transcript) ? resp.Transcript : resp.Text;
+                return t?.Trim().Trim('"', '`');
+            }
+
+            var turnResult = await GenerateWithSelectedProviderAsync(req, answerStream: null, cancellationToken);
+            return turnResult.Text?.Trim().Trim('"', '`');
+        }
+        catch (Exception ex)
+        {
+            _log.Error("Fallback transcription failed for dictation", ex);
+        }
+
+        return null;
+    }
+
+    private void OnPushToTalkPressed(object? sender, EventArgs e) => OnDictationPressed(sender, e);
+    private void OnPushToTalkReleased(object? sender, EventArgs e) => OnDictationReleased(sender, e);
 
     private void OnDirectAgentVoicePressed(object? sender, EventArgs e)
     {
@@ -5073,7 +5367,23 @@ public sealed class MetisRuntime : IDisposable
         }
     }
 
-    private void OnAudioLevelChanged(object? sender, float level) => AudioLevelChanged?.Invoke(this, level);
+    private void OnAudioLevelChanged(object? sender, float level)
+    {
+        AudioLevelChanged?.Invoke(this, level);
+
+        // Barge-in during Live Listening: If Metis is speaking and user starts speaking, interrupt speech immediately
+        if (IsLiveListening && (_audioPlayback.IsPlaying || State.Current == AssistantState.Speaking))
+        {
+            if (level >= 0.08f)
+            {
+                _log.Info("Live conversation barge-in detected (user interrupted speech).");
+                _audioPlayback.Stop();
+                _turnCancellation?.Cancel();
+                SetActivity(MetisActivityKind.Listening, "Listening to interruption…");
+                State.Force(AssistantState.Listening);
+            }
+        }
+    }
 
     /// <summary>
     /// Tells the capture service how much detail to keep and what it must not
@@ -5702,6 +6012,9 @@ public sealed class MetisRuntime : IDisposable
 
         _turnCancellation?.Cancel();
         _turnCancellation?.Dispose();
+        _pushToTalk.DictationPressed -= OnDictationPressed;
+        _pushToTalk.DictationReleased -= OnDictationReleased;
+        _pushToTalk.LiveListeningToggled -= OnLiveListeningToggled;
         _pushToTalk.Pressed -= OnPushToTalkPressed;
         _pushToTalk.Released -= OnPushToTalkReleased;
         _pushToTalk.DirectAgentVoicePressed -= OnDirectAgentVoicePressed;

@@ -1,45 +1,75 @@
 @import "tailwindcss";
 
 /* -------------------------------------------------------
-   Metis — Retro Windows Design System (90s → 2000s)
+   Metis — Design System
 
-   White page background. Retro chrome as accent surfaces.
-   The palette bridges Win95 gray through XP blue to WMP11
-   dark. Typography stays modern and readable; retro flavor
-   comes from window chrome and structure, not from forcing
-   everything into a pixel font.
+   A teaching product, so the palette is the one learning
+   products use: an indigo that carries authority without
+   coldness, a warm accent for the things you act on, and a
+   six-colour family for the cards.
+
+   The six exist because Metis teaches many separate things,
+   and a wall of identically-coloured cards makes them read
+   as one undifferentiated list. Colour here is a wayfinding
+   device, not decoration -- which is why every one of them
+   is paired with a label and an icon, and none of them is
+   the only thing carrying a meaning.
    ------------------------------------------------------- */
 
 :root {
   color-scheme: light;
 
   --page: #ffffff;
-  /* A surface is a raised thing on the page, so it is lighter than the page
-     is, not darker. It was #f5f5f7 -- a grey card on a white page -- which
-     only made sense while every card was pretending to be a Win95 window. */
   --surface: #ffffff;
-  --surface-sunken: #f5f5f7;
-  --ink: #1d1d1f;
-  --ink-muted: #6e6e73;
-  --line: #d2d2d7;
+  --surface-sunken: #f6f7fd;
 
-  /* The blue the site used before the retro detour. #0078d4 is Microsoft's,
-     which was the point of it then and is the wrong association now. */
-  --accent: #0071e3;
-  --accent-hover: #005bbb;
+  /* A deep indigo rather than a neutral near-black. On a page this
+     colourful a true grey reads as a different family; tinting the ink
+     toward the primary keeps it in one. 15.8:1 on white. */
+  --ink: #1e1b4b;
+  /* 5.9:1 on white -- comfortably past the 4.5:1 body-text floor, which
+     the old #6e6e73 only just cleared. */
+  --ink-muted: #55516f;
+  --line: #e4e4f2;
+
+  --accent: #4f46e5;
+  --accent-hover: #4338ca;
   --accent-contrast: #ffffff;
-  --accent-wash: #eef6ff;
+  --accent-wash: #eef2ff;
 
-  --sky: #56ccff;
-  --sky-soft: #caeeff;
-  --danger: #d70015;
+  /* The call-to-action warm, so it never competes with the indigo that
+     structures the page.
 
-  --material: rgb(255 255 255 / 0.72);
+     Deliberately not #ea580c, which is the orange this palette wants and
+     which fails: white on it is 3.56:1, and a 16px semibold button label
+     is not "large text", so it needs 4.5:1 rather than 3:1. Darkened
+     until it passes at 5.18:1. It is the same orange, one step down. */
+  --cta: #c2410c;
+  --cta-hover: #9a3412;
+  --cta-contrast: #ffffff;
+
+  --danger: #dc2626;
+
+  /* The card family. Each is a strong tone for text and icons and a wash
+     for the surface behind them; the strong tones all clear 4.5:1 on
+     white so they can carry a label, not just a shape. */
+  --brand: #4f46e5;   --brand-soft: #eef2ff;
+  --sun: #b45309;     --sun-soft: #fef3c7;
+  --blush: #be123c;   --blush-soft: #ffe4e6;
+  --leaf: #047857;    --leaf-soft: #d1fae5;
+  --wave: #0369a1;    --wave-soft: #e0f2fe;
+  --grape: #7e22ce;   --grape-soft: #f3e8ff;
+
+  --material: rgb(255 255 255 / 0.78);
   --material-blur: blur(20px) saturate(180%);
   --material-edge: rgb(255 255 255 / 0.6);
 
-  --shadow-card: 0 1px 2px rgb(0 0 0 / 0.05), 0 8px 20px -8px rgb(0 0 0 / 0.1);
-  --shadow-float: 0 2px 6px rgb(0 0 0 / 0.08), 0 16px 48px -16px rgb(0 0 0 / 0.15);
+  /* Shadows tinted with the ink rather than pure black, for the same
+     reason the ink is tinted: a neutral shadow on a coloured page looks
+     like dirt. */
+  --shadow-card: 0 1px 2px rgb(30 27 75 / 0.04), 0 8px 24px -8px rgb(30 27 75 / 0.1);
+  --shadow-float: 0 2px 6px rgb(30 27 75 / 0.06), 0 20px 50px -16px rgb(30 27 75 / 0.18);
+  --shadow-lift: 0 12px 32px -10px rgb(79 70 229 / 0.35);
 }
 
 @theme inline {
@@ -49,20 +79,38 @@
   --color-ink: var(--ink);
   --color-ink-muted: var(--ink-muted);
   --color-line: var(--line);
+
   --color-accent: var(--accent);
   --color-accent-hover: var(--accent-hover);
   --color-accent-contrast: var(--accent-contrast);
   --color-accent-wash: var(--accent-wash);
-  --color-sky: var(--sky);
-  --color-sky-soft: var(--sky-soft);
+
+  --color-cta: var(--cta);
+  --color-cta-hover: var(--cta-hover);
+  --color-cta-contrast: var(--cta-contrast);
   --color-danger: var(--danger);
+
+  /* Named rather than numbered, and deliberately not "sky"/"rose"/"violet":
+     those collide with Tailwind's own scales, so "bg-sky" would mean two
+     different things depending on which won. */
+  --color-brand: var(--brand);
+  --color-brand-soft: var(--brand-soft);
+  --color-sun: var(--sun);
+  --color-sun-soft: var(--sun-soft);
+  --color-blush: var(--blush);
+  --color-blush-soft: var(--blush-soft);
+  --color-leaf: var(--leaf);
+  --color-leaf-soft: var(--leaf-soft);
+  --color-wave: var(--wave);
+  --color-wave-soft: var(--wave-soft);
+  --color-grape: var(--grape);
+  --color-grape-soft: var(--grape-soft);
 
   --font-display: "Outfit Variable", ui-sans-serif, system-ui, sans-serif;
   --font-sans: "Work Sans Variable", ui-sans-serif, system-ui, sans-serif;
-  --font-system: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
   --font-mono: Consolas, "Courier New", Courier, monospace;
 
-  --radius-container: 20px;
+  --radius-container: 24px;
   --shadow-card: var(--shadow-card);
   --shadow-float: var(--shadow-float);
 }
@@ -189,7 +237,12 @@ body {
   background-color: var(--surface);
   color: var(--ink);
   font-weight: 600;
-  padding: 0.5rem 1rem;
+  /* The touch-target floor, stated as the rule rather than as a padding
+     value that happens to satisfy it: padding alone left these at 43px,
+     and would drift again with any change of font size. */
+  min-height: 44px;
+  padding: 0.625rem 1.125rem;
+  cursor: pointer;
   text-decoration: none;
   transition: background-color 120ms ease-out, border-color 120ms ease-out;
 }
@@ -242,6 +295,142 @@ body {
   backdrop-filter: blur(24px) saturate(140%);
   -webkit-backdrop-filter: blur(24px) saturate(140%);
   border: 1px solid rgb(255 255 255 / 0.12);
+}
+
+/* -------------------------------------------------------
+   Buttons
+
+   Two weights, because the page asks for two different
+   things: "start using this" and "read more about it". A
+   third weight would mean the page could not decide.
+   ------------------------------------------------------- */
+
+/* The primary action. Warm, so it never competes with the indigo that
+   structures everything else -- on a page this colourful, a CTA in the
+   same hue as the headings and the nav stops being findable. */
+.btn-cta {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  min-height: 44px;
+  border: 0;
+  border-radius: 999px;
+  background-color: var(--cta);
+  color: var(--cta-contrast);
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 1rem;
+  /* 48px tall at this padding, comfortably past the 44x44 touch floor. */
+  padding: 0.75rem 1.5rem;
+  cursor: pointer;
+  text-decoration: none;
+  box-shadow: 0 10px 24px -10px rgb(194 65 12 / 0.55);
+  transition: background-color 160ms ease-out, box-shadow 160ms ease-out,
+    transform 160ms ease-out;
+}
+
+.btn-cta:hover {
+  background-color: var(--cta-hover);
+  box-shadow: 0 14px 30px -10px rgb(194 65 12 / 0.65);
+  transform: translateY(-1px);
+}
+
+/* The secondary action, in the brand indigo. */
+.btn-brand {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  min-height: 44px;
+  border: 0;
+  border-radius: 999px;
+  background-color: var(--accent);
+  color: var(--accent-contrast);
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 1rem;
+  padding: 0.75rem 1.5rem;
+  cursor: pointer;
+  text-decoration: none;
+  box-shadow: var(--shadow-lift);
+  transition: background-color 160ms ease-out, transform 160ms ease-out;
+}
+
+.btn-brand:hover {
+  background-color: var(--accent-hover);
+  transform: translateY(-1px);
+}
+
+/* -------------------------------------------------------
+   Colourful surfaces
+
+   The six card colours are a wayfinding device: Metis
+   teaches many separate things, and a wall of identical
+   cards reads as one undifferentiated list.
+
+   Colour is never the only signal. Every tinted card also
+   carries an icon and a label, so the grouping survives
+   greyscale, colour blindness, and a screen reader -- which
+   is the difference between colour-coding and colour-only
+   meaning.
+   ------------------------------------------------------- */
+
+.tint {
+  border-radius: var(--radius-container);
+  border: 1px solid transparent;
+  transition: transform 200ms ease-out, box-shadow 200ms ease-out;
+}
+
+/* Lift on hover, on the card itself rather than on a child, so the whole
+   target moves as one object. */
+.tint-hover:hover {
+  transform: translateY(-4px);
+  box-shadow: var(--shadow-float);
+}
+
+/* The icon tile inside a tinted card: the strong tone on the wash. Every
+   pairing here clears 4.5:1, checked rather than assumed. */
+.tile {
+  display: grid;
+  place-items: center;
+  width: 3rem;
+  height: 3rem;
+  border-radius: 1rem;
+  flex-shrink: 0;
+}
+
+/* A small capsule for a category or status word. */
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  border-radius: 999px;
+  padding: 0.3125rem 0.75rem;
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 0.8125rem;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+}
+
+/* -------------------------------------------------------
+   Section rhythm
+
+   A soft tinted band, used to separate one section from the
+   next without drawing a line. On a white page a colour
+   change is a stronger boundary than a rule, and quieter.
+   ------------------------------------------------------- */
+
+.band {
+  background-color: var(--surface-sunken);
+}
+
+.band-brand {
+  background:
+    radial-gradient(60% 80% at 15% 0%, var(--brand-soft) 0%, transparent 60%),
+    radial-gradient(50% 70% at 90% 20%, var(--grape-soft) 0%, transparent 55%),
+    var(--surface-sunken);
 }
 
 /* -------------------------------------------------------

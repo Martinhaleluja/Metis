@@ -1,3 +1,5 @@
+import { ListIcon as List } from "@phosphor-icons/react/dist/icons/List";
+import { XIcon as X } from "@phosphor-icons/react/dist/icons/X";
 import { useEffect, useRef, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { useAuth } from "../lib/auth";
@@ -70,12 +72,12 @@ export function Nav() {
       <div className="glass mx-auto flex h-[60px] max-w-[1180px] items-center gap-2 rounded-[18px] px-3 sm:px-4">
         <Link
           to="/"
-          className="flex items-center gap-2.5 px-1 no-underline"
+          className="flex items-center gap-2.5 rounded-xl px-1 py-2 no-underline"
           aria-label="Metis home"
         >
           <span
             aria-hidden="true"
-            className="h-[26px] w-[26px] rounded-full bg-accent"
+            className="h-[28px] w-[28px] rounded-[10px] bg-gradient-to-br from-accent to-grape"
           />
           <span className="type-heading text-[16px] text-ink">Metis</span>
         </Link>
@@ -101,14 +103,14 @@ export function Nav() {
           {auth.status === "signed-in" ? (
             <Link
               to="/account"
-              className="press rounded-full bg-accent px-4 py-2 text-[13.5px] font-semibold text-accent-contrast no-underline transition-colors hover:bg-accent-hover"
+              className="btn-cta press !px-5 !py-2.5 text-[14px]"
             >
               Your account
             </Link>
           ) : (
             <a
               href="/#join"
-              className="press rounded-full bg-accent px-4 py-2 text-[13.5px] font-semibold text-accent-contrast no-underline transition-colors hover:bg-accent-hover"
+              className="btn-cta press !px-5 !py-2.5 text-[14px]"
             >
               Get Metis
             </a>
@@ -123,11 +125,13 @@ export function Nav() {
               aria-label="Menu"
               aria-expanded={menuOpen}
               onClick={() => setMenuOpen((open) => !open)}
-              className="flex h-9 w-9 items-center justify-center rounded-lg border border-line bg-surface text-ink"
+              className="flex h-11 w-11 cursor-pointer items-center justify-center rounded-xl border border-line bg-surface text-ink transition-colors hover:bg-surface-sunken"
             >
-              <span aria-hidden="true" className="text-[15px] leading-none">
-                {menuOpen ? "\u00d7" : "\u2261"}
-              </span>
+              {menuOpen ? (
+                <X size={18} weight="bold" aria-hidden="true" />
+              ) : (
+                <List size={18} weight="bold" aria-hidden="true" />
+              )}
             </button>
 
             {menuOpen && (

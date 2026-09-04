@@ -39,7 +39,17 @@ export function UpgradeButton({
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const base = `press w-full text-center no-underline block ${className}`;
+  // One shape, five states. This was repeated verbatim at each return below,
+  // so any change to it had five places to be missed.
+  //
+  // On the featured plan the card itself is filled with the accent, so an
+  // accent button on top of it would vanish. It inverts to white-on-accent
+  // instead, which is the same emphasis read against a different ground.
+  const shape = "press w-full justify-center text-center no-underline";
+  const solid = plan.featured
+    ? `${shape} inline-flex items-center rounded-full bg-white px-5 py-3 font-display font-semibold text-accent transition-colors hover:bg-white/90`
+    : `${shape} btn-cta`;
+  const quiet = `${shape} btn`;
 
   // Decided by the plan's id rather than its price, because the id is what the
   // gateway's checkout takes: "which plans have a checkout" and "which plans
@@ -47,7 +57,7 @@ export function UpgradeButton({
   // actually being asked here.
   if (plan.id === "free") {
     return (
-      <Link to="/login" className={`press rounded-full border border-line bg-surface px-4 py-2 font-semibold ${base}`}>
+      <Link to="/login" className={`${quiet} ${className}`}>
         {plan.ctaLabel}
       </Link>
     );
@@ -55,7 +65,7 @@ export function UpgradeButton({
 
   if (!billingIsLive) {
     return (
-      <a href="/#join" className={`press rounded-full border border-line bg-surface px-4 py-2 font-semibold ${base}`}>
+      <a href="/#join" className={`${quiet} ${className}`}>
         Plans open soon &mdash; join the waitlist
       </a>
     );
@@ -69,7 +79,7 @@ export function UpgradeButton({
     return (
       <Link
         to={`/login?next=${encodeURIComponent(next)}`}
-        className={`press rounded-full border border-line bg-surface px-4 py-2 font-semibold ${base}`}
+        className={`${solid} ${className}`}
       >
         {plan.ctaLabel}
       </Link>
@@ -103,7 +113,7 @@ export function UpgradeButton({
         type="button"
         disabled={pending}
         onClick={() => void buy()}
-        className={`press rounded-full border border-line bg-surface px-4 py-2 font-semibold ${base}`}
+        className={`${solid} ${className} disabled:cursor-not-allowed disabled:opacity-70`}
       >
         {pending ? "Opening checkout…" : plan.ctaLabel}
       </button>
@@ -111,7 +121,7 @@ export function UpgradeButton({
       {error && (
         <p
           role="alert"
-          className="mt-2 border border-[#c62828] bg-[#ffebee] px-2 py-1.5 text-[11px] leading-snug text-[#b71c1c]"
+          className="mt-2 rounded-xl bg-blush-soft px-3 py-2 text-[14px] leading-snug text-blush"
         >
           {error}
         </p>

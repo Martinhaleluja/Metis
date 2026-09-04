@@ -1,3 +1,4 @@
+import { XIcon as X } from "@phosphor-icons/react/dist/icons/X";
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { getSupabase, isAuthConfigured, readableAuthError, useAuth } from "../lib/auth";
@@ -94,7 +95,7 @@ export function Login() {
     <Shell title={mode === "in" ? "Sign in to Metis" : "Create a Metis account"}>
       <form onSubmit={submit} className="flex flex-col gap-4">
         <label className="flex flex-col gap-1.5">
-          <span className="text-[12px] font-bold text-ink">Email address</span>
+          <span className="text-[14px] font-bold text-ink">Email address</span>
           <input
             type="email"
             required
@@ -102,12 +103,12 @@ export function Login() {
             value={email}
             onChange={(event) => setEmail(event.target.value)}
             placeholder="you@example.com"
-            className="rounded-lg border border-line bg-surface px-3 py-2 px-2 py-1.5 text-[13px] text-ink outline-none"
+            className="rounded-lg border border-line bg-surface px-3 py-2 px-2 py-1.5 text-[14px] text-ink outline-none"
           />
         </label>
 
         <label className="flex flex-col gap-1.5">
-          <span className="text-[12px] font-bold text-ink">Password</span>
+          <span className="text-[14px] font-bold text-ink">Password</span>
           <input
             type="password"
             required
@@ -115,12 +116,12 @@ export function Login() {
             autoComplete={mode === "in" ? "current-password" : "new-password"}
             value={password}
             onChange={(event) => setPassword(event.target.value)}
-            className="rounded-lg border border-line bg-surface px-3 py-2 px-2 py-1.5 text-[13px] text-ink outline-none"
+            className="rounded-lg border border-line bg-surface px-3 py-2 px-2 py-1.5 text-[14px] text-ink outline-none"
           />
         </label>
 
         <div role="alert" aria-live="polite" className="min-h-[18px]">
-          {error && <p className="text-[12px] text-[#a80000]">{error}</p>}
+          {error && <p className="text-[14px] text-danger">{error}</p>}
         </div>
 
         <div className="flex items-center gap-2">
@@ -140,7 +141,7 @@ export function Login() {
         </div>
       </form>
 
-      <p className="mt-5 text-[11px] leading-relaxed text-[#444]">
+      <p className="mt-5 text-[14px] leading-relaxed text-ink-muted">
         An account is only needed for the AI Metis pays for. Metis works fully
         without one, on a model running on your own computer.
       </p>
@@ -177,7 +178,7 @@ function Shell({ title, children }: { title: string; children: React.ReactNode }
               aria-label="Back to the home page"
               className="ml-auto grid h-7 w-7 place-items-center rounded-full text-[15px] leading-none text-ink-muted transition-colors hover:bg-surface-sunken hover:text-ink no-underline"
             >
-              &times;
+              <X size={16} weight="bold" aria-hidden="true" />
             </Link>
           </div>
           <div className="bg-surface p-5">

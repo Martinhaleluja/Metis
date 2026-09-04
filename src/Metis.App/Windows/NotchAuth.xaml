@@ -1,4 +1,4 @@
-﻿<UserControl x:Class="Metis.App.Windows.NotchAuth"
+<UserControl x:Class="Metis.App.Windows.NotchAuth"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              FontFamily="{StaticResource UiFont}">
@@ -11,22 +11,27 @@
         <Style x:Key="AuthFieldBed" TargetType="Border">
             <Setter Property="Background" Value="{DynamicResource NotchFieldBrush}" />
             <Setter Property="BorderBrush" Value="{DynamicResource NotchFieldEdgeBrush}" />
-            <Setter Property="BorderThickness" Value="1" />
-            <Setter Property="CornerRadius" Value="10" />
-            <Setter Property="Height" Value="38" />
+            <Setter Property="BorderThickness" Value="1.2" />
+            <Setter Property="CornerRadius" Value="14" />
+            <Setter Property="Height" Value="40" />
             <Setter Property="SnapsToDevicePixels" Value="True" />
         </Style>
 
         <!-- A filled pill for the one action the panel is asking for. -->
         <Style x:Key="AuthPrimary" TargetType="Border">
-            <Setter Property="Background" Value="{DynamicResource AccentBrush}" />
-            <Setter Property="CornerRadius" Value="10" />
-            <Setter Property="Height" Value="38" />
+            <Setter Property="Background" Value="{DynamicResource GradientCyanBlue}" />
+            <Setter Property="CornerRadius" Value="14" />
+            <Setter Property="Height" Value="40" />
             <Setter Property="Cursor" Value="Hand" />
             <Setter Property="SnapsToDevicePixels" Value="True" />
+            <Setter Property="Effect">
+                <Setter.Value>
+                    <DropShadowEffect Color="{DynamicResource Accent}" BlurRadius="14" ShadowDepth="2" Opacity="0.35" />
+                </Setter.Value>
+            </Setter>
             <Style.Triggers>
                 <Trigger Property="IsMouseOver" Value="True">
-                    <Setter Property="Background" Value="{DynamicResource AccentStrongBrush}" />
+                    <Setter Property="Opacity" Value="0.92" />
                 </Trigger>
             </Style.Triggers>
         </Style>

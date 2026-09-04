@@ -142,7 +142,8 @@ reports exactly what went wrong if it fails.
 |---|---|
 | `Ctrl+Alt` (hold) | Ask about what is on screen |
 | `Ctrl+Alt+Shift` (hold) | Point at one control and ask about it |
-| `Ctrl+Shift+1` (hold) | Push to talk |
+| `Ctrl` (press 3×) | Live hands-free conversation |
+| `Ctrl` (hold) | Voice dictation into active text field |
 | `Ctrl+Shift+A` (hold) | Start a background agent by voice |
 | `Esc` | Close the chat |
 

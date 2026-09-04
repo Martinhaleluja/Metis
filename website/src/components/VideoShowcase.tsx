@@ -1,3 +1,5 @@
+import { PlayIcon as Play } from "@phosphor-icons/react/dist/icons/Play";
+import { PauseIcon as Pause } from "@phosphor-icons/react/dist/icons/Pause";
 import { useEffect, useRef, useState } from "react";
 import { useReducedMotion } from "motion/react";
 import { Reveal } from "./Reveal";
@@ -92,10 +94,10 @@ function Player({ video }: { video: (typeof videos)[0] }) {
       <div className="flex items-center gap-3 px-4 py-3">
         <button
           onClick={toggle}
-          className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-accent text-accent-contrast text-sm cursor-pointer"
+          className="grid h-11 w-11 shrink-0 cursor-pointer place-items-center rounded-full bg-accent text-accent-contrast transition-colors hover:bg-accent-hover"
           aria-label={playing ? "Pause" : "Play"}
         >
-          {playing ? "⏸" : "▶"}
+          {playing ? <Pause size={16} weight="fill" /> : <Play size={16} weight="fill" />}
         </button>
         <span className="type-caption text-ink-muted truncate">
           Play

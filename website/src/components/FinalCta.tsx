@@ -11,18 +11,11 @@ export function FinalCta({
     <section className="py-24 sm:py-32">
       <div className="mx-auto max-w-[640px] px-5">
         <Reveal>
-          <div className="card" style={{ transform: "rotate(-0.8deg)" }}>
+          <div className="card">
             <div className="panel-title">
-              <span className="text-[12px]">
-                Metis Setup &mdash; Join the Waitlist
+              <span className="text-[14px]">
+                Join the waitlist
               </span>
-              <button
-                className="xp-button-close"
-                aria-hidden="true"
-                tabIndex={-1}
-              >
-                &times;
-              </button>
             </div>
 
             <div className="flex bg-surface-sunken">
@@ -37,7 +30,7 @@ export function FinalCta({
                     className="drop-shadow-lg mb-3"
                   />
                   <div className="text-white text-[14px] font-bold">Metis</div>
-                  <div className="text-white/60 text-[10px]">
+                  <div className="text-white/60 text-[14px]">
                     Desktop Companion
                   </div>
                 </div>
@@ -52,7 +45,7 @@ export function FinalCta({
                   Get it the day it opens
                 </h2>
                 <p
-                  className="mt-2 text-[12px] text-[#333] leading-relaxed"
+                  className="mt-2 text-[14px] text-ink-muted leading-relaxed"
                 >
                   One email when the download is ready. Nothing else, and no
                   forwarding your address anywhere.
@@ -67,14 +60,14 @@ export function FinalCta({
             {/* Wizard footer */}
             <div className="bg-surface-sunken border-t border-line px-4 py-3 flex justify-end gap-2">
               <span
-                className="btn press text-[11px] opacity-50 !cursor-default"
+                className="btn press text-[14px] opacity-50 !cursor-default"
                 aria-hidden="true"
               >
                 &lt; Back
               </span>
               <a
                 href="#join"
-                className="btn press text-[11px] no-underline"
+                className="btn press text-[14px] no-underline"
               >
                 Next &gt;
               </a>

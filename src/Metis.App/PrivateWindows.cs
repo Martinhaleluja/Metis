@@ -26,6 +26,11 @@ internal static class PrivateWindows
 
         void Apply(object? sender, EventArgs args)
         {
+            if (string.Equals(Environment.GetEnvironmentVariable("METIS_ALLOW_SCREENSHOT"), "1", StringComparison.OrdinalIgnoreCase))
+            {
+                return;
+            }
+
             var handle = new WindowInteropHelper(window).Handle;
             if (WindowCaptureExclusion.Exclude(handle))
             {

@@ -152,7 +152,10 @@ export function Account() {
   }
 
   return (
-    <Frame title="Your Account">
+    <Frame
+      title="Your account"
+      subtitle="Your plan, what you have used this month, and the AI account Metis answers on."
+    >
       {/* --------------------------- User Profile Card --------------------------- */}
       <div className="mb-6">
         <Window title="Profile &amp; Identity">
@@ -163,7 +166,7 @@ export function Account() {
                   type="button"
                   title="Click to change avatar or upload photo"
                   onClick={() => setShowAvatarPicker((prev) => !prev)}
-                  className="flex h-16 w-16 items-center justify-center rounded-full border-2 border-[currentColor] bg-[#e0e0ff] text-[32px] shadow-sm hover:scale-105 transition-transform overflow-hidden"
+                  className="flex h-20 w-20 cursor-pointer items-center justify-center overflow-hidden rounded-2xl bg-gradient-to-br from-brand-soft to-grape-soft text-[36px] shadow-sm ring-1 ring-line transition-transform hover:scale-105"
                 >
                   {avatar.startsWith("data:") || avatar.startsWith("http") ? (
                     <img src={avatar} alt="Profile" className="h-full w-full object-cover" />
@@ -181,26 +184,26 @@ export function Account() {
                 />
 
                 {showAvatarPicker && (
-                  <div className="absolute top-20 left-0 z-50 flex flex-col gap-2 rounded border border-line bg-surface p-2.5 shadow-lg w-[220px]">
+                  <div className="card absolute top-24 left-0 z-50 flex w-[240px] flex-col gap-2 p-3">
                     <button
                       type="button"
                       onClick={() => {
                         setShowAvatarPicker(false);
                         fileInputRef.current?.click();
                       }}
-                      className="btn press w-full py-1.5 text-[11.5px] font-bold text-center flex items-center justify-center gap-1.5"
+                      className="btn press w-full"
                     >
-                      <span>📁</span> Upload Photo...
+                      Upload a photo
                     </button>
                     <div className="border-t border-line my-1" />
-                    <span className="text-[10px] text-[#444] font-bold">Or pick an icon:</span>
+                    <span className="text-[14px] font-semibold text-ink-muted">Or pick an icon:</span>
                     <div className="flex flex-wrap gap-1.5">
                       {AVATARS.map((av) => (
                         <button
                           key={av}
                           type="button"
                           onClick={() => handleSelectAvatar(av)}
-                          className="h-7 w-7 rounded text-[16px] hover:bg-white flex items-center justify-center border border-transparent hover:border-line"
+                          className="flex h-9 w-9 cursor-pointer items-center justify-center rounded-xl border border-transparent text-[18px] transition-colors hover:border-line hover:bg-surface-sunken"
                         >
                           {av}
                         </button>
@@ -218,30 +221,30 @@ export function Account() {
                         type="text"
                         value={displayName}
                         onChange={(e) => setDisplayName(e.target.value)}
-                        className="rounded-lg border border-line bg-surface px-3 py-2 px-2 py-0.5 text-[14px] font-bold text-ink outline-none"
+                        className="rounded-xl border border-line bg-surface px-3 py-2 text-[16px] font-semibold text-ink outline-none focus-visible:border-accent"
                       />
                       <button
                         type="button"
                         onClick={handleSaveName}
-                        className="btn press px-2 py-0.5 text-[11px]"
+                        className="btn press"
                       >
                         Save
                       </button>
                     </div>
                   ) : (
                     <div className="flex items-center gap-2">
-                      <span className="text-[18px] font-bold text-ink">{displayName}</span>
+                      <span className="type-heading text-[22px] text-ink">{displayName}</span>
                       <button
                         type="button"
                         onClick={() => setIsEditingName(true)}
-                        className="text-[11px] text-accent underline hover:text-blue-800"
+                        className="cursor-pointer text-[14px] font-medium text-accent underline underline-offset-2"
                       >
                         Edit
                       </button>
                     </div>
                   )}
-                  <span className="rounded bg-[#d0ffd0] border border-[#30b158] px-2 py-0.5 text-[10px] font-bold text-[#107030]">
-                    {plan.name.toUpperCase()}
+                  <span className="pill bg-accent-wash text-accent">
+                    {plan.name}
                   </span>
                 </div>
 
@@ -254,19 +257,19 @@ export function Account() {
                     read it from; between signing up and the trigger seeding
                     that row, "not verified" would be a guess rather than an
                     answer. */}
-                <div className="mt-1 flex flex-wrap items-center gap-2 text-[12px] text-[#444]">
+                <div className="mt-2 flex flex-wrap items-center gap-2 text-[14px] text-ink-muted">
                   <span>{session.user.email}</span>
                   {data?.status && (
                     data.status.email_verified ? (
-                      <span className="rounded bg-[#e8f5e9] px-1.5 py-0.2 text-[10px] font-semibold text-[#2e7d32]">
-                        ✓ Verified
+                      <span className="pill bg-leaf-soft text-leaf">
+                        Verified
                       </span>
                     ) : (
                       <span
                         title="Open the link in the confirmation email we sent you."
-                        className="rounded border border-[#e65100] bg-[#fff8e1] px-1.5 py-0.2 text-[10px] font-semibold text-[#e65100]"
+                        className="pill bg-sun-soft text-sun"
                       >
-                        ! Not verified — check your email
+                        Not verified — check your email
                       </span>
                     )
                   )}
@@ -278,7 +281,7 @@ export function Account() {
               <button
                 type="button"
                 onClick={() => void signOut(navigate)}
-                className="btn press px-4 py-1.5 text-[11.5px]"
+                className="btn press"
               >
                 Sign out
               </button>
@@ -286,7 +289,7 @@ export function Account() {
           </div>
 
           {profileError && (
-            <p className="mt-3 border border-[#c62828] bg-[#ffebee] px-3 py-2 text-[11.5px] text-[#b71c1c]">
+            <p className="mt-4 rounded-xl bg-blush-soft px-4 py-3 text-[14px] text-blush">
               {profileError}
             </p>
           )}
@@ -305,12 +308,12 @@ export function Account() {
       <div className="mb-6">
         <Window title="Your plan">
           {data?.subscription && (
-            <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded border border-[currentColor] bg-[#e8f0fe] p-3 text-[12px]">
+            <div className="mb-5 flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-accent-wash p-4 text-[14px]">
               <div>
                 <span className="font-bold text-accent">
                   Active Subscription: Metis {plan.name}
                 </span>
-                <span className="ml-2 text-[#444]">
+                <span className="ml-2 text-ink-muted">
                   ({data.subscription.status}, {data.subscription.cancel_at_period_end ? "ends" : "renews"}{" "}
                   {data.subscription.current_period_end
                     ? new Date(data.subscription.current_period_end).toLocaleDateString()
@@ -321,7 +324,7 @@ export function Account() {
                 href="https://polar.sh/purchases"
                 target="_blank"
                 rel="noreferrer"
-                className="btn press px-3 py-1 text-[11px] font-bold text-ink"
+                className="btn press px-3 py-1 text-[14px] font-bold text-ink"
               >
                 Manage Billing &amp; Invoices ↗
               </a>
@@ -329,7 +332,7 @@ export function Account() {
           )}
 
           {planError && (
-            <p className="mb-3 border border-[#c62828] bg-[#ffebee] px-3 py-2 text-[11.5px] text-[#b71c1c]">
+            <p className="mb-4 rounded-xl bg-blush-soft px-4 py-3 text-[14px] text-blush">
               {planError}
             </p>
           )}
@@ -341,35 +344,37 @@ export function Account() {
               return (
                 <div
                   key={option.id}
-                  className={`flex h-full flex-col justify-between rounded border-2 p-4 ${
-                    isCurrent ? "border-[currentColor] bg-[#f0f4ff]" : "border-line bg-white"
+                  className={`flex h-full flex-col justify-between rounded-[20px] border p-5 transition-shadow ${
+                    isCurrent
+                      ? "border-accent bg-accent-wash shadow-[var(--shadow-lift)]"
+                      : "border-line bg-surface hover:shadow-[var(--shadow-card)]"
                   }`}
                 >
                   <div>
                     <div className="flex items-start justify-between gap-2">
-                      <span className="text-[13px] font-bold uppercase tracking-wide text-accent">
-                        Metis {option.name}
+                      <span className="type-heading text-ink">
+                        {option.name}
                       </span>
                       {isCurrent && (
-                        <span className="shrink-0 rounded bg-accent px-2 py-0.5 text-[9.5px] font-bold text-white">
-                          CURRENT
+                        <span className="pill shrink-0 bg-accent text-accent-contrast">
+                          Current
                         </span>
                       )}
                     </div>
 
-                    <p className="mt-2 text-[22px] font-bold text-ink">
+                    <p className="mt-3 font-display text-[30px] font-bold leading-none text-ink">
                       {priceLabel(option)}
-                      <span className="text-[12px] font-normal text-[#666]">
+                      <span className="text-[14px] font-normal text-ink-muted">
                         {option.priceUsd === 0 ? "" : "/mo"}
                       </span>
                     </p>
 
-                    <p className="mt-1 text-[11px] leading-snug text-[#555]">{option.tagline}</p>
+                    <p className="mt-2 type-caption text-ink-muted">{option.tagline}</p>
 
-                    <ul className="mt-3 space-y-1 border-t border-[#ddd] pt-2 text-[11px] text-[#333]">
+                    <ul className="mt-4 space-y-2 border-t border-line pt-4 text-[14px] text-ink-muted">
                       {option.features.map((feature) => (
-                        <li key={feature} className="flex gap-1.5">
-                          <span aria-hidden="true" className="text-[#107030]">
+                        <li key={feature} className="flex gap-2">
+                          <span aria-hidden="true" className="font-semibold text-leaf">
                             &#10003;
                           </span>
                           <span>{feature}</span>
@@ -382,7 +387,7 @@ export function Account() {
                     <button
                       type="button"
                       disabled
-                      className="btn press mt-4 w-full py-1.5 text-[11.5px] font-bold opacity-60"
+                      className="btn press mt-4 w-full py-1.5 text-[13.5px] font-bold opacity-60"
                     >
                       ✓ Your Current Plan
                     </button>
@@ -390,7 +395,7 @@ export function Account() {
                     <button
                       type="button"
                       disabled
-                      className="btn press mt-4 w-full py-1.5 text-[11.5px] font-bold opacity-50"
+                      className="btn press mt-4 w-full py-1.5 text-[13.5px] font-bold opacity-50"
                     >
                       Included Tier
                     </button>
@@ -399,7 +404,7 @@ export function Account() {
                       type="button"
                       disabled={isCheckingOut}
                       onClick={() => void handleStartCheckout(option.id as PaidPlanId)}
-                      className="btn press mt-4 w-full py-1.5 text-[11.5px] font-bold text-accent"
+                      className="btn press mt-4 w-full py-1.5 text-[13.5px] font-bold text-accent"
                     >
                       {isCheckingOut ? "Opening checkout…" : `Upgrade to ${option.name}`}
                     </button>
@@ -411,19 +416,19 @@ export function Account() {
 
           {isStaff && (
             <div className="mt-5 border-t border-line pt-3">
-              <details className="text-[11px] text-[#555]">
+              <details className="text-[14px] text-ink-muted">
                 <summary className="cursor-pointer font-bold text-accent">
                   Developer Utility: Force-switch test plan (bypasses checkout)
                 </summary>
                 <div className="mt-2 flex flex-wrap items-center gap-2">
-                  <span className="text-[10px] text-[#666]">Staff only:</span>
+                  <span className="text-[14px] text-ink-muted">Staff only:</span>
                   {plans.map((opt) => (
                     <button
                       key={opt.id}
                       type="button"
                       disabled={opt.id === currentPlanId || switchingPlan}
                       onClick={() => void handleSelectPlan(opt.id)}
-                      className="btn press px-2.5 py-1 text-[10.5px]"
+                      className="btn press px-2.5 py-1 text-[14px]"
                     >
                       {switchingPlan ? "…" : `Set ${opt.name}`}
                     </button>
@@ -441,17 +446,17 @@ export function Account() {
           <div className="flex items-baseline justify-between gap-4">
             <div>
               <p className="text-[18px] font-bold text-ink">Metis {plan.name}</p>
-              <p className="mt-0.5 text-[12px] text-[#444]">{plan.aiSummary}</p>
+              <p className="mt-0.5 text-[14px] text-ink-muted">{plan.aiSummary}</p>
             </div>
             <p className="shrink-0 text-[16px] font-bold text-ink">
               {priceLabel(plan)}
-              {plan.priceUsd > 0 && <span className="text-[11px] font-normal">/mo</span>}
+              {plan.priceUsd > 0 && <span className="text-[14px] font-normal">/mo</span>}
             </p>
           </div>
 
           <div className="mt-4 border-t border-line pt-4">
             {data?.subscription ? (
-              <p className="text-[12px] text-ink">
+              <p className="text-[14px] text-ink">
                 {data.subscription.status} via {data.subscription.provider}
                 {data.subscription.current_period_end && (
                   <>
@@ -462,7 +467,7 @@ export function Account() {
                 )}
               </p>
             ) : (
-              <p className="text-[12px] leading-relaxed text-[#444]">
+              <p className="text-[14px] leading-relaxed text-ink-muted">
                 Active subscription managed directly on your Metis profile. You can change plans anytime above.
               </p>
             )}
@@ -478,24 +483,29 @@ export function Account() {
              how many more questions are left. These three are countable by the
              person spending them and are the same words the pricing page uses. */}
         <Window title="This month">
-          <Meter
-            label="Talk messages"
-            used={usage?.request_count ?? 0}
-            cap={limits?.max_turns_per_month ?? 0}
-          />
-          <Meter
-            label="Dictation"
-            used={Math.floor((usage?.dictation_seconds ?? 0) / 60)}
-            cap={limits?.max_dictation_minutes_per_month ?? 0}
-            unit=" min"
-          />
-          <Meter
-            label="Agent messages"
-            used={usage?.agent_steps ?? 0}
-            cap={limits?.max_agent_steps_per_month ?? 0}
-          />
+          <div className="space-y-5">
+            <Meter
+              label="Talk messages"
+              used={usage?.request_count ?? 0}
+              cap={limits?.max_turns_per_month ?? 0}
+              tone="brand"
+            />
+            <Meter
+              label="Dictation"
+              used={Math.floor((usage?.dictation_seconds ?? 0) / 60)}
+              cap={limits?.max_dictation_minutes_per_month ?? 0}
+              unit=" min"
+              tone="wave"
+            />
+            <Meter
+              label="Agent messages"
+              used={usage?.agent_steps ?? 0}
+              cap={limits?.max_agent_steps_per_month ?? 0}
+              tone="grape"
+            />
+          </div>
 
-          <p className="mt-4 border-t border-line pt-3 text-[11px] leading-relaxed text-[#444]">
+          <p className="mt-6 border-t border-line pt-4 type-caption text-ink-muted">
             Resets on the 1st. Answers on a model running on your own computer
             are never counted, on any plan.
           </p>
@@ -527,38 +537,55 @@ function Meter({
   used,
   cap,
   unit = "",
+  tone = "brand",
 }: {
   label: string;
   used: number;
   cap: number;
   unit?: string;
+  tone?: "brand" | "sun" | "leaf" | "wave" | "grape";
 }) {
   const unlimited = cap <= 0;
   const fraction = unlimited ? 1 : Math.min(1, used / cap);
-  const blocks = 24;
 
   // Amber past three quarters, red once it is gone. The colour is the only
   // warning before a refusal, so it has to arrive while there is still
   // something left to do about it.
-  const fill = unlimited
-    ? "#9e9e9e"
+  //
+  // It is never the *only* signal: the figure beside the label always says
+  // "N of M" in words, so a reader who cannot separate these hues still knows
+  // exactly where they stand. That is the line between colour-coding and
+  // colour-only meaning.
+  // Written out rather than interpolated. Tailwind scans source text for
+  // complete class names, so `bg-${tone}` produces nothing at all -- the class
+  // is never generated and the bar silently renders transparent.
+  const toneBar = {
+    brand: "bg-brand",
+    sun: "bg-sun",
+    leaf: "bg-leaf",
+    wave: "bg-wave",
+    grape: "bg-grape",
+  }[tone];
+
+  const bar = unlimited
+    ? "bg-ink-muted/40"
     : fraction >= 1
-      ? "#b71c1c"
+      ? "bg-blush"
       : fraction >= 0.75
-        ? "#e65100"
-        : "currentColor";
+        ? "bg-sun"
+        : toneBar;
 
   return (
-    <div className="mb-4 last:mb-0">
+    <div>
       <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5">
-        <span className="text-[12px] text-ink">{label}</span>
-        <span className="text-[11.5px] text-[#444]">
+        <span className="text-[14px] font-medium text-ink">{label}</span>
+        <span className="text-[14px] tabular-nums text-ink-muted">
           {unlimited ? "Unlimited" : `${used}${unit} of ${cap}${unit}`}
         </span>
       </div>
 
       <div
-        className="rounded-lg border border-line bg-surface px-3 py-2 mt-1.5 flex h-5 items-center gap-[2px] p-[3px]"
+        className="mt-2 h-2.5 overflow-hidden rounded-full bg-surface-sunken"
         role="progressbar"
         aria-label={label}
         aria-valuenow={unlimited ? undefined : used}
@@ -566,13 +593,10 @@ function Meter({
         aria-valuemax={unlimited ? undefined : cap}
         aria-valuetext={unlimited ? "Unlimited" : `${used}${unit} of ${cap}${unit}`}
       >
-        {Array.from({ length: blocks }, (_, index) => (
-          <span
-            key={index}
-            className="h-full flex-1"
-            style={{ background: index / blocks < fraction ? fill : "transparent" }}
-          />
-        ))}
+        <div
+          className={`h-full rounded-full transition-[width] duration-500 ${bar}`}
+          style={{ width: `${Math.max(fraction * 100, unlimited ? 100 : 3)}%` }}
+        />
       </div>
     </div>
   );
@@ -614,7 +638,7 @@ function Connections({
   if (!isMax) {
     return (
       <Window title="Your own AI account">
-        <p className="text-[12px] leading-relaxed text-[#444]">
+        <p className="text-[14px] leading-relaxed text-ink-muted">
           Using your own OpenAI, Anthropic, Gemini or OpenRouter account is part
           of Metis {planById.max.name}, at {priceLabel(planById.max)} a month.
           That is what the plan buys; your provider charges you separately for
@@ -627,7 +651,7 @@ function Connections({
   if (!isGatewayConfigured) {
     return (
       <Window title="providers.cfg">
-        <p className="text-[12px] text-[#444]">
+        <p className="text-[14px] text-ink-muted">
           Metis's API is not connected in this build, so provider connections
           cannot be managed from the web yet. The desktop app's Setup window
           still works.
@@ -668,7 +692,7 @@ function Connections({
 
   return (
     <Window title="Your own AI account">
-      <p className="text-[12px] leading-relaxed text-[#444]">
+      <p className="text-[14px] leading-relaxed text-ink-muted">
         Metis checks the key works, then encrypts it. It is never shown again —
         not here, not in the app, not to us. Your provider charges you directly
         for what the models cost.
@@ -678,20 +702,20 @@ function Connections({
         <ul className="mt-4 divide-y divide-line border-y border-line">
           {connections.map((connection) => (
             <li key={connection.provider} className="flex items-center justify-between gap-4 py-2">
-              <span className="text-[12px] text-ink">
+              <span className="text-[14px] text-ink">
                 <strong>
                   {connectableProviders.find((entry) => entry.key === connection.provider)?.label
                     ?? connection.provider}
                 </strong>
                 {connection.key_hint && (
-                  <span className="ml-2 text-[11px] text-[#555]">{connection.key_hint}</span>
+                  <span className="ml-2 text-[14px] text-ink-muted">{connection.key_hint}</span>
                 )}
               </span>
               <button
                 type="button"
                 disabled={busy}
                 onClick={() => void disconnect(connection.provider)}
-                className="btn press px-3 py-1 text-[11px]"
+                className="btn press px-3 py-1 text-[14px]"
               >
                 Disconnect
               </button>
@@ -702,11 +726,11 @@ function Connections({
 
       <form onSubmit={connect} className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-end">
         <label className="flex flex-col gap-1.5">
-          <span className="text-[11px] font-bold text-ink">Provider</span>
+          <span className="text-[14px] font-bold text-ink">Provider</span>
           <select
             value={provider}
             onChange={(event) => setProvider(event.target.value)}
-            className="rounded-lg border border-line bg-surface px-3 py-2 px-2 py-1.5 text-[12px] text-ink outline-none"
+            className="rounded-lg border border-line bg-surface px-3 py-2 px-2 py-1.5 text-[14px] text-ink outline-none"
           >
             {connectableProviders.map((entry) => (
               <option key={entry.key} value={entry.key}>
@@ -717,7 +741,7 @@ function Connections({
         </label>
 
         <label className="flex flex-1 flex-col gap-1.5">
-          <span className="text-[11px] font-bold text-ink">API key</span>
+          <span className="text-[14px] font-bold text-ink">API key</span>
           <input
             type="password"
             value={apiKey}
@@ -725,7 +749,7 @@ function Connections({
             autoComplete="off"
             spellCheck={false}
             placeholder={connectableProviders.find((entry) => entry.key === provider)?.placeholder}
-            className="rounded-lg border border-line bg-surface px-3 py-2 px-2 py-1.5 text-[12px] text-ink outline-none"
+            className="rounded-lg border border-line bg-surface px-3 py-2 px-2 py-1.5 text-[14px] text-ink outline-none"
           />
         </label>
 
@@ -735,7 +759,7 @@ function Connections({
       </form>
 
       <div role="status" aria-live="polite" className="min-h-[18px]">
-        {message && <p className="mt-2 text-[11px] text-[#333]">{message}</p>}
+        {message && <p className="mt-2 text-[14px] text-ink-muted">{message}</p>}
       </div>
     </Window>
   );
@@ -747,24 +771,62 @@ async function signOut(navigate: ReturnType<typeof useNavigate>) {
   navigate("/", { replace: true });
 }
 
-function Window({ title, children }: { title: string; children: React.ReactNode }) {
+function Window({
+  title,
+  children,
+  action,
+}: {
+  title: string;
+  children: React.ReactNode;
+  action?: React.ReactNode;
+}) {
   return (
-    <div className="card">
-      <div className="panel-title">
-        <span>{title}</span>
-      </div>
-      <div className="bg-surface p-5">
-        {children}
-      </div>
-    </div>
+    <section className="card overflow-hidden">
+      <header className="flex items-center justify-between gap-3 border-b border-line px-6 py-4">
+        <h2 className="type-heading text-ink">{title}</h2>
+        {action}
+      </header>
+      <div className="p-6">{children}</div>
+    </section>
   );
 }
 
-function Frame({ title, children }: { title: string; children: React.ReactNode }) {
+/**
+ * The page shell.
+ *
+ * The heading sits on the same aurora wash the marketing hero uses, so that
+ * signing in reads as going further into one product rather than arriving at a
+ * different, plainer one. An account page is where people go when something is
+ * wrong; it should not also feel like the lights went out.
+ */
+function Frame({
+  title,
+  subtitle,
+  children,
+}: {
+  title: string;
+  subtitle?: string;
+  children: React.ReactNode;
+}) {
   return (
-    <main id="main" className="relative z-10 mx-auto max-w-[1180px] px-5 pb-24 pt-24">
-      <h1 className="type-title text-ink">{title}</h1>
-      <div className="mt-8">{children}</div>
+    <main id="main" className="relative z-10 pb-24">
+      <div
+        className="pt-28 pb-16"
+        style={{
+          background:
+            "radial-gradient(50% 60% at 15% 0%, var(--brand-soft) 0%, transparent 62%)," +
+            "radial-gradient(45% 55% at 88% 10%, var(--grape-soft) 0%, transparent 58%)," +
+            "linear-gradient(180deg, var(--surface-sunken) 0%, var(--page) 100%)",
+        }}
+      >
+        <div className="mx-auto max-w-[1180px] px-5">
+          <h1 className="type-display text-ink">{title}</h1>
+          {subtitle && (
+            <p className="mt-3 max-w-[52ch] type-body text-ink-muted">{subtitle}</p>
+          )}
+        </div>
+      </div>
+      <div className="mx-auto -mt-8 max-w-[1180px] px-5">{children}</div>
     </main>
   );
 }

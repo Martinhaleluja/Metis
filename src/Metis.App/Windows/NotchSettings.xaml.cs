@@ -1087,6 +1087,7 @@ public partial class NotchSettings : UserControl
 
         e.Handled = true;
         HighlightTheme(themeTag);
+        (System.Windows.Application.Current as App)?.ApplyTheme(themeTag);
     }
 
     // ============================= Companion =============================

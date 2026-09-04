@@ -60,19 +60,16 @@ export function Byoa() {
 
         <div className="mx-auto mt-12 max-w-[760px]">
           <Reveal delay={0.06}>
-            <div className="card" style={{ transform: "rotate(-0.5deg)" }}>
+            <div className="card">
               <div className="panel-title">
-                <span className="text-[12px]">Using your own AI account</span>
-                <button className="xp-button-close" aria-hidden="true" tabIndex={-1}>
-                  &times;
-                </button>
+                <span className="text-[14px]">Using your own AI account</span>
               </div>
 
               <div className="bg-surface-sunken p-6">
                 <ol className="space-y-5">
                   {steps.map((step) => (
                     <li key={step.n} className="flex gap-4">
-                      <span className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-[#003ca5] text-[12px] font-bold text-white">
+                      <span className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-accent text-[14px] font-bold text-white">
                         {step.n}
                       </span>
                       <div>
@@ -81,7 +78,7 @@ export function Byoa() {
                         >
                           {step.title}
                         </h3>
-                        <p className="mt-1 text-[12px] leading-relaxed text-[#333]">{step.body}</p>
+                        <p className="mt-1 text-[14px] leading-relaxed text-ink-muted">{step.body}</p>
                       </div>
                     </li>
                   ))}
@@ -93,7 +90,7 @@ export function Byoa() {
                   >
                     What happens to your key
                   </h3>
-                  <ul className="mt-2 space-y-2 text-[12px] leading-relaxed text-[#333]">
+                  <ul className="mt-2 space-y-2 text-[14px] leading-relaxed text-ink-muted">
                     <li>
                       &bull; It is encrypted the moment it arrives, and it is never
                       shown again &mdash; not on your account page, not in the app,
@@ -113,10 +110,10 @@ export function Byoa() {
               </div>
 
               <div className="flex justify-end gap-2 border-t border-line bg-surface-sunken px-4 py-3">
-                <a href="#pricing" className="btn press text-[11px] no-underline">
+                <a href="#pricing" className="btn press text-[14px] no-underline">
                   Back to plans
                 </a>
-                <a href="#faq" className="btn press text-[11px] no-underline">
+                <a href="#faq" className="btn press text-[14px] no-underline">
                   Read the FAQ &gt;
                 </a>
               </div>

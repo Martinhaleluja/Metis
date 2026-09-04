@@ -71,19 +71,19 @@ export function WaitlistForm({
         </p>
 
         <div className="mt-5 border-t border-line pt-5">
-          <p className="text-[13px] font-medium text-ink">Move up the queue</p>
-          <p className="mt-1 text-[13px] leading-relaxed text-ink-muted">
+          <p className="text-[14px] font-medium text-ink">Move up the queue</p>
+          <p className="mt-1 text-[14px] leading-relaxed text-ink-muted">
             Every person who joins with your link moves you closer to the front.
           </p>
 
           <div className="mt-3 flex flex-col gap-2 sm:flex-row">
-            <code className="flex-1 truncate rounded-full border border-line bg-surface-sunken px-4 py-2.5 font-sans text-[13px] text-ink-muted">
+            <code className="flex-1 truncate rounded-full border border-line bg-surface-sunken px-4 py-2.5 font-sans text-[14px] text-ink-muted">
               {window.location.host}/?ref={entry.referralCode}
             </code>
             <button
               type="button"
               onClick={copyShareLink}
-              className="press inline-flex shrink-0 cursor-pointer items-center justify-center gap-1.5 rounded-full border border-line bg-surface px-4 py-2.5 text-[13px] font-medium text-ink hover:border-accent hover:text-accent"
+              className="press inline-flex shrink-0 cursor-pointer items-center justify-center gap-1.5 rounded-full border border-line bg-surface px-4 py-2.5 text-[14px] font-medium text-ink hover:border-accent hover:text-accent"
             >
               {copied ? <Check size={14} weight="bold" /> : <Copy size={14} weight="bold" />}
               {copied ? "Copied" : "Copy link"}
@@ -99,7 +99,7 @@ export function WaitlistForm({
       <form onSubmit={onSubmit} noValidate>
         <label
           htmlFor={fieldId}
-          className="mb-2 block text-left text-[13px] font-medium text-ink-muted"
+          className="mb-2 block text-left text-[14px] font-medium text-ink-muted"
         >
           Email address
         </label>
@@ -148,7 +148,7 @@ export function WaitlistForm({
               animate={{ opacity: 1, height: "auto" }}
               exit={{ opacity: 0, height: 0 }}
               transition={springUI}
-              className="mt-2.5 text-left text-[13px] text-danger"
+              className="mt-2.5 text-left text-[14px] text-danger"
             >
               {failureMessages[failure]}
             </motion.p>

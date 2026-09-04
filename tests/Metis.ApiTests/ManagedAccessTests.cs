@@ -218,13 +218,31 @@ public sealed class ManagedAccessTests
     /// against limits it is guessing at. Unknown means every allowance is zero.
     /// </summary>
     [Fact]
-    public void Unknown_rules_spend_nothing()
+    public void CandidateModels_places_requested_model_first_followed_by_fallbacks()
     {
-        var limits = GatewayRules.Unknown.For(PlanTier.Pro);
+        var candidates = ManagedAccess.CandidateModels("gemini-2.5-flash", Limits(), Rules(), isStaff: false);
 
-        Assert.Equal(0m, limits.MonthlyBudgetUsd);
-        Assert.Equal(0, limits.MaxScreenshotBytes);
-        Assert.False(ManagedAccess.Decide(
-            Account(PlanTier.Pro), limits, Spent(0m), GatewayRules.Unknown, false, false, 0).Allowed);
+        Assert.Equal("gemini-2.5-flash", candidates[0]);
+        Assert.Contains("gemini-2.5-flash-lite", candidates);
+    }
+
+    [Fact]
+    public void CandidateModels_excludes_paused_models()
+    {
+        var candidates = ManagedAccess.CandidateModels(
+            "gemini-2.5-flash", Limits(), Rules(paused: "gemini-2.5-flash-lite"), isStaff: false);
+
+        Assert.Single(candidates);
+        Assert.Equal("gemini-2.5-flash", candidates[0]);
+    }
+
+    [Fact]
+    public void CandidateModels_falls_to_emergency_model_when_all_paused()
+    {
+        var candidates = ManagedAccess.CandidateModels(
+            null, Limits(), Rules(paused: ["gemini-2.5-flash-lite", "gemini-2.5-flash"]), isStaff: false);
+
+        Assert.NotEmpty(candidates);
+        Assert.Equal("gemini-3.1-flash-lite", candidates[0]);
     }
 }

@@ -76,7 +76,8 @@ send or submit. That limit is the design and cannot be configured away.
 
 KEYS TO KNOW
 
-  Ctrl+Shift+1      Hold to talk
+  Ctrl 3×           Live continuous conversation (hands-free)
+  Ctrl (hold)       Dictate into focused text window
   Ctrl+Alt          Ask about what is on screen
   Ctrl+Alt+Shift    Point at whatever is under the pointer
   F12               Stop Metis immediately

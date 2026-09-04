@@ -87,98 +87,22 @@ internal static class NotchAcrylic
     {
         ArgumentNullException.ThrowIfNull(window);
 
-        var handle = new WindowInteropHelper(window).Handle;
-        if (handle == nint.Zero)
-        {
-            return false;
-        }
-
-        var policy = new AccentPolicy
-        {
-            AccentState = AccentState.EnableAcrylicBlurBehind,
-            AccentFlags = 2,
-            GradientColor = (uint)((tint.A << 24) | (tint.B << 16) | (tint.G << 8) | tint.R),
-            AnimationId = 0
-        };
-
-        var size = Marshal.SizeOf<AccentPolicy>();
-        var pointer = Marshal.AllocHGlobal(size);
-        try
-        {
-            Marshal.StructureToPtr(policy, pointer, false);
-            var data = new WindowCompositionAttributeData
-            {
-                Attribute = WcaAccentPolicy,
-                Data = pointer,
-                SizeOfData = size
-            };
-
-            return SetWindowCompositionAttribute(handle, ref data) != 0;
-        }
-        catch (EntryPointNotFoundException)
-        {
-            // A Windows without this entry point at all. Nothing to do but let
-            // the caller keep its opaque brush.
-            return false;
-        }
-        catch (DllNotFoundException)
-        {
-            return false;
-        }
-        finally
-        {
-            Marshal.FreeHGlobal(pointer);
-        }
+        // Acrylic on layered windows creates an opaque/tinted rectangular plate across
+        // the entire HWND bounds (with sharp 90-degree corners). For pure glassmorphism
+        // and organic rounded waterdrop shapes, we bypass HWND-level DWM acrylic and rely
+        // purely on WPF's hardware-accelerated per-pixel layered alpha transparency.
+        ClearShape(window);
+        return false;
     }
 
     /// <summary>
-    /// Clips the window — and so the acrylic inside it — to a rounded rectangle
-    /// in device pixels.
-    ///
-    /// Called on every size change of the body rather than once, because the
-    /// notch spends a good part of its life mid-animation and glass that keeps
-    /// the old shape while the panel grows is worse than no glass at all.
+    /// Clips the window region if needed. With DWM acrylic disabled, we clear the shape
+    /// so WPF's layered window renders naturally with subpixel anti-aliasing and soft shadows.
     /// </summary>
     public static void ShapeTo(Window window, Rect bounds, double cornerRadius, bool flatTop = true)
     {
         ArgumentNullException.ThrowIfNull(window);
-
-        var handle = new WindowInteropHelper(window).Handle;
-        if (handle == nint.Zero || bounds.Width <= 0 || bounds.Height <= 0)
-        {
-            return;
-        }
-
-        // Win32 regions are in physical pixels; everything above is in WPF's
-        // device-independent units, so a display at anything but 100% scaling
-        // needs this conversion or the glass is the wrong size by exactly the
-        // scale factor.
-        var source = PresentationSource.FromVisual(window);
-        var scaleX = source?.CompositionTarget?.TransformToDevice.M11 ?? 1;
-        var scaleY = source?.CompositionTarget?.TransformToDevice.M22 ?? 1;
-
-        var left = (int)Math.Floor(bounds.Left * scaleX);
-        var top = (int)Math.Floor(bounds.Top * scaleY);
-        var right = (int)Math.Ceiling(bounds.Right * scaleX);
-        var bottom = (int)Math.Ceiling(bounds.Bottom * scaleY);
-        var radius = (int)Math.Round(cornerRadius * 2 * scaleX);
-
-        // When flatTop is true, the region starts above the top edge so the top corners
-        // remain completely flush with the display bezel, matching CornerRadius="0,0,r,r".
-        var rgnTop = flatTop ? top - radius : top;
-        var region = CreateRoundRectRgn(left, rgnTop, right + 1, bottom + 1, radius, radius);
-        if (region == nint.Zero)
-        {
-            return;
-        }
-
-        // Windows takes ownership of the region on success, so it must only be
-        // deleted when the call failed — deleting it either way is a crash, and
-        // never deleting it leaks a GDI object per resize.
-        if (SetWindowRgn(handle, region, true) == 0)
-        {
-            DeleteObject(region);
-        }
+        ClearShape(window);
     }
 
     /// <summary>

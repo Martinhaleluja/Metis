@@ -122,7 +122,11 @@ public partial class App : System.Windows.Application
             // find and tick a second box here. Applied again whenever settings
             // are saved, and whenever Windows changes its mind.
             ApplyMotionPreference();
-            _runtime.SettingsChanged += (_, _) => ApplyMotionPreference();
+            _runtime.SettingsChanged += (_, _) => Dispatcher.Invoke(() =>
+            {
+                ApplyMotionPreference();
+                _themeService?.Apply(_runtime.Settings.ThemePreference);
+            });
             SystemParameters.StaticPropertyChanged += (_, args) =>
             {
                 if (args.PropertyName is nameof(SystemParameters.ClientAreaAnimation))
@@ -319,6 +323,13 @@ public partial class App : System.Windows.Application
                 _runtime.Settings.OnboardingCompleted,
                 _runtime.Settings.OnboardingVersion);
 
+            if (e.Args.Contains("--dump-ui-screenshots", StringComparer.OrdinalIgnoreCase))
+            {
+                _notchWindow.Show();
+                _ = DumpUiScreenshotsAsync();
+                return;
+            }
+
             // Everything below this line assumes there is someone to show Metis
             // to. StartFirstRunAsync decides whether that is true, and opens the
             // rest of the startup sequence itself once it is.
@@ -345,6 +356,119 @@ public partial class App : System.Windows.Application
                 MessageBoxImage.Error);
             Quit();
         }
+    }
+
+    public void ApplyTheme(string theme)
+    {
+        _themeService?.Apply(theme);
+    }
+
+    private async Task DumpUiScreenshotsAsync()
+    {
+        try
+        {
+            if (_notchWindow is null)
+            {
+                return;
+            }
+
+            var dir = @"C:\Users\halel\.gemini\antigravity\brain\e36be75e-bb1f-42b6-945e-508c84776d0e";
+            _themeService?.Apply("Dark");
+            _notchWindow.Show();
+            await Task.Delay(800);
+
+            // 1. Resting Notch
+            SaveVisualAsPng(_notchWindow.NotchBody, System.IO.Path.Combine(dir, "notch_1_resting.png"));
+
+            // 2. Open Chat
+            _notchWindow.OpenChat();
+            _notchWindow.Chat.PromptBox.Text = "Can you teach me how quantum entanglement works step by step?";
+            await Task.Delay(900);
+            SaveVisualAsPng(_notchWindow.NotchBody, System.IO.Path.Combine(dir, "notch_2_chat_open.png"));
+            _notchWindow.CloseChat();
+            _notchWindow.Chat.Visibility = Visibility.Collapsed;
+            await Task.Delay(500);
+
+            // 3. Open Settings (Menu)
+            _notchWindow.OpenSettings();
+            await Task.Delay(900);
+            SaveVisualAsPng(_notchWindow.NotchBody, System.IO.Path.Combine(dir, "notch_3_settings.png"));
+
+            // 3b. Open Settings -> Account
+            _notchWindow.OpenSettings("Account");
+            await Task.Delay(900);
+            SaveVisualAsPng(_notchWindow.NotchBody, System.IO.Path.Combine(dir, "notch_3b_account.png"));
+
+            // 3c. Open Settings -> Companion
+            _notchWindow.OpenSettings("Companion");
+            await Task.Delay(900);
+            SaveVisualAsPng(_notchWindow.NotchBody, System.IO.Path.Combine(dir, "notch_3c_companion.png"));
+            _notchWindow.CloseSettings();
+            _notchWindow.SettingsHost.Visibility = Visibility.Collapsed;
+            await Task.Delay(500);
+
+            // 4. Open Agent Drawer
+            _notchWindow.OpenAgentDrawer();
+            await Task.Delay(900);
+            SaveVisualAsPng(_notchWindow.NotchBody, System.IO.Path.Combine(dir, "notch_4_agent_drawer.png"));
+            _notchWindow.CloseAgentDrawer();
+            _notchWindow.AgentDrawerHost.Visibility = Visibility.Collapsed;
+            await Task.Delay(500);
+
+            // 4b. Open Spawn Agent Panel
+            _notchWindow.OpenSpawnAgentPanel();
+            await Task.Delay(900);
+            SaveVisualAsPng(_notchWindow.NotchBody, System.IO.Path.Combine(dir, "notch_4b_spawn_agent.png"));
+            _notchWindow.CloseSpawnAgentPanel();
+            _notchWindow.SpawnAgentHost.Visibility = Visibility.Collapsed;
+            await Task.Delay(500);
+
+            // 5. Open Auth
+            _notchWindow.OpenAuth();
+            await Task.Delay(900);
+            SaveVisualAsPng(_notchWindow.NotchBody, System.IO.Path.Combine(dir, "notch_5_auth.png"));
+            _notchWindow.CloseAuth();
+            _notchWindow.AuthHost.Visibility = Visibility.Collapsed;
+            await Task.Delay(500);
+
+            // 6. Open Welcome
+            _notchWindow.OpenWelcome();
+            await Task.Delay(900);
+            SaveVisualAsPng(_notchWindow.NotchBody, System.IO.Path.Combine(dir, "notch_6_welcome.png"));
+            _notchWindow.CloseWelcome();
+            await Task.Delay(500);
+
+            // 7. Light Mode Test
+            _themeService?.Apply("Light");
+            _notchWindow.OpenSettings();
+            await Task.Delay(900);
+            SaveVisualAsPng(_notchWindow.NotchBody, System.IO.Path.Combine(dir, "notch_7_settings_light.png"));
+            _notchWindow.OpenChat();
+            await Task.Delay(900);
+            SaveVisualAsPng(_notchWindow.NotchBody, System.IO.Path.Combine(dir, "notch_8_chat_light.png"));
+        }
+        catch (Exception ex)
+        {
+            _runtime?.Log?.Error("Failed to dump screenshots", ex);
+        }
+        finally
+        {
+            Quit();
+        }
+    }
+
+    private static void SaveVisualAsPng(FrameworkElement visual, string filePath)
+    {
+        visual.UpdateLayout();
+        var width = Math.Max(1, (int)Math.Ceiling(visual.ActualWidth));
+        var height = Math.Max(1, (int)Math.Ceiling(visual.ActualHeight));
+        var rtb = new System.Windows.Media.Imaging.RenderTargetBitmap(
+            width, height, 96, 96, System.Windows.Media.PixelFormats.Pbgra32);
+        rtb.Render(visual);
+        var encoder = new System.Windows.Media.Imaging.PngBitmapEncoder();
+        encoder.Frames.Add(System.Windows.Media.Imaging.BitmapFrame.Create(rtb));
+        using var stream = System.IO.File.Create(filePath);
+        encoder.Save(stream);
     }
 
     private static string? TryWriteStartupReport(Exception exception)

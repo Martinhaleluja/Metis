@@ -72,7 +72,7 @@ public static class PlanCatalogue
             MaxAgentStepsPerMonth: 10,
             MaxAgentStepsPerTask: 20,
             MemoryEntriesMax: 50,
-            ManagedModels: ["gemini-2.5-flash-lite"],
+            ManagedModels: ["gemini-3.1-flash-lite", "gemini-3.5-flash-lite", "gemini-3-flash-preview", "gemini-3.5-flash"],
             MaxTurnsPerMonth: 50,
             MaxDictationMinutesPerMonth: 300));
 
@@ -97,7 +97,7 @@ public static class PlanCatalogue
             MaxAgentStepsPerMonth: 400,
             MaxAgentStepsPerTask: 60,
             MemoryEntriesMax: 2_000,
-            ManagedModels: ["gemini-2.5-flash-lite", "gemini-2.5-flash"],
+            ManagedModels: ["gemini-3.1-flash-lite", "gemini-3.6-flash", "gemini-3.5-flash", "gemini-3.1-pro-preview"],
             MaxTurnsPerMonth: 0,
             MaxDictationMinutesPerMonth: 0));
 
@@ -123,7 +123,7 @@ public static class PlanCatalogue
             MaxAgentStepsPerMonth: 2_000,
             MaxAgentStepsPerTask: 120,
             MemoryEntriesMax: 10_000,
-            ManagedModels: ["gemini-2.5-flash-lite", "gemini-2.5-flash", "gemini-2.5-pro"],
+            ManagedModels: ["gemini-3.1-flash-lite", "gemini-3.6-flash", "gemini-3.1-pro-preview"],
             MaxTurnsPerMonth: 0,
             MaxDictationMinutesPerMonth: 0));
 

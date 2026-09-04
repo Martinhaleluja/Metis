@@ -297,6 +297,11 @@ public interface IAudioPlayback : IDisposable
         CancellationToken cancellationToken = default);
 
     void Stop();
+
+    /// <summary>
+    /// Indicates whether audio is currently playing.
+    /// </summary>
+    bool IsPlaying { get; }
 }
 
 /// <summary>
@@ -345,6 +350,9 @@ public interface IGlobalPushToTalk : IDisposable
 {
     event EventHandler? Pressed;
     event EventHandler? Released;
+    event EventHandler? LiveListeningToggled;
+    event EventHandler? DictationPressed;
+    event EventHandler? DictationReleased;
     event EventHandler? DirectAgentVoicePressed;
     event EventHandler? DirectAgentVoiceReleased;
     event EventHandler? EmergencyStopPressed;

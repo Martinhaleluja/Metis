@@ -84,11 +84,11 @@ export function Privacy() {
               <div
                 className="rounded-lg border border-line bg-surface px-3 py-2 p-5"
               >
-                <ul className="divide-y divide-[#d4d0c8]">
+                <ul className="divide-y divide-line">
                   {answers.map((entry) => (
                     <li key={entry.question} className="py-4 first:pt-0 last:pb-0">
-                      <h3 className="text-[13px] font-bold text-ink">{entry.question}</h3>
-                      <p className="mt-1.5 max-w-[80ch] text-[12px] leading-relaxed text-[#333]">
+                      <h3 className="text-[14px] font-bold text-ink">{entry.question}</h3>
+                      <p className="mt-1.5 max-w-[80ch] text-[14px] leading-relaxed text-ink-muted">
                         {entry.answer}
                       </p>
                     </li>

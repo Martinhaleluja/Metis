@@ -26,6 +26,17 @@ public sealed class WaveAudioPlayback : IAudioPlayback
 
     private bool _disposed;
 
+    public bool IsPlaying
+    {
+        get
+        {
+            lock (_gate)
+            {
+                return _output is not null && _output.PlaybackState == PlaybackState.Playing;
+            }
+        }
+    }
+
     /// <summary>
     /// Starting playback takes the one output device, so whatever was playing
     /// stops. That used to be unconditional, which meant any cue — a keypress,

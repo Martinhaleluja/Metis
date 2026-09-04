@@ -1,3 +1,4 @@
+import { XIcon as X } from "@phosphor-icons/react/dist/icons/X";
 import { Link } from "react-router-dom";
 import { plans, priceLabel } from "../lib/plans";
 
@@ -329,8 +330,8 @@ export function Terms() {
 
 function Draft() {
   return (
-    <div className="mb-6 border-l-4 border-[currentColor] bg-[#ffffe1] px-4 py-3">
-      <p className="text-[12px] leading-relaxed text-ink">
+    <div className="mb-6 rounded-r-xl border-l-4 border-sun bg-sun-soft px-4 py-3">
+      <p className="text-[14px] leading-relaxed text-ink">
         <strong>Draft &mdash; not yet reviewed by a lawyer.</strong> This
         describes what the software actually does, which is the part worth
         getting right first. It is not a substitute for a policy checked against
@@ -362,13 +363,13 @@ function Document({
               aria-label="Back to the home page"
               className="ml-auto grid h-7 w-7 place-items-center rounded-full text-[15px] leading-none text-ink-muted transition-colors hover:bg-surface-sunken hover:text-ink no-underline"
             >
-              &times;
+              <X size={16} weight="bold" aria-hidden="true" />
             </Link>
           </div>
 
           <div className="bg-surface p-3">
             <div
-              className="rounded-lg border border-line bg-surface px-3 py-2 space-y-3 p-6 text-[13px] leading-relaxed text-ink [&_li]:ml-5 [&_li]:list-disc [&_p]:max-w-[74ch] [&_ul]:space-y-1.5"
+              className="rounded-lg border border-line bg-surface px-3 py-2 space-y-3 p-6 text-[14px] leading-relaxed text-ink [&_li]:ml-5 [&_li]:list-disc [&_p]:max-w-[74ch] [&_ul]:space-y-1.5"
             >
               {children}
             </div>
@@ -394,5 +395,5 @@ function H({ children }: { children: React.ReactNode }) {
 }
 
 function H3({ children }: { children: React.ReactNode }) {
-  return <h3 className="!mt-5 text-[13px] font-bold text-accent">{children}</h3>;
+  return <h3 className="!mt-5 text-[14px] font-bold text-accent">{children}</h3>;
 }

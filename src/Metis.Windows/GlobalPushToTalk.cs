@@ -15,11 +15,13 @@ public sealed class GlobalPushToTalk : IGlobalPushToTalk
     private const uint VkEscape = 0x1B;
     private readonly object _gate = new();
     private readonly HookProcedure _hookProcedure;
-    private readonly PushToTalkKeyState _keyState = new();
+    private readonly ControlKeyTracker _controlKeyTracker = new();
     private readonly DirectAgentVoiceKeyState _directAgentVoiceKeyState = new();
     private readonly ContextActivationKeyState _contextKeyState = new();
     private readonly EmergencyStopKeyState _emergencyStopKeyState = new();
     private readonly ActiveListeningKeyState _activeListeningKeyState = new();
+    private CancellationTokenSource? _holdCheckCts;
+    private bool _isDictating;
     private nint _hookHandle;
     private bool _disposed;
 
@@ -30,6 +32,9 @@ public sealed class GlobalPushToTalk : IGlobalPushToTalk
 
     public event EventHandler? Pressed;
     public event EventHandler? Released;
+    public event EventHandler? LiveListeningToggled;
+    public event EventHandler? DictationPressed;
+    public event EventHandler? DictationReleased;
     public event EventHandler? DirectAgentVoicePressed;
     public event EventHandler? DirectAgentVoiceReleased;
     public event EventHandler? EmergencyStopPressed;
@@ -89,7 +94,7 @@ public sealed class GlobalPushToTalk : IGlobalPushToTalk
             {
                 throw new Win32Exception(
                     Marshal.GetLastWin32Error(),
-                    "Windows could not register Ctrl+Shift+1 as Metis's hold-to-talk shortcut.");
+                    "Windows could not register Metis's shortcut hook.");
             }
         }
     }
@@ -97,15 +102,18 @@ public sealed class GlobalPushToTalk : IGlobalPushToTalk
     public void Stop()
     {
         nint handle;
-        var fireReleased = false;
+        var fireDictationReleased = false;
         var fireAgentReleased = false;
         lock (_gate)
         {
             handle = _hookHandle;
             _hookHandle = nint.Zero;
-            fireReleased = _keyState.IsActive;
+            _holdCheckCts?.Cancel();
+            _holdCheckCts = null;
+            fireDictationReleased = _isDictating;
+            _isDictating = false;
             fireAgentReleased = _directAgentVoiceKeyState.IsActive;
-            _keyState.Reset();
+            _controlKeyTracker.Reset();
             _directAgentVoiceKeyState.Reset();
             _contextKeyState.Reset();
             _emergencyStopKeyState.Reset();
@@ -117,8 +125,9 @@ public sealed class GlobalPushToTalk : IGlobalPushToTalk
             throw new Win32Exception(Marshal.GetLastWin32Error(), "Windows could not release Metis's shortcut hook.");
         }
 
-        if (fireReleased)
+        if (fireDictationReleased)
         {
+            DictationReleased?.Invoke(this, EventArgs.Empty);
             Released?.Invoke(this, EventArgs.Empty);
         }
 
@@ -152,12 +161,16 @@ public sealed class GlobalPushToTalk : IGlobalPushToTalk
                 var isUp = message == WmKeyUp || message == WmSysKeyUp;
                 if (isDown || isUp)
                 {
-                    EventHandler? handler = null;
+                    EventHandler? dictationHandler = null;
+                    EventHandler? liveToggleHandler = null;
                     EventHandler? agentHandler = null;
                     var emergencyStop = false;
                     var toggleListening = false;
                     var contextTransition = ContextActivationTransition.None;
                     var contextKind = ActivationKind.Context;
+
+                    var isCtrl = ControlKeyTracker.IsControlKey(keyboard.VirtualKey);
+
                     lock (_gate)
                     {
                         emergencyStop = _emergencyStopKeyState.Update(keyboard.VirtualKey, isDown);
@@ -181,17 +194,67 @@ public sealed class GlobalPushToTalk : IGlobalPushToTalk
                             _directAgentVoiceKeyState.Reset();
                         }
 
-                        var pushToTalk = _keyState.Update(keyboard.VirtualKey, isDown);
-                        handler = pushToTalk switch
+                        // ControlKeyTracker for Live Listening (Triple-tap Ctrl) and Dictation (Tap-then-hold Ctrl)
+                        var ctrlTransition = _controlKeyTracker.Update(keyboard.VirtualKey, isDown);
+                        if (ctrlTransition == ControlKeyTransition.TripleTap)
                         {
-                            PushToTalkTransition.Pressed => Pressed,
-                            PushToTalkTransition.Released => Released,
-                            _ => null
-                        };
+                            liveToggleHandler = LiveListeningToggled;
+                        }
+                        else if (ctrlTransition == ControlKeyTransition.HoldEnded)
+                        {
+                            if (_isDictating)
+                            {
+                                _isDictating = false;
+                                dictationHandler = DictationReleased;
+                            }
+                        }
 
-                        // Hold-to-talk and Direct Agent chords take precedence. Suppressing the
-                        // context state while they are active keeps shortcuts from firing overlapping requests.
-                        if (ContextShortcutsEnabled && !_keyState.IsActive && !_directAgentVoiceKeyState.IsActive)
+                        if (isDown && isCtrl)
+                        {
+                            _holdCheckCts?.Cancel();
+                            // Only initiate the hold timer if this is the second press (tap-then-hold)
+                            if (_controlKeyTracker.IsSecondPressCandidate)
+                            {
+                                _holdCheckCts = new CancellationTokenSource();
+                                var token = _holdCheckCts.Token;
+                                _ = Task.Run(async () =>
+                                {
+                                    try
+                                    {
+                                        await Task.Delay((int)ControlKeyTracker.HoldThresholdMs, token).ConfigureAwait(false);
+                                        if (token.IsCancellationRequested) return;
+
+                                        if (_controlKeyTracker.CheckHold())
+                                        {
+                                            if (EditableInputDetector.IsFocusedElementEditable())
+                                            {
+                                                lock (_gate)
+                                                {
+                                                    _isDictating = true;
+                                                }
+                                                DictationPressed?.Invoke(this, EventArgs.Empty);
+                                                Pressed?.Invoke(this, EventArgs.Empty);
+                                            }
+                                            else
+                                            {
+                                                _controlKeyTracker.CancelHold();
+                                            }
+                                        }
+                                    }
+                                    catch (OperationCanceledException)
+                                    {
+                                    }
+                                }, token);
+                            }
+                        }
+                        else if ((isDown && !isCtrl) || (isUp && isCtrl))
+                        {
+                            // Any intervening key or Ctrl release cancels pending hold check
+                            _holdCheckCts?.Cancel();
+                        }
+
+                        // Direct Agent and Dictation take precedence over screen context
+                        if (ContextShortcutsEnabled && !_isDictating && !_directAgentVoiceKeyState.IsActive)
                         {
                             contextTransition = _contextKeyState.Update(keyboard.VirtualKey, isDown);
                             contextKind = _contextKeyState.ShiftSeen ? ActivationKind.Inspect : ActivationKind.Context;
@@ -212,6 +275,22 @@ public sealed class GlobalPushToTalk : IGlobalPushToTalk
                         Task.Run(() => ActiveListeningToggled?.Invoke(this, EventArgs.Empty));
                     }
 
+                    if (liveToggleHandler is not null)
+                    {
+                        var lh = liveToggleHandler;
+                        Task.Run(() => lh.Invoke(this, EventArgs.Empty));
+                    }
+
+                    if (dictationHandler is not null)
+                    {
+                        var dh = dictationHandler;
+                        Task.Run(() =>
+                        {
+                            dh.Invoke(this, EventArgs.Empty);
+                            Released?.Invoke(this, EventArgs.Empty);
+                        });
+                    }
+
                     switch (contextTransition)
                     {
                         case ContextActivationTransition.Pressed:
@@ -225,12 +304,6 @@ public sealed class GlobalPushToTalk : IGlobalPushToTalk
                             var kindReleased = contextKind;
                             Task.Run(() => ContextActivationReleased?.Invoke(this, kindReleased));
                             break;
-                    }
-
-                    if (handler is not null)
-                    {
-                        var h = handler;
-                        Task.Run(() => h.Invoke(this, EventArgs.Empty));
                     }
 
                     if (agentHandler is not null)

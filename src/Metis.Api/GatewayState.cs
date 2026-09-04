@@ -229,7 +229,7 @@ public static class ManagedAccess
             // Every model this plan may use is paused. The last resort is the
             // cheapest thing Metis serves at all, named here rather than left
             // to a null that would become the provider's own default.
-            return "gemini-2.5-flash-lite";
+            return "gemini-3.1-flash-lite";
         }
 
         if (!isStaff && rules.Protection == CostProtection.Degrade)
@@ -241,5 +241,34 @@ public static class ManagedAccess
                && allowed.Contains(requested, StringComparer.OrdinalIgnoreCase)
             ? requested
             : allowed[0];
+    }
+
+    /// <summary>
+    /// Returns the ordered list of candidate models to try for a turn.
+    /// The primary chosen model is first, followed by the remaining allowed models
+    /// as automatic failover candidates if the primary returns 503 or 429.
+    /// </summary>
+    public static IReadOnlyList<string> CandidateModels(string? requested, PlanLimits limits, GatewayRules rules, bool isStaff)
+    {
+        var primary = ChooseModel(requested, limits, rules, isStaff);
+        var allowed = limits.ManagedModels
+            .Where(model => isStaff || !rules.PausedModels.Contains(model, StringComparer.OrdinalIgnoreCase))
+            .ToList();
+
+        if (allowed.Count == 0)
+        {
+            return [primary];
+        }
+
+        var candidates = new List<string> { primary };
+        foreach (var candidate in allowed)
+        {
+            if (!candidates.Contains(candidate, StringComparer.OrdinalIgnoreCase))
+            {
+                candidates.Add(candidate);
+            }
+        }
+
+        return candidates;
     }
 }

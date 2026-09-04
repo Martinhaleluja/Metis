@@ -294,7 +294,7 @@ public sealed class OpenAiProvider : IOpenAiProvider, IDisposable
         {
             throw new OpenAiProviderException(
                 OpenAiErrorKind.EmptyResponse,
-                "OpenAI transcribed no speech. Hold Ctrl+Shift+1 a little longer and speak clearly.");
+                "OpenAI transcribed no speech. Speak clearly and try again.");
         }
 
         return transcript.Trim();

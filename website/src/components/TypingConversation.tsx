@@ -82,7 +82,6 @@ export function TypingConversation() {
         <Reveal delay={0.1}>
           <div
             className="card"
-            style={{ transform: "rotate(-0.5deg)" }}
           >
             <div className="panel-title">
               <span className="truncate">A conversation with Metis</span></div>
@@ -91,12 +90,12 @@ export function TypingConversation() {
               {/* User message */}
               <div className="flex gap-2 items-start">
                 <span
-                  className="shrink-0 text-[11px] font-bold text-accent"
+                  className="shrink-0 text-[14px] font-bold text-accent"
                 >
                   You&gt;
                 </span>
                 <span
-                  className="text-[12px] text-ink leading-relaxed"
+                  className="text-[14px] text-ink leading-relaxed"
                 >
                   {phase === "user" ? (
                     <>
@@ -113,12 +112,12 @@ export function TypingConversation() {
               {(phase === "metis" || phase === "pause") && (
                 <div className="flex gap-2 items-start">
                   <span
-                    className="shrink-0 text-[11px] font-bold text-accent"
+                    className="shrink-0 text-[14px] font-bold text-accent"
                   >
                     Metis&gt;
                   </span>
                   <span
-                    className="text-[12px] text-ink leading-relaxed"
+                    className="text-[14px] text-ink leading-relaxed"
                   >
                     {phase === "metis" ? (
                       <>
@@ -136,12 +135,12 @@ export function TypingConversation() {
             {/* Status bar */}
             <div className="bg-surface px-2 py-0.5 flex justify-between border-t-2 border-line">
               <span
-                className="text-[10px] text-[#333]"
+                className="text-[14px] text-ink-muted"
               >
                 {phase === "pause" ? "Ready" : "Typing..."}
               </span>
               <span
-                className="text-[10px] text-[#333]"
+                className="text-[14px] text-ink-muted"
               >
                 {convoIdx + 1}/{conversations.length}
               </span>

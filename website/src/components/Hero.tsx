@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { motion, useReducedMotion } from "motion/react";
 import type { useWaitlist } from "../lib/waitlist";
+import { PlayIcon as Play } from "@phosphor-icons/react/dist/icons/Play";
+import { PauseIcon as Pause } from "@phosphor-icons/react/dist/icons/Pause";
 import { WaitlistForm } from "./WaitlistForm";
 import { springEnter } from "../lib/motion";
 
@@ -48,23 +50,32 @@ export function Hero({
 
   return (
     <section id="top" className="relative overflow-hidden pt-[48px] pb-12 sm:pb-16">
-      {/* Subtle teal desktop-wallpaper wash */}
+      {/* The colour wash behind the hero.
+          Three soft radial pools rather than one linear fade: a single
+          top-to-bottom gradient reads as a background, while overlapping
+          pools read as light, which is what makes the section feel lit
+          rather than tinted. Pointer-events off and aria-hidden, because
+          it is scenery. */}
       <div
         className="pointer-events-none absolute inset-0"
         aria-hidden="true"
         style={{
           background:
-            "linear-gradient(180deg, #e0f0f0 0%, #ffffff 50%)",
+            "radial-gradient(55% 55% at 12% 8%, var(--brand-soft) 0%, transparent 62%)," +
+            "radial-gradient(45% 55% at 88% 4%, var(--grape-soft) 0%, transparent 58%)," +
+            "radial-gradient(60% 45% at 50% 0%, var(--wave-soft) 0%, transparent 70%)," +
+            "linear-gradient(180deg, var(--surface-sunken) 0%, var(--page) 58%)",
         }}
       />
 
       <div className="relative mx-auto max-w-[1180px] px-5 pt-14 text-center">
         {/* Status badge */}
         <motion.div {...rise(0)} className="mb-5">
-          <span
-            className="inline-flex items-center gap-2 btn press !cursor-default !py-1.5 !px-5 text-[12px]"
-          >
-            <span className="w-2 h-2 rounded-full bg-[#00c800] shadow-[0_0_4px_#00c800]" />
+          <span className="pill bg-leaf-soft text-leaf">
+            <span
+              className="h-2 w-2 rounded-full bg-leaf"
+              aria-hidden="true"
+            />
             Now accepting waitlist signups
           </span>
         </motion.div>
@@ -73,9 +84,9 @@ export function Hero({
           {...rise(0.06)}
           className="mx-auto max-w-[18ch] type-display text-ink"
         >
-          An AI companion
+          A teacher that lives
           <br />
-          <span className="text-ink-muted">for your desktop</span>
+          <span className="text-accent">on your desktop</span>
         </motion.h1>
 
         <motion.p
@@ -94,8 +105,8 @@ export function Hero({
             anyone comes here to look at, so the frame is now a plain card and
             the video fills it. */}
         <motion.div {...rise(0.18)} className="mt-10 mx-auto max-w-[720px]">
-          <div className="card overflow-hidden">
-            <div className="relative bg-black">
+          <div className="card-raised overflow-hidden p-3">
+            <div className="relative overflow-hidden rounded-2xl bg-black">
               <video
                 ref={videoRef}
                 className="block w-full aspect-video"
@@ -113,18 +124,18 @@ export function Hero({
               </video>
             </div>
 
-            <div className="flex items-center gap-4">
+            <div className="flex items-center gap-4 px-2 pt-3 pb-1">
               <div className="flex items-center gap-2">
                 <button
                   onClick={toggle}
-                  className="grid h-9 w-9 place-items-center rounded-full bg-accent text-accent-contrast text-lg cursor-pointer"
+                  className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-accent text-accent-contrast cursor-pointer transition-colors hover:bg-accent-hover"
                   aria-label={
                     playing
                       ? "Pause the demonstration"
                       : "Play the demonstration"
                   }
                 >
-                  {playing ? "⏸" : "▶"}
+                  {playing ? <Pause size={16} weight="fill" /> : <Play size={16} weight="fill" />}
                 </button>
               </div>
               <div className="flex-1 h-[6px] rounded bg-surface-sunken">

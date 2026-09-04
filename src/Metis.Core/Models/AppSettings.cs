@@ -12,7 +12,7 @@ public sealed record AppSettings
     public int SettingsVersion { get; init; } = 1;
 
     public string AiProvider { get; init; } = "Gemini";
-    public string ReasoningModel { get; init; } = "gemini-3.5-flash";
+    public string ReasoningModel { get; init; } = "gemini-3.1-flash-lite";
     public string SpeechModel { get; init; } = "gemini-2.5-flash-preview-tts";
     public string VoiceName { get; init; } = "Kore";
     public string OpenAiReasoningModel { get; init; } = "gpt-5-mini";
@@ -85,7 +85,7 @@ public sealed record AppSettings
 
     /// <summary>
     /// Enables the Ctrl+Alt context shortcut and the Ctrl+Alt+Shift inspect
-    /// shortcut alongside the original Ctrl+Shift+1 hold-to-talk chord.
+    /// shortcut alongside the tap-then-hold Ctrl dictation shortcut.
     /// </summary>
     public bool ContextShortcutsEnabled { get; init; } = true;
 
@@ -350,7 +350,7 @@ public sealed record AppSettings
     {
         SettingsVersion = SettingsVersion < 1 ? 1 : SettingsVersion,
         AiProvider = NormalizeProvider(AiProvider),
-        ReasoningModel = NormalizeModel(ReasoningModel, "gemini-3.5-flash"),
+        ReasoningModel = NormalizeModel(ReasoningModel, "gemini-3.1-flash-lite"),
         SpeechModel = NormalizeSpeechModel(SpeechModel, "gemini-2.5-flash-preview-tts"),
         VoiceName = string.IsNullOrWhiteSpace(VoiceName) ? "Kore" : VoiceName.Trim(),
         OpenAiReasoningModel = NormalizeModel(OpenAiReasoningModel, "gpt-5-mini"),

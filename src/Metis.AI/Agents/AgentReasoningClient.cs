@@ -421,10 +421,16 @@ public sealed class AgentReasoningClient : IAgentReasoningClient, IDisposable
         var apiKey = _secretStore.ReadGeminiApiKey()?.Trim();
         if (string.IsNullOrWhiteSpace(apiKey))
         {
+            var access = _gatewayAccess?.Invoke() ?? (null, null);
+            if (access.Endpoint is not null)
+            {
+                return await CallMetisGatewayAsync(settings, systemPrompt, userPrompt, cancellationToken);
+            }
+
             throw new InvalidOperationException("Gemini API Key is required to run autonomous agents. Please configure it in Metis Setup.");
         }
 
-        var model = string.IsNullOrWhiteSpace(settings.ReasoningModel) ? "gemini-2.5-flash" : settings.ReasoningModel;
+        var model = string.IsNullOrWhiteSpace(settings.ReasoningModel) ? "gemini-3.5-flash" : settings.ReasoningModel;
         var url = $"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={apiKey}";
 
         var payload = new

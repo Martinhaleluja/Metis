@@ -26,47 +26,66 @@ const features = [
     icon: Eye,
     title: "It sees what you see",
     body: "Ask about anything on your screen. Metis looks once, when you ask, and answers about what is actually in front of you.",
-    tilt: -1.2,
+    tone: "brand",
   },
   {
     icon: Microphone,
     title: "Talk to it, or type",
     body: "Hold a keyboard shortcut from anywhere in Windows and speak, or just say its name. Type instead if you would rather.",
     shortcut: ["Ctrl", "Shift", "1"],
-    tilt: 0.8,
+    tone: "sun",
   },
   {
     icon: SpeakerHigh,
     title: "It answers out loud",
     body: "You hear the answer while your eyes stay on the work. Turn it off and read instead — some people prefer that.",
-    tilt: 1.5,
+    tone: "blush",
   },
   {
     icon: PencilLine,
     title: "It draws on your screen",
     body: "Arrows and highlights appear over the buttons you need, then fade. It shows you where to click. It never clicks for you.",
-    tilt: -0.7,
+    tone: "leaf",
   },
   {
     icon: UserCircle,
     title: "Always one word away",
     body: "Metis lives in a small bar at the top of your screen. It stays out of the way until you ask, and it remembers your name.",
-    tilt: 0.5,
+    tone: "wave",
   },
   {
     icon: HardDrives,
     title: "It can run with no internet",
     body: "Point Metis at a model running on your own computer and nothing you say or show it ever leaves the machine.",
-    tilt: -1.0,
+    tone: "grape",
   },
 ];
 
+/**
+ * The six colours are a wayfinding device, not decoration: six identical cards
+ * read as one undifferentiated list, and these are six genuinely different
+ * things. Colour is never the only signal — each card also carries its own icon
+ * and its own heading — so the grouping survives greyscale, colour blindness
+ * and a screen reader.
+ */
+const tones: Record<string, { tile: string; text: string; card: string }> = {
+  brand: { tile: "bg-brand-soft", text: "text-brand", card: "bg-brand-soft/40" },
+  sun: { tile: "bg-sun-soft", text: "text-sun", card: "bg-sun-soft/40" },
+  blush: { tile: "bg-blush-soft", text: "text-blush", card: "bg-blush-soft/40" },
+  leaf: { tile: "bg-leaf-soft", text: "text-leaf", card: "bg-leaf-soft/40" },
+  wave: { tile: "bg-wave-soft", text: "text-wave", card: "bg-wave-soft/40" },
+  grape: { tile: "bg-grape-soft", text: "text-grape", card: "bg-grape-soft/40" },
+};
+
 export function Capabilities() {
   return (
-    <section id="capabilities" className="scroll-mt-16 py-20 sm:py-28 bg-surface">
+    <section id="capabilities" className="scroll-mt-16 py-20 sm:py-28 bg-page">
       <div className="mx-auto max-w-[1180px] px-5">
         <Reveal>
-          <h2 className="type-title text-ink text-center max-w-[24ch] mx-auto">
+          <p className="pill bg-accent-wash text-accent mx-auto w-fit">
+            What it does
+          </p>
+          <h2 className="mt-4 type-title text-ink text-center max-w-[24ch] mx-auto">
             Built for the desktop, not a browser tab
           </h2>
           <p className="mt-4 type-body text-ink-muted text-center max-w-[56ch] mx-auto">
@@ -77,49 +96,32 @@ export function Capabilities() {
         </Reveal>
 
         <div className="mt-14 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
-          {features.map((feat, i) => (
-            <Reveal key={feat.title} delay={i * 0.06}>
-              <div
-                className="card h-full transition-transform hover:scale-[1.02]"
-              >
-                <div className="p-5 bg-surface">
-                  <div className="flex items-start gap-4">
-                    <span className="shrink-0 grid h-10 w-10 place-items-center rounded-xl bg-accent-wash border border-line">
-                      <feat.icon
-                        size={20}
-                        weight="bold"
-                        className="text-accent"
-                      />
-                    </span>
-                    <div>
-                      <h3
-                        className="text-[14px] font-bold text-ink"
-                      >
-                        {feat.title}
-                      </h3>
-                      <p
-                        className="mt-1.5 text-[12px] text-[#333] leading-relaxed"
-                      >
-                        {feat.body}
-                      </p>
-                      {feat.shortcut && (
-                        <div className="mt-3 flex items-center gap-1">
-                          {feat.shortcut.map((key) => (
-                            <kbd
-                              key={key}
-                              className="btn press text-[10px] !py-0.5 !px-2 !cursor-default"
-                            >
-                              {key}
-                            </kbd>
-                          ))}
-                        </div>
-                      )}
+          {features.map((feat, i) => {
+            const tone = tones[feat.tone];
+            return (
+              <Reveal key={feat.title} delay={i * 0.06}>
+                <div className={`tint tint-hover h-full p-6 ${tone.card}`}>
+                  <span className={`tile ${tone.tile}`}>
+                    <feat.icon size={24} weight="bold" className={tone.text} />
+                  </span>
+                  <h3 className="mt-5 type-heading text-ink">{feat.title}</h3>
+                  <p className="mt-2 type-caption text-ink-muted">{feat.body}</p>
+                  {feat.shortcut && (
+                    <div className="mt-4 flex items-center gap-1.5">
+                      {feat.shortcut.map((key) => (
+                        <kbd
+                          key={key}
+                          className="rounded-lg border border-line bg-surface px-2 py-1 font-sans text-[14px] font-semibold text-ink shadow-sm"
+                        >
+                          {key}
+                        </kbd>
+                      ))}
                     </div>
-                  </div>
+                  )}
                 </div>
-              </div>
-            </Reveal>
-          ))}
+              </Reveal>
+            );
+          })}
         </div>
       </div>
     </section>

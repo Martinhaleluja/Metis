@@ -36,59 +36,97 @@ export function Pricing() {
         <div className="mt-14 grid items-start gap-6 lg:grid-cols-3">
           {plans.map((plan, index) => (
             <Reveal key={plan.id} delay={index * 0.06}>
+              {/* The featured plan inverts rather than merely gaining a ring.
+                  A border weight is a difference you have to look for; a
+                  filled card is one you cannot miss, which is the whole job
+                  of marking one plan as the recommended one. */}
               <div
-                className={`h-full ${plan.featured ? "card-raised ring-1 ring-accent" : "card"}`}
+                className={`flex h-full flex-col rounded-[24px] p-7 ${
+                  plan.featured
+                    ? "bg-accent text-accent-contrast shadow-[var(--shadow-lift)] lg:-my-3 lg:py-10"
+                    : "card"
+                }`}
               >
-                <div className="panel-title">
-                  <span className="truncate">{plan.name}</span></div>
-
-                <div
-                  className="flex h-full flex-col bg-surface p-5"
-                >
-                  <div className="flex items-baseline justify-between">
-                    <h3 className="text-[18px] font-bold text-ink">{plan.name}</h3>
-                    {plan.featured && (
-                      <span className="bg-accent px-2 py-0.5 text-[10px] font-bold text-white">
-                        MOST POPULAR
-                      </span>
-                    )}
-                  </div>
-
-                  <p className="mt-3 flex items-baseline gap-1.5">
-                    <span className="text-[34px] leading-none font-bold text-ink">
-                      {priceLabel(plan)}
+                <div className="flex items-center justify-between gap-3">
+                  <h3
+                    className={`type-heading ${
+                      plan.featured ? "text-accent-contrast" : "text-ink"
+                    }`}
+                  >
+                    {plan.name}
+                  </h3>
+                  {plan.featured && (
+                    <span className="pill bg-white/20 text-accent-contrast">
+                      Most popular
                     </span>
-                    <span className="text-[12px] text-[#444]">{plan.cadence}</span>
-                  </p>
+                  )}
+                </div>
 
-                  <p className="mt-2 text-[12px] leading-relaxed text-[#333]">{plan.tagline}</p>
+                <p className="mt-5 flex items-baseline gap-1.5">
+                  <span
+                    className={`font-display text-[44px] font-bold leading-none ${
+                      plan.featured ? "text-accent-contrast" : "text-ink"
+                    }`}
+                  >
+                    {priceLabel(plan)}
+                  </span>
+                  <span
+                    className={
+                      plan.featured
+                        ? "text-[14px] text-accent-contrast/75"
+                        : "text-[14px] text-ink-muted"
+                    }
+                  >
+                    {plan.cadence}
+                  </span>
+                </p>
 
-                  {/* The AI itself, in a sunken field so it reads as a value the
-                      system reported rather than a marketing line. */}
-                  <p className="rounded-lg border border-line bg-surface px-3 py-2 mt-4 px-2.5 py-1.5 text-[11px] text-ink">
-                    <span className="font-bold">AI:</span> {plan.aiSummary}
-                  </p>
+                <p
+                  className={`mt-3 type-caption ${
+                    plan.featured ? "text-accent-contrast/85" : "text-ink-muted"
+                  }`}
+                >
+                  {plan.tagline}
+                </p>
 
-                  <ul className="mt-4 flex-1 space-y-2">
-                    {plan.features.map((feature) => (
-                      <li key={feature} className="flex items-start gap-2 text-[12px] text-[#222]">
-                        <Check
-                          size={13}
-                          weight="bold"
-                          className="mt-[3px] shrink-0 text-accent"
-                        />
-                        <span className="leading-snug">{feature}</span>
-                      </li>
-                    ))}
-                  </ul>
+                {/* What the plan actually buys, set apart so it reads as a
+                    specification rather than another marketing line. */}
+                <p
+                  className={`mt-5 rounded-2xl px-4 py-3 text-[14px] leading-snug ${
+                    plan.featured
+                      ? "bg-white/15 text-accent-contrast"
+                      : "bg-surface-sunken text-ink"
+                  }`}
+                >
+                  <span className="font-semibold">AI:</span> {plan.aiSummary}
+                </p>
 
-                  <div className="mt-6">
-                    <UpgradeButton
-                      plan={plan}
-                      billingIsLive={billingIsLive}
-                      className="!py-2 text-[12px]"
-                    />
-                  </div>
+                <ul className="mt-5 flex-1 space-y-2.5">
+                  {plan.features.map((feature) => (
+                    <li
+                      key={feature}
+                      className={`flex items-start gap-2.5 text-[14px] ${
+                        plan.featured ? "text-accent-contrast/90" : "text-ink-muted"
+                      }`}
+                    >
+                      <Check
+                        size={15}
+                        weight="bold"
+                        className={`mt-[3px] shrink-0 ${
+                          plan.featured ? "text-accent-contrast" : "text-leaf"
+                        }`}
+                      />
+                      <span className="leading-snug">{feature}</span>
+                    </li>
+                  ))}
+                </ul>
+
+                <div className="mt-7">
+                  <UpgradeButton
+                    plan={plan}
+                    billingIsLive={billingIsLive}
+                    className="w-full"
+                  />
                 </div>
               </div>
             </Reveal>

@@ -18,7 +18,7 @@ namespace Metis.Core.Services;
 public static class NotchGeometry
 {
     /// <summary>The resting height of the pill, before any page opens.</summary>
-    public const double RestingHeight = 34;
+    public const double RestingHeight = 28;
 
     /// <summary>
     /// The gap between the body and the host window that contains it. The window
@@ -138,7 +138,7 @@ public static class NotchGeometry
     /// <summary>
     /// The narrowest the notch ever is: the resting pill.
     /// </summary>
-    public const double TuckedWidth = 104;
+    public const double TuckedWidth = 90;
 
     /// <summary>
     /// The gap between the body and the host window on the horizontal axis.

@@ -27,7 +27,7 @@ public sealed class FlaUiAutomationService : IUiAutomationService, IDisposable
     /// entire turn. A partial list of controls is a good answer; a turn that
     /// never asks the question is not.
     /// </summary>
-    private static readonly TimeSpan SnapshotBudget = TimeSpan.FromSeconds(2.5);
+    private static readonly TimeSpan SnapshotBudget = TimeSpan.FromSeconds(1.0);
 
     /// <summary>
     /// One automation session, reused.
